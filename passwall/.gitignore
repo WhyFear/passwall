@@ -1,0 +1,29 @@
+# 编译生成的文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+passwall
+
+# 依赖目录
+/vendor/
+
+# IDE 文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志文件
+*.log
+
+# 数据库文件
+*.db
+*.db-journal
+
+# 临时文件
+/tmp/
+.DS_Store 
