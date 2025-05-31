@@ -3,6 +3,9 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"passwall/api"
 	"passwall/config"
@@ -36,10 +39,30 @@ func main() {
 	}
 
 	// 5. 启动HTTP服务器
-	router := api.SetupRouter(cfg, db, services)
+	router := api.SetupRouter(cfg, db, services, newScheduler)
 
-	log.Printf("Starting server on %s", cfg.Server.Address)
-	if err := http.ListenAndServe(cfg.Server.Address, router); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	// 创建HTTP服务器
+	server := &http.Server{
+		Addr:    cfg.Server.Address,
+		Handler: router,
 	}
+
+	// 在goroutine中启动服务器，这样就不会阻塞
+	go func() {
+		log.Printf("Starting server on %s", cfg.Server.Address)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// 等待中断信号以优雅地关闭服务器
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// 停止调度器
+	newScheduler.Stop()
+
+	log.Println("Server exiting")
 }

@@ -39,6 +39,7 @@ type CronJob struct {
 	Schedule              string `yaml:"schedule"`
 	ReloadSubscribeConfig bool   `yaml:"reload_subscribe_config"`
 	TestAll               bool   `yaml:"test_all"`
+	TestNew               bool   `yaml:"test_new"`
 	TestFailed            bool   `yaml:"test_failed"`
 	TestSpeed             bool   `yaml:"test_speed"`
 	Concurrent            int    `yaml:"concurrent"`
@@ -48,25 +49,32 @@ type CronJob struct {
 func LoadConfig() (*Config, error) {
 	// 1. 尝试从环境变量获取配置文件路径
 	configPath := os.Getenv("CONFIG_PATH")
+
+	// 2. 如果环境变量未设置，尝试多个可能的路径
 	if configPath == "" {
 		configPath = "config.yaml"
 	}
 
-	// 2. 读取配置文件
+	// 3. 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. 解析YAML
+	// 4. 解析YAML
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
 
-	// 4. 验证配置
+	// 5. 验证配置并设置默认值
 	if config.Concurrent == 0 {
 		config.Concurrent = 5
 	}
+
+	if config.Server.Address == "" {
+		config.Server.Address = "127.0.0.1:8080"
+	}
+
 	return &config, nil
 }

@@ -7,11 +7,12 @@ import (
 	"passwall/api/handler"
 	"passwall/api/middleware"
 	"passwall/config"
+	"passwall/internal/scheduler"
 	"passwall/internal/service"
 )
 
 // SetupRouter 设置API路由
-func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, scheduler *scheduler.Scheduler) *gin.Engine {
 	// 创建Gin路由
 	router := gin.Default()
 
@@ -41,6 +42,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services) *g
 		// 添加任务状态API
 		apiGroup.GET("/task_status", func(c *gin.Context) {
 			c.JSON(200, services.TaskManager.GetAllTaskStatus())
+		})
+
+		// 添加调度器状态API
+		apiGroup.GET("/scheduler_status", func(c *gin.Context) {
+			c.JSON(200, scheduler.GetStatus())
 		})
 	}
 

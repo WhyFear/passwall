@@ -6,11 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 	"passwall/internal/adapter/generator"
 	"passwall/internal/model"
 	"passwall/internal/repository"
+
+	"github.com/gin-gonic/gin"
+	"github.com/metacubex/mihomo/log"
+	"gorm.io/gorm"
 )
 
 // GetSubscribe 获取订阅处理器
@@ -30,6 +32,8 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 		// 获取请求参数
 		subType := c.DefaultQuery("type", "share_url")
 		statusStr := c.DefaultQuery("status", "1")
+		sortBy := c.DefaultQuery("sort", "speed") // 默认按速度排序
+		limit := c.DefaultQuery("limit", "0")     // 默认不限制
 
 		// 解析状态
 		var statusList []model.ProxyStatus
@@ -54,10 +58,11 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 		for _, status := range statusList {
 			statusProxies, err := proxyRepo.FindByStatus(status)
 			if err != nil {
+				log.Errorln("查询代理服务器失败:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusInternalServerError,
-					"status_msg":  "Failed to query proxies",
+					"status_msg":  "Failed to query proxies: " + err.Error(),
 				})
 				return
 			}
@@ -65,31 +70,84 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 		}
 		// 如果没有代理，返回空订阅
 		if len(proxies) == 0 {
+			log.Warnln("没有找到符合条件的代理服务器")
 			c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
 			return
 		}
-		// 对proxies按下载速度排序
-		sort.Slice(proxies, func(i, j int) bool {
-			return proxies[i].DownloadSpeed > proxies[j].DownloadSpeed
-		})
 
+		// 根据排序参数对proxies进行排序
+		switch sortBy {
+		case "speed", "download_speed":
+			// 按下载速度排序（默认）
+			sort.Slice(proxies, func(i, j int) bool {
+				return proxies[i].DownloadSpeed > proxies[j].DownloadSpeed
+			})
+		case "ping", "latency":
+			// 按延迟排序
+			sort.Slice(proxies, func(i, j int) bool {
+				// 延迟为0的放在最后（可能是未测试）
+				if proxies[i].Ping == 0 {
+					return false
+				}
+				if proxies[j].Ping == 0 {
+					return true
+				}
+				return proxies[i].Ping < proxies[j].Ping
+			})
+		case "name":
+			// 按名称排序
+			sort.Slice(proxies, func(i, j int) bool {
+				return proxies[i].Name < proxies[j].Name
+			})
+		case "time", "latest":
+			// 按最近测试时间排序
+			sort.Slice(proxies, func(i, j int) bool {
+				if proxies[i].LatestTestTime == nil {
+					return false
+				}
+				if proxies[j].LatestTestTime == nil {
+					return true
+				}
+				return proxies[i].LatestTestTime.After(*proxies[j].LatestTestTime)
+			})
+		default:
+			// 默认按下载速度排序
+			sort.Slice(proxies, func(i, j int) bool {
+				return proxies[i].DownloadSpeed > proxies[j].DownloadSpeed
+			})
+		}
+
+		// 限制返回的代理数量
+		if limitNum, err := strconv.Atoi(limit); err == nil && limitNum > 0 && limitNum < len(proxies) {
+			proxies = proxies[:limitNum]
+		}
+
+		// 获取订阅生成器
 		subscribeGenerator, err := generatorFactory.GetGenerator(subType)
 		if err != nil {
+			log.Errorln("不支持的订阅类型:", subType)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
-				"status_msg":  "Unsupported subscription type",
+				"status_msg":  "Unsupported subscription type: " + subType,
 			})
 			return
 		}
+
+		// 生成订阅内容
 		content, err := subscribeGenerator.Generate(proxies)
 		if err != nil {
+			log.Errorln("生成订阅内容失败:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
-				"status_msg":  err.Error(),
+				"status_msg":  "Failed to generate subscription: " + err.Error(),
 			})
+			return
 		}
+
+		log.Infoln("成功生成订阅，类型: %s，代理数量: %d", subType, len(proxies))
+
 		// 直接返回内容
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", content)
 	}

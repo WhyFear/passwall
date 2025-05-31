@@ -49,7 +49,9 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 	req.Header.Set("Accept", "*/*")
 
 	// 创建HTTP客户端
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: options.Timeout,
+	}
 
 	// 如果配置了代理，设置代理
 	if options.ProxyURL != "" {
@@ -66,6 +68,10 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 	// 发送请求
 	resp, err := client.Do(req)
 	if err != nil {
+		// 检查是否是超时错误
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, errors.New("request timed out after " + options.Timeout.String())
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -87,16 +93,10 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 		return nil, errors.New("content too large, exceeded maximum allowed size")
 	}
 
-	//// 清理HTML标签，特别是<pre>标签
-	//contentStr := string(content)
-	//if strings.Contains(contentStr, "<pre") {
-	//	// 移除<pre>标签及其属性
-	//	preTagRegex := regexp.MustCompile(`<pre[^>]*>`)
-	//	contentStr = preTagRegex.ReplaceAllString(contentStr, "")
-	//
-	//	// 移除</pre>关闭标签
-	//	contentStr = strings.ReplaceAll(contentStr, "</pre>", "")
-	//}
+	// 检查内容是否为空
+	if len(content) == 0 {
+		return nil, errors.New("downloaded content is empty")
+	}
 
 	return content, nil
 }

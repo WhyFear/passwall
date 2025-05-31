@@ -84,6 +84,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 				// 对于HTTP/HTTPS链接，下载内容
 				content, err = util.DownloadFromURL(req.URL, downloadOptions)
 				if err != nil {
+					log.Errorln("下载订阅内容失败:", err)
 					c.JSON(http.StatusBadRequest, gin.H{
 						"result":      "fail",
 						"status_code": http.StatusBadRequest,
@@ -115,12 +116,23 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 				return
 			}
 
-			content, err = io.ReadAll(file)
+			// 限制文件大小
+			if fileHeader.Size > 10*1024*1024 { // 10MB
+				c.JSON(http.StatusBadRequest, gin.H{
+					"result":      "fail",
+					"status_code": http.StatusBadRequest,
+					"status_msg":  "File too large, max 10MB",
+				})
+				return
+			}
+
+			content, err = io.ReadAll(io.LimitReader(file, 10*1024*1024)) // 限制读取大小
 			if err != nil {
+				log.Errorln("读取上传文件失败:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusInternalServerError,
-					"status_msg":  "Failed to read file",
+					"status_msg":  "Failed to read file: " + err.Error(),
 				})
 				return
 			}
@@ -142,10 +154,11 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 		// 获取解析器
 		p, err := parserFactory.GetParser(req.Type)
 		if err != nil {
+			log.Errorln("不支持的代理类型:", req.Type)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
-				"status_msg":  "Unsupported proxy type",
+				"status_msg":  "Unsupported proxy type: " + req.Type,
 			})
 			return
 		}
@@ -157,6 +170,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 		existingSub, err := subscriptionRepo.FindByURL(subscriptionURL)
 		if err == nil && existingSub != nil {
 			// URL已存在，返回现有订阅ID
+			log.Infoln("订阅配置已存在:", subscriptionURL)
 			c.JSON(http.StatusOK, gin.H{
 				"result":          "fail",
 				"status_code":     http.StatusOK,
@@ -180,6 +194,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 				// 尝试查找已存在的记录
 				existingSub, findErr := subscriptionRepo.FindByURL(subscriptionURL)
 				if findErr == nil && existingSub != nil {
+					log.Infoln("订阅配置已存在(创建时检测):", subscriptionURL)
 					c.JSON(http.StatusOK, gin.H{
 						"result":          "fail",
 						"status_code":     http.StatusOK,
@@ -191,6 +206,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 			}
 
 			// 其他错误
+			log.Errorln("保存订阅配置失败:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
@@ -202,28 +218,52 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 		// 解析配置
 		proxies, err := p.Parse(content)
 		if err != nil {
-			log.Errorln("Failed to parse subscription:", err)
+			log.Errorln("解析订阅配置失败:", err)
+			// 更新订阅状态为无法处理
+			subscription.Status = model.SubscriptionStatusInvalid
+			subscriptionRepo.Update(subscription)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Failed to parse subscription: " + err.Error(),
+			})
 			return
 		}
 
 		// 检查解析结果是否为空
 		if len(proxies) == 0 {
-			log.Errorln("Failed to parse subscription: no proxies found")
+			log.Errorln("订阅配置中未找到代理服务器")
+			// 更新订阅状态为无法处理
+			subscription.Status = model.SubscriptionStatusInvalid
+			subscriptionRepo.Update(subscription)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "No proxies found in subscription",
+			})
 			return
 		}
 
 		// 保存解析出的代理服务器
 		proxyRepo := repository.NewProxyRepository(db)
+		savedCount := 0
 		for _, proxy := range proxies {
 			// 设置订阅ID
 			proxy.SubscriptionID = &subscription.ID
 
 			// 保存代理服务器
 			if err := proxyRepo.Create(proxy); err != nil {
-				log.Errorln("Failed to save proxy:", err)
+				log.Errorln("保存代理服务器失败:", err)
 				continue
 			}
+			savedCount++
 		}
+
+		// 更新订阅状态为正常
+		subscription.Status = model.SubscriptionStatusOK
+		subscriptionRepo.Update(subscription)
+
+		log.Infoln("成功保存 %d/%d 个代理服务器", savedCount, len(proxies))
 
 		// 异步处理解析
 		go func() {
@@ -241,6 +281,8 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 			"status_code":     http.StatusOK,
 			"status_msg":      "订阅配置已接收，正在异步处理",
 			"subscription_id": subscription.ID,
+			"proxy_count":     len(proxies),
+			"saved_count":     savedCount,
 		})
 	}
 }
