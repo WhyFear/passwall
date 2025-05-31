@@ -1,12 +1,12 @@
-token: "123456"   # 获取订阅链接时，token必填
+token: "your_token_here"   # 获取订阅链接时，token必填
 concurrent: 30
 
 server:
-  address: "127.0.0.1:8080"
+  address: "0.0.0.0:8080"  # 使用0.0.0.0允许外部访问
 
 database:
   driver: "sqlite"
-  dsn: "passwall.db"
+  dsn: "data/passwall.db"  # 将数据库文件存储在data目录下
 
 proxy:
   enabled: false  # 是否启用代理

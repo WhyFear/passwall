@@ -163,3 +163,44 @@ Method: get
 https://wiki.metacubex.one/config/proxy-providers/content/#\_\_tabbed\_1\_1
 
 https://linux.do/t/topic/683144
+
+## Docker部署
+
+### 使用预构建镜像
+
+```bash
+# 拉取最新镜像
+docker pull 用户名/passwall:latest
+
+# 运行容器
+docker run -d \
+  --name passwall \
+  -p 8080:8080 \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  -v $(pwd)/data:/app/data \
+  用户名/passwall:latest
+```
+
+### 使用Docker Compose
+
+1. 创建`config.yaml`文件，配置您的服务参数
+2. 运行以下命令启动服务：
+
+```bash
+docker-compose up -d
+```
+
+### 自行构建镜像
+
+```bash
+# 构建镜像
+docker build -t passwall:latest .
+
+# 运行容器
+docker run -d \
+  --name passwall \
+  -p 8080:8080 \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  -v $(pwd)/data:/app/data \
+  passwall:latest
+```

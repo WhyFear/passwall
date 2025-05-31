@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# IDE相关
+.idea
+.vscode
+*.swp
+*.swo
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 日志文件
+*.log
+
+# 临时文件
+tmp/
+temp/
+
+# 构建输出
+bin/
+build/
+
+# 其他不需要的文件
+README.md
+LICENSE
+docker-compose.yml
+.github/
+.dockerignore
+config.yaml
