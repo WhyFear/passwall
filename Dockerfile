@@ -32,7 +32,6 @@ WORKDIR /app
 
 # 从构建阶段复制编译好的应用
 COPY --from=builder /app/passwall /app/
-COPY --from=builder /app/config.yaml /app/
 
 # 设置环境变量
 ENV CONFIG_PATH=/app/config.yaml

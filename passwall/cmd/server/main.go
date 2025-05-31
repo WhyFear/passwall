@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -50,7 +51,7 @@ func main() {
 	// 在goroutine中启动服务器，这样就不会阻塞
 	go func() {
 		log.Printf("Starting server on %s", cfg.Server.Address)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
