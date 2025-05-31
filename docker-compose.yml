@@ -2,7 +2,7 @@ version: '3'
 
 services:
   passwall:
-    image: passwall:latest
+    image: pakro888/passwall:latest
     container_name: passwall
     restart: unless-stopped
     ports:
