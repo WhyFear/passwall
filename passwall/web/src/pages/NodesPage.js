@@ -84,14 +84,14 @@ const NodesPage = () => {
     }
   };
 
-  // 获取节点历史
+  // 获取节点分享链接
   const fetchNodeShareUrl = async (nodeId) => {
     try {
       setHistoryLoading(true);
       const data = await nodeApi.getProxyShareUrl(nodeId);
       setCurrentNode(prev => ({
         ...prev,
-        share_url: data,
+        share_url: atob(data),
       }));
     } catch (error) {
       message.error('获取节点历史失败');
@@ -278,7 +278,37 @@ const NodesPage = () => {
                 <strong>上传速度:</strong> {currentNode.upload_speed ? `${currentNode.upload_speed}KB/s` : '-'}
               </p>
               <p><strong>最后测试时间:</strong> {currentNode.tested_at || '-'}</p>
-              <p><strong>分享链接:</strong> {currentNode.share_url || '-'}</p>
+              <p><strong>分享链接:</strong> 
+                {currentNode.share_url ? (
+                  <>
+                    <div 
+                      style={{ 
+                        width: '100%', 
+                        backgroundColor: '#f5f5f5',
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        border: '1px solid #e8e8e8',
+                        marginBottom: '8px',
+                        wordBreak: 'break-all'
+                      }}
+                    >
+                      {currentNode.share_url}
+                    </div>
+                    <Button 
+                      type="primary" 
+                      size="small" 
+                      icon={<CopyOutlined />}
+                      onClick={() => {
+                        navigator.clipboard.writeText(currentNode.share_url)
+                          .then(() => message.success('分享链接已复制到剪贴板'))
+                          .catch(() => message.error('复制失败，请手动复制'));
+                      }}
+                    >
+                      复制
+                    </Button>
+                  </>
+                ) : '-'}
+              </p>
             </Card>
 
             <Card title="历史记录">
