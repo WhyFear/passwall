@@ -256,6 +256,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 		for _, proxy := range proxies {
 			// 设置订阅ID
 			proxy.SubscriptionID = &subscription.ID
+			proxy.Status = model.ProxyStatusPending
 
 			// 保存代理服务器
 			if err := proxyRepo.Create(proxy); err != nil {

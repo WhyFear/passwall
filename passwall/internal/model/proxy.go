@@ -23,10 +23,10 @@ const (
 type ProxyStatus int
 
 const (
-	ProxyStatusPending     ProxyStatus = 0 // 待测试
-	ProxyStatusOK          ProxyStatus = 1 // 正常
-	ProxyStatusFailed      ProxyStatus = 2 // 连接失败
-	ProxyStatusUnknowError ProxyStatus = 3 // 未知错误
+	ProxyStatusPending     ProxyStatus = -1 // 待测试
+	ProxyStatusOK          ProxyStatus = 1  // 正常
+	ProxyStatusFailed      ProxyStatus = 2  // 连接失败
+	ProxyStatusUnknowError ProxyStatus = 3  // 未知错误
 )
 
 // Proxy 代理服务器模型

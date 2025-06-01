@@ -1,0 +1,38 @@
+.header {
+  display: flex;
+  align-items: center;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.logo {
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.site-layout-background {
+  background: #fff;
+}
+
+.ant-layout-sider {
+  background: #fff;
+}
+
+.ant-menu-item-selected {
+  background-color: #e6f7ff;
+}
+
+.action-button {
+  margin-right: 8px;
+}
+
+.table-action {
+  display: flex;
+  gap: 8px;
+} 

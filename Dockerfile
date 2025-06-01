@@ -39,6 +39,7 @@ ENV GIN_MODE=release
 
 # 暴露端口
 EXPOSE 8080
+EXPOSE 8081
 
 # 运行应用
 CMD ["./passwall"] 

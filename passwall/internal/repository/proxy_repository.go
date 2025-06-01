@@ -7,6 +7,20 @@ import (
 	"gorm.io/gorm"
 )
 
+// PageQuery 分页查询参数
+type PageQuery struct {
+	Page     int
+	PageSize int
+	OrderBy  string
+	Filters  map[string]interface{}
+}
+
+// PageResult 分页查询结果
+type PageResult struct {
+	Total int64
+	Items []*model.Proxy
+}
+
 // ProxyRepository 代理服务器仓库接口
 type ProxyRepository interface {
 	FindByID(id uint) (*model.Proxy, error)
@@ -16,6 +30,8 @@ type ProxyRepository interface {
 	Update(proxy *model.Proxy) error
 	Delete(id uint) error
 	SaveSpeedTestResult(proxyID uint, result *model.SpeedTestResult) error
+	// 新增分页查询方法
+	FindPage(query PageQuery) (*PageResult, error)
 }
 
 // GormProxyRepository 基于GORM的代理服务器仓库实现
@@ -118,4 +134,62 @@ func (r *GormProxyRepository) SaveSpeedTestResult(proxyID uint, result *model.Sp
 		}
 		return tx.Create(history).Error
 	})
+}
+
+// FindPage 分页查询代理服务器
+func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
+	var proxies []*model.Proxy
+	var total int64
+
+	// 构建查询条件
+	db := r.db.Model(&model.Proxy{})
+
+	// 应用过滤条件
+	if query.Filters != nil {
+		for key, value := range query.Filters {
+			// 特殊处理状态数组
+			if key == "status" {
+				if statusArray, ok := value.([]int); ok && len(statusArray) > 0 {
+					db = db.Where("status IN ?", statusArray)
+				} else {
+					db = db.Where(key, value)
+				}
+			} else {
+				db = db.Where(key, value)
+			}
+		}
+	}
+
+	// 计算总数
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	// 设置默认值
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+
+	if query.PageSize <= 0 {
+		query.PageSize = 10
+	}
+
+	// 设置排序
+	if query.OrderBy != "" {
+		db = db.Order(query.OrderBy)
+	} else {
+		db = db.Order("updated_at DESC")
+	}
+
+	// 执行分页查询
+	if err := db.Offset((query.Page - 1) * query.PageSize).
+		Limit(query.PageSize).
+		Find(&proxies).Error; err != nil {
+		return nil, err
+	}
+
+	return &PageResult{
+		Total: total,
+		Items: proxies,
+	}, nil
 }

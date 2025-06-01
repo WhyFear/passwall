@@ -64,13 +64,7 @@ func GetProxyHistory(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var histories []*struct {
-			ID            uint      `json:"id"`
-			Ping          int       `json:"ping"`
-			DownloadSpeed int64     `json:"download_speed"`
-			UploadSpeed   int64     `json:"upload_speed"`
-			TestTime      time.Time `json:"test_time"`
-		}
+		var histories []map[string]interface{}
 
 		// 根据参数获取历史记录
 		if startTimeStr != "" && endTimeStr != "" {
@@ -105,20 +99,15 @@ func GetProxyHistory(db *gorm.DB) gin.HandlerFunc {
 				return
 			}
 
-			// 转换为简化格式
+			// 转换为前端需要的格式
 			for _, h := range rawHistories {
-				histories = append(histories, &struct {
-					ID            uint      `json:"id"`
-					Ping          int       `json:"ping"`
-					DownloadSpeed int64     `json:"download_speed"`
-					UploadSpeed   int64     `json:"upload_speed"`
-					TestTime      time.Time `json:"test_time"`
-				}{
-					ID:            h.ID,
-					Ping:          h.Ping,
-					DownloadSpeed: h.DownloadSpeed,
-					UploadSpeed:   h.UploadSpeed,
-					TestTime:      h.TestTime,
+				histories = append(histories, map[string]interface{}{
+					"id":             h.ID,
+					"status":         proxy.Status,
+					"ping":           h.Ping,
+					"download_speed": h.DownloadSpeed,
+					"upload_speed":   h.UploadSpeed,
+					"tested_at":      h.TestTime,
 				})
 			}
 		} else {
@@ -133,42 +122,20 @@ func GetProxyHistory(db *gorm.DB) gin.HandlerFunc {
 				return
 			}
 
-			// 转换为简化格式
+			// 转换为前端需要的格式
 			for _, h := range rawHistories {
-				histories = append(histories, &struct {
-					ID            uint      `json:"id"`
-					Ping          int       `json:"ping"`
-					DownloadSpeed int64     `json:"download_speed"`
-					UploadSpeed   int64     `json:"upload_speed"`
-					TestTime      time.Time `json:"test_time"`
-				}{
-					ID:            h.ID,
-					Ping:          h.Ping,
-					DownloadSpeed: h.DownloadSpeed,
-					UploadSpeed:   h.UploadSpeed,
-					TestTime:      h.TestTime,
+				histories = append(histories, map[string]interface{}{
+					"id":             h.ID,
+					"status":         proxy.Status,
+					"ping":           h.Ping,
+					"download_speed": h.DownloadSpeed,
+					"upload_speed":   h.UploadSpeed,
+					"tested_at":      h.TestTime,
 				})
 			}
 		}
 
-		// 返回代理信息和历史记录
-		c.JSON(http.StatusOK, gin.H{
-			"result":      "success",
-			"status_code": http.StatusOK,
-			"data": gin.H{
-				"proxy": gin.H{
-					"id":             proxy.ID,
-					"name":           proxy.Name,
-					"type":           proxy.Type,
-					"domain":         proxy.Domain,
-					"port":           proxy.Port,
-					"ping":           proxy.Ping,
-					"download_speed": proxy.DownloadSpeed,
-					"upload_speed":   proxy.UploadSpeed,
-					"status":         proxy.Status,
-				},
-				"history": histories,
-			},
-		})
+		// 直接返回历史记录数组
+		c.JSON(http.StatusOK, histories)
 	}
 }

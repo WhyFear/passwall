@@ -8,6 +8,8 @@
 *.out
 passwall
 config.yaml
+build
+node_modules
 
 # 依赖目录
 /vendor/

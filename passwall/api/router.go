@@ -33,7 +33,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 		// 公开API
 		apiGroup.POST("/create_proxy", handler.CreateProxy(db, services.ParserFactory, services.ProxyTester))
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(db, services.TaskManager, services.ProxyTester))
-		apiGroup.GET("/proxy/:id/history", handler.GetProxyHistory(db))
+
 		apiGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
 		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(services.TaskManager, services.ProxyTester))
 
@@ -46,6 +46,22 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 		apiGroup.GET("/scheduler_status", func(c *gin.Context) {
 			c.JSON(200, scheduler.GetStatus())
 		})
+	}
+
+	// 添加API路由
+	webGroup := router.Group("/web/api")
+
+	// 认证中间件
+	webAuthMiddleware := middleware.Auth(cfg.Token)
+
+	// 需要认证的API
+	webGroup.Use(webAuthMiddleware)
+	{
+		webGroup.POST("/create_proxy", handler.CreateProxy(db, services.ParserFactory, services.ProxyTester))
+		webGroup.GET("/subscriptions", handler.GetSubscriptions(db))
+		webGroup.GET("/get_proxies", handler.GetProxies(db))
+		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(db))
+		webGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
 	}
 
 	return router

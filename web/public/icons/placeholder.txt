@@ -1,0 +1,1 @@
+这是一个占位文件，请将favicon.ico, logo192.png和logo512.png放在此目录下。 

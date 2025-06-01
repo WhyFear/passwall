@@ -199,7 +199,7 @@ func generateVMessLink(proxy *model.Proxy) (string, error) {
 		"add":  proxy.Domain,
 		"port": proxy.Port,
 		"type": "none",
-		"ps":   config["name"],
+		"ps":   proxy.Name,
 		"id":   config["uuid"],
 		"aid":  config["alterId"],
 	}
