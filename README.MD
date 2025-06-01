@@ -154,10 +154,6 @@ Method: get
 
 ![whiteboard_exported_image (2).png](assets/whiteboard_exported_image%20%282%29.png)
 
-## 代理服务器status状态机设计
-
-![whiteboard_exported_image (3).png](assets/whiteboard_exported_image%20%283%29.png)
-
 ## 参考链接
 
 https://wiki.metacubex.one/config/proxy-providers/content/#\_\_tabbed\_1\_1
