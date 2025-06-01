@@ -17,7 +17,7 @@ COPY web/ ./
 RUN npm run build
 
 # 第二阶段：构建后端
-FROM golang:1.21-alpine AS backend-builder
+FROM golang:1.23-alpine AS backend-builder
 
 # 设置工作目录
 WORKDIR /app
