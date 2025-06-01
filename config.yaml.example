@@ -14,7 +14,7 @@ proxy:
 
 cron_jobs:
   - name: "每6小时测试所有节点"
-    schedule: "0 * */6 * * *"
+    schedule: "0 0 */6 * * *"
     reload_subscribe_config: true
     test_all: true
     test_new: false

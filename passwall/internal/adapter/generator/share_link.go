@@ -255,14 +255,40 @@ func generateVLessLink(proxy *model.Proxy) (string, error) {
 	case "http":
 		httpOpts, _ := config["http-opts"].(map[string]any)
 		if httpOpts != nil {
-			if path, ok := httpOpts["path"].(string); ok && path != "" {
+			if path, ok := httpOpts["path"].(string); ok && len(path) > 0 {
 				params["path"] = path
+			} else if paths, ok := httpOpts["path"].([]any); ok && len(paths) > 0 {
+				pathStrList := make([]string, 0, len(paths))
+				for _, h := range paths {
+					if hStr, ok := h.(string); ok && hStr != "" {
+						pathStrList = append(pathStrList, hStr)
+					}
+				}
+				if len(pathStrList) > 0 {
+					params["path"] = strings.Join(pathStrList, ",")
+				}
+			}
+
+			if method, ok := httpOpts["method"].(string); ok && method != "" {
+				params["method"] = method
 			}
 
 			headers, _ := httpOpts["headers"].(map[string]any)
 			if headers != nil {
 				if host, ok := headers["Host"].(string); ok && host != "" {
 					params["host"] = host
+				} else if hosts, ok := headers["Host"].([]any); ok && len(hosts) > 0 {
+					// 处理host是一个列表的情况
+					// 尝试将整个列表转为逗号分隔字符串
+					hostStrList := make([]string, 0, len(hosts))
+					for _, h := range hosts {
+						if hStr, ok := h.(string); ok && hStr != "" {
+							hostStrList = append(hostStrList, hStr)
+						}
+					}
+					if len(hostStrList) > 0 {
+						params["host"] = strings.Join(hostStrList, ",")
+					}
 				}
 			}
 			params["headerType"] = "http"

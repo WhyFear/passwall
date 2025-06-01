@@ -98,7 +98,7 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 		if len(subscriptions) == 0 {
 			log.Infoln("没有找到订阅配置")
-			return errors.New("没有找到订阅配置")
+			return nil
 		}
 
 		// 过滤掉URL为空的订阅（文件上传的不需要重新获取）
@@ -112,7 +112,7 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 		if len(validSubscriptions) == 0 {
 			log.Infoln("没有找到有效的URL订阅配置")
-			return errors.New("没有找到有效的URL订阅配置")
+			return nil
 		}
 
 		// 更新任务总数
