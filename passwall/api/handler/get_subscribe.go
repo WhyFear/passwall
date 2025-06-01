@@ -16,8 +16,8 @@ import (
 )
 
 type SubscribeReq struct {
-	Token     string `form:"token"`
-	Type      string `form:"type"`
+	Token     string `form:"token" required:"true"`
+	Type      string `form:"type" required:"true"`
 	StatusStr string `form:"status"`
 	Sort      string `form:"sort"`
 	Limit     int    `form:"limit"`

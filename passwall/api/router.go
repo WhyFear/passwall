@@ -60,6 +60,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 		webGroup.GET("/subscriptions", handler.GetSubscriptions(db))
 		webGroup.GET("/get_proxies", handler.GetProxies(db))
 		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(db))
+		webGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
 	}
 
 	return router

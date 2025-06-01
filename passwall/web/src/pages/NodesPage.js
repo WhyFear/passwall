@@ -1,11 +1,11 @@
-import React, {useEffect, useState} from 'react';
-import {Badge, Button, Card, message, Modal, Table, Tabs, Tag, Tooltip} from 'antd';
-import {CopyOutlined, EyeOutlined, ReloadOutlined} from '@ant-design/icons';
-import {nodeApi, subscriptionApi} from '../api';
+import React, { useEffect, useState } from 'react';
+import { Badge, Button, Card, message, Modal, Table, Tabs, Tag, Tooltip } from 'antd';
+import { CopyOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { nodeApi, subscriptionApi } from '../api';
 
-const {TabPane} = Tabs;
+const { TabPane } = Tabs;
 
-const StatusTag = ({status}) => {
+const StatusTag = ({ status }) => {
   let color = 'default';
   let text = '未知';
 
@@ -84,6 +84,23 @@ const NodesPage = () => {
     }
   };
 
+  // 获取节点历史
+  const fetchNodeShareUrl = async (nodeId) => {
+    try {
+      setHistoryLoading(true);
+      const data = await nodeApi.getProxyShareUrl(nodeId);
+      setCurrentNode(prev => ({
+        ...prev,
+        share_url: data,
+      }));
+    } catch (error) {
+      message.error('获取节点历史失败');
+      console.error(error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   // 处理表格分页变化
   const handleTableChange = (newPagination) => {
     setPagination(prev => ({
@@ -106,18 +123,11 @@ const NodesPage = () => {
     fetchNodes();
   }, []);
 
-  // 复制节点信息
-  const handleCopyNode = (node) => {
-    const textToCopy = `${node.name || '未命名节点'} - ${node.address}`;
-    navigator.clipboard.writeText(textToCopy)
-      .then(() => message.success('复制成功'))
-      .catch(() => message.error('复制失败'));
-  };
-
   // 查看节点详情
   const handleViewNode = (node) => {
     setCurrentNode(node);
     fetchNodeHistory(node.id);
+    fetchNodeShareUrl(node.id);
     setModalVisible(true);
   };
 
@@ -147,7 +157,7 @@ const NodesPage = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (status) => <StatusTag status={status}/>,
+      render: (status) => <StatusTag status={status} />,
     },
     {
       title: 'Ping',
@@ -189,17 +199,10 @@ const NodesPage = () => {
       width: 180,
       render: (_, record) => (
         <div className="table-action">
-          <Tooltip title="复制">
-            <Button
-              type="text"
-              icon={<CopyOutlined/>}
-              onClick={() => handleCopyNode(record)}
-            />
-          </Tooltip>
           <Tooltip title="查看详情">
             <Button
               type="text"
-              icon={<EyeOutlined/>}
+              icon={<EyeOutlined />}
               onClick={() => handleViewNode(record)}
             />
           </Tooltip>
@@ -212,9 +215,9 @@ const NodesPage = () => {
     <div>
       <Tabs activeKey={activeTab} onChange={setActiveTab}>
         <TabPane tab="所有节点" key="2">
-          <div style={{marginBottom: 16}}>
+          <div style={{ marginBottom: 16 }}>
             <Button
-              icon={<ReloadOutlined/>}
+              icon={<ReloadOutlined />}
               onClick={fetchNodes}
               loading={loading}
             >
@@ -222,12 +225,12 @@ const NodesPage = () => {
             </Button>
           </div>
           <Card>
-            <div style={{marginBottom: 16, display: 'flex', gap: 16}}>
-              <Badge status="new" text={`未测试: ${nodes.filter(n => n.status === -1).length}`}/>
-              <Badge status="success" text={`正常: ${nodes.filter(n => n.status === 1).length}`}/>
-              <Badge status="error" text={`失败: ${nodes.filter(n => n.status === 2).length}`}/>
-              <Badge status="warning" text={`未知: ${nodes.filter(n => n.status === 3).length}`}/>
-              <Badge status="default" text={`总计: ${nodes.length}`}/>
+            <div style={{ marginBottom: 16, display: 'flex', gap: 16 }}>
+              <Badge status="new" text={`未测试: ${nodes.filter(n => n.status === -1).length}`} />
+              <Badge status="success" text={`正常: ${nodes.filter(n => n.status === 1).length}`} />
+              <Badge status="error" text={`失败: ${nodes.filter(n => n.status === 2).length}`} />
+              <Badge status="warning" text={`未知: ${nodes.filter(n => n.status === 3).length}`} />
+              <Badge status="default" text={`总计: ${nodes.length}`} />
             </div>
             <Table
               columns={columns}
@@ -242,7 +245,7 @@ const NodesPage = () => {
                 pageSizeOptions: ['10', '20', '50', '100']
               }}
               onChange={handleTableChange}
-              scroll={{x: 1200}}
+              scroll={{ x: 1200 }}
             />
           </Card>
         </TabPane>
@@ -262,11 +265,11 @@ const NodesPage = () => {
       >
         {currentNode && (
           <div>
-            <Card title="基本信息" style={{marginBottom: 16}}>
+            <Card title="基本信息" style={{ marginBottom: 16 }}>
               <p><strong>名称:</strong> {currentNode.name || '未命名'}</p>
               <p><strong>订阅链接:</strong> {currentNode.subscription_url}</p>
               <p><strong>地址:</strong> {currentNode.address}</p>
-              <p><strong>状态:</strong> <StatusTag status={currentNode.status}/></p>
+              <p><strong>状态:</strong> <StatusTag status={currentNode.status} /></p>
               <p><strong>Ping:</strong> {currentNode.ping ? `${currentNode.ping}ms` : '-'}</p>
               <p>
                 <strong>下载速度:</strong> {currentNode.download_speed ? `${currentNode.download_speed}KB/s` : '-'}
@@ -275,6 +278,7 @@ const NodesPage = () => {
                 <strong>上传速度:</strong> {currentNode.upload_speed ? `${currentNode.upload_speed}KB/s` : '-'}
               </p>
               <p><strong>最后测试时间:</strong> {currentNode.tested_at || '-'}</p>
+              <p><strong>分享链接:</strong> {currentNode.share_url || '-'}</p>
             </Card>
 
             <Card title="历史记录">
@@ -298,7 +302,7 @@ const NodesPage = () => {
                     title: '状态',
                     dataIndex: 'status',
                     key: 'status',
-                    render: (status) => <StatusTag status={status}/>
+                    render: (status) => <StatusTag status={status} />
                   },
                   {
                     title: 'Ping',

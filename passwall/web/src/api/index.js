@@ -1,6 +1,6 @@
 import axios from 'axios';
 import config from '../config';
-import {clearToken} from '../utils/tokenUtils';
+import { clearToken } from '../utils/tokenUtils';
 
 const API_BASE_URL = config.apiBaseUrl;
 
@@ -81,4 +81,6 @@ export const subscriptionApi = {
 export const nodeApi = {
   // 获取代理历史
   getProxyHistory: (id) => api.get(`/proxy/${id}/history`),
+  // 获取代理分享链接
+  getProxyShareUrl: (id) => api.get(`/subscribe?type=share_link&id=${id}`),
 }; 

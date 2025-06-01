@@ -33,6 +33,7 @@ type ProxyResp struct {
 	DownloadSpeed   int64     `json:"download_speed"`
 	UploadSpeed     int64     `json:"upload_speed"`
 	TestedAt        time.Time `json:"tested_at"`
+	ShareUrl        string    `json:"share_url"`
 }
 
 // PaginatedResponse 分页响应
