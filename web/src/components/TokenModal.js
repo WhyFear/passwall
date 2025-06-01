@@ -1,5 +1,5 @@
-import React, {useEffect, useState} from 'react';
 import {Button, Input, message, Modal} from 'antd';
+import React, {useEffect, useState} from 'react';
 import {getToken, hasToken, isValidTokenFormat, saveToken} from '../utils/tokenUtils';
 
 const TokenModal = ({visible, onClose}) => {
@@ -59,27 +59,23 @@ const TokenModal = ({visible, onClose}) => {
     }
   };
 
-  return (
-    <Modal
+  return (<Modal
       title="设置Token"
       open={visible}
       onCancel={handleCancel}
       maskClosable={hasToken()} // 只有在已有Token的情况下才允许点击蒙层关闭
       closable={hasToken()} // 只有在已有Token的情况下才显示关闭按钮
       keyboard={hasToken()} // 只有在已有Token的情况下才响应键盘ESC
-      footer={[
-        <Button key="cancel" onClick={handleCancel}>
-          取消
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          loading={loading}
-          onClick={handleSubmit}
-        >
-          确定
-        </Button>
-      ]}
+      footer={[<Button key="cancel" onClick={handleCancel}>
+        取消
+      </Button>, <Button
+        key="submit"
+        type="primary"
+        loading={loading}
+        onClick={handleSubmit}
+      >
+        确定
+      </Button>]}
     >
       <div style={{marginBottom: 16}}>
         <p>{getToken() ? '更新Token：' : '未检测到有效的Token，请输入Token以继续访问：'}</p>
@@ -91,8 +87,7 @@ const TokenModal = ({visible, onClose}) => {
           onPressEnter={handleSubmit}
         />
       </div>
-    </Modal>
-  );
+    </Modal>);
 };
 
 export default TokenModal; 

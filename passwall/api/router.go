@@ -64,5 +64,14 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 		webGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
 	}
 
+	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突
+	router.Static("/static", "./web/build/static")
+	router.StaticFile("/", "./web/build/index.html")
+	router.StaticFile("/favicon.ico", "./web/build/favicon.ico")
+	// 处理其他前端路由
+	router.NoRoute(func(c *gin.Context) {
+		c.File("./web/build/index.html")
+	})
+
 	return router
 }
