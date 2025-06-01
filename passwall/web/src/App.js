@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Link, Route, Routes} from 'react-router-dom';
+import {Link, Route, Routes, useLocation} from 'react-router-dom';
 import {Button, Dropdown, Layout, Menu, message} from 'antd';
 import {LinkOutlined, LogoutOutlined, NodeIndexOutlined, SettingOutlined} from '@ant-design/icons';
 import SubscriptionPage from './pages/SubscriptionPage';
@@ -12,6 +12,8 @@ const {Header, Content, Sider} = Layout;
 
 function App() {
   const [tokenModalVisible, setTokenModalVisible] = useState(false);
+  const location = useLocation();
+  const [selectedKey, setSelectedKey] = useState('1');
 
   // 在组件挂载时检查Token
   useEffect(() => {
@@ -30,6 +32,15 @@ function App() {
       window.removeEventListener('token-invalid', handleTokenInvalid);
     };
   }, []);
+
+  // 根据路径更新选中的菜单项
+  useEffect(() => {
+    if (location.pathname === '/nodes') {
+      setSelectedKey('2');
+    } else {
+      setSelectedKey('1');
+    }
+  }, [location]);
 
   // 检查Token是否存在，如果不存在则显示弹窗
   const checkToken = () => {
@@ -98,7 +109,7 @@ function App() {
         <Sider width={200} className="site-layout-background">
           <Menu
             mode="inline"
-            defaultSelectedKeys={['1']}
+            selectedKeys={[selectedKey]}
             style={{height: '100%', borderRight: 0}}
           >
             <Menu.Item key="1" icon={<LinkOutlined/>}>
