@@ -1,7 +1,7 @@
 // 应用配置
 const config = {
   // API基础URL
-  apiBaseUrl: `${window.location.origin}/web/api`,
+  apiBaseUrl: `/web/api`,
 
   // 其他配置
   appName: 'PassWall',
