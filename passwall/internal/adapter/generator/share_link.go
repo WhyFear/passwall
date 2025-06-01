@@ -255,14 +255,26 @@ func generateVLessLink(proxy *model.Proxy) (string, error) {
 	case "http":
 		httpOpts, _ := config["http-opts"].(map[string]any)
 		if httpOpts != nil {
-			if path, ok := httpOpts["path"].(string); ok && path != "" {
+			if path, ok := httpOpts["path"].(string); ok && len(path) > 0 {
 				params["path"] = path
+			} else if paths, ok := httpOpts["path"].([]any); ok && len(paths) > 0 {
+				if pathStr, ok := paths[0].(string); ok {
+					params["path"] = pathStr
+				}
+			}
+
+			if method, ok := httpOpts["method"].(string); ok && method != "" {
+				params["method"] = method
 			}
 
 			headers, _ := httpOpts["headers"].(map[string]any)
 			if headers != nil {
 				if host, ok := headers["Host"].(string); ok && host != "" {
 					params["host"] = host
+				} else if hosts, ok := headers["Host"].([]any); ok && len(hosts) > 0 {
+					if hostStr, ok := hosts[0].(string); ok {
+						params["host"] = hostStr
+					}
 				}
 			}
 			params["headerType"] = "http"

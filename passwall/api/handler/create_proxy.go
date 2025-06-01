@@ -19,8 +19,8 @@ import (
 
 // CreateProxyRequest 创建代理请求
 type CreateProxyRequest struct {
-	URL  string `form:"url"`
-	Type string `form:"type" binding:"required"`
+	URL  string `form:"url" json:"url"`
+	Type string `form:"type" json:"type" binding:"required"`
 }
 
 // CreateProxy 创建代理处理器
@@ -93,7 +93,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 					return
 				}
 			}
-		} else {
+		} else if c.Request.MultipartForm != nil {
 			// 处理文件上传
 			file, fileHeader, err := c.Request.FormFile("file")
 			if err != nil {
@@ -149,6 +149,12 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 
 			// 对于文件上传，使用截取的md5作为订阅URL
 			subscriptionURL = util.MD5(string(content))[:20]
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Missing URL or file",
+			})
 		}
 
 		// 获取解析器
