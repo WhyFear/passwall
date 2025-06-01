@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {Button, Form, Input, message, Modal, Select, Table, Tabs} from 'antd';
-import {CopyOutlined, EyeOutlined, PlusOutlined, ReloadOutlined} from '@ant-design/icons';
+import {CopyOutlined, EyeOutlined, PlusOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 
 const {TabPane} = Tabs;
