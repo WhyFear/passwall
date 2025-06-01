@@ -157,7 +157,7 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 
 		if req.WithIndex {
 			for i, proxy := range proxies {
-				proxy.Name = "[" + strconv.Itoa(i) + "]-" + proxy.Name
+				proxy.Name = "[" + strconv.Itoa(i+1) + "]-" + proxy.Name
 			}
 		}
 
