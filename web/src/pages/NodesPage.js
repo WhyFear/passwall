@@ -44,15 +44,21 @@ const NodesPage = () => {
     pageSize: 5,
     total: 0,
   });
+  const [sorter, setSorter] = useState({
+    field: 'tested_at',
+    order: 'descend',
+  });
 
   // 获取所有节点
-  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize) => {
+  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter) => {
     try {
       setLoading(true);
       const data = await subscriptionApi.getProxies({
         params: {
           page: page,
-          pageSize: pageSize
+          pageSize: pageSize,
+          sortField: sort.field,
+          sortOrder: sort.order,
         }
       });
       // 直接使用返回的items数组作为节点列表
@@ -110,8 +116,14 @@ const NodesPage = () => {
   };
 
   // 处理表格分页变化
-  const handleTableChange = (newPagination) => {
-    fetchNodes(newPagination.current, newPagination.pageSize);
+  const handleTableChange = (newPagination, filters, newSorter) => {
+    const sort = newSorter.field ? {
+      field: newSorter.field,
+      order: newSorter.order || 'descend',
+    } : sorter;
+    
+    setSorter(sort);
+    fetchNodes(newPagination.current, newPagination.pageSize, sort);
   };
 
   // 处理历史记录表格分页变化
@@ -166,29 +178,34 @@ const NodesPage = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status) => <StatusTag status={status} />,
+      sorter: true,
     },
     {
       title: 'Ping',
       dataIndex: 'ping',
       key: 'ping',
       render: (ping) => ping ? `${ping}ms` : '-',
+      sorter: true,
     },
     {
       title: '下载速度',
       dataIndex: 'download_speed',
       key: 'download_speed',
       render: (speed) => speed ? `${speed}KB/s` : '-',
+      sorter: true,
     },
     {
       title: '上传速度',
       dataIndex: 'upload_speed',
       key: 'upload_speed',
       render: (speed) => speed ? `${speed}KB/s` : '-',
+      sorter: true,
     },
     {
       title: '测试时间',
       dataIndex: 'tested_at',
-      key: 'tested_at', render: (text) => {
+      key: 'tested_at', 
+      render: (text) => {
         if (!text) return '-';
         const date = new Date(text);
         return date.toLocaleString('zh-CN', {
@@ -199,7 +216,9 @@ const NodesPage = () => {
           minute: '2-digit',
           second: '2-digit'
         });
-      }
+      },
+      sorter: true,
+      defaultSortOrder: 'descend',
     },
     {
       title: '操作',
@@ -227,13 +246,6 @@ const NodesPage = () => {
           <div style={{ marginBottom: 16 }}>
           </div>
           <Card>
-            <div style={{ marginBottom: 16, display: 'flex', gap: 16 }}>
-              <Badge status="new" text={`未测试: ${nodes.filter(n => n.status === -1).length}`} />
-              <Badge status="success" text={`正常: ${nodes.filter(n => n.status === 1).length}`} />
-              <Badge status="error" text={`失败: ${nodes.filter(n => n.status === 2).length}`} />
-              <Badge status="warning" text={`未知: ${nodes.filter(n => n.status === 3).length}`} />
-              <Badge status="default" text={`总计: ${nodes.length}`} />
-            </div>
             <Table
               columns={columns}
               dataSource={nodes}

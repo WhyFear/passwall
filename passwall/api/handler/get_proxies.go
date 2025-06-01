@@ -13,10 +13,11 @@ import (
 )
 
 type ProxyReq struct {
-	Page     int    `form:"page" json:"page"`
-	PageSize int    `form:"page_size" json:"page_size"`
-	Status   int    `form:"status"`
-	Order    string `form:"order"`
+	Page      int    `form:"page" json:"page"`
+	PageSize  int    `form:"pageSize" json:"pageSize"`
+	Status    int    `form:"status"`
+	SortField string `form:"sortField"`
+	SortOrder string `form:"sortOrder"`
 }
 
 type ProxyResp struct {
@@ -74,10 +75,17 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		// 设置排序
-		if req.Order != "" {
-			pageQuery.OrderBy = req.Order
+		if req.SortField != "" {
+			if req.SortField == "tested_at" {
+				req.SortField = "latest_test_time"
+			}
+			if req.SortOrder == "ascend" {
+				pageQuery.OrderBy = req.SortField + " ASC"
+			} else {
+				pageQuery.OrderBy = req.SortField + " DESC"
+			}
 		} else {
-			pageQuery.OrderBy = "created_at DESC"
+			pageQuery.OrderBy = "updated_at DESC"
 		}
 
 		// 执行分页查询
