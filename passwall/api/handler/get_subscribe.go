@@ -22,6 +22,7 @@ type SubscribeReq struct {
 	Sort      string `form:"sort"`
 	Limit     int    `form:"limit"`
 	ID        int    `form:"id"`
+	WithIndex bool   `form:"with_index"`
 }
 
 // GetSubscribe 获取订阅处理器
@@ -151,6 +152,12 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 			// 限制返回的代理数量
 			if limit > 0 && len(proxies) > limit {
 				proxies = proxies[:limit]
+			}
+		}
+
+		if req.WithIndex {
+			for i, proxy := range proxies {
+				proxy.Name = "[" + strconv.Itoa(i) + "]-" + proxy.Name
 			}
 		}
 
