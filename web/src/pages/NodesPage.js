@@ -46,15 +46,22 @@ const NodesPage = () => {
   });
 
   // 获取所有节点
-  const fetchNodes = async () => {
+  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize) => {
     try {
       setLoading(true);
-      const data = await subscriptionApi.getProxies();
+      const data = await subscriptionApi.getProxies({
+        params: {
+          page: page,
+          pageSize: pageSize
+        }
+      });
       // 直接使用返回的items数组作为节点列表
       const nodeList = Array.isArray(data.items) ? data.items : [];
       setNodes(nodeList);
       setPagination(prev => ({
         ...prev,
+        current: page,
+        pageSize: pageSize,
         total: data.total || nodeList.length,
       }));
     } catch (error) {
@@ -66,15 +73,16 @@ const NodesPage = () => {
   };
 
   // 获取节点历史
-  const fetchNodeHistory = async (nodeId) => {
+  const fetchNodeHistory = async (nodeId, page = historyPagination.current, pageSize = historyPagination.pageSize) => {
     try {
       setHistoryLoading(true);
-      const data = await nodeApi.getProxyHistory(nodeId);
+      const data = await nodeApi.getProxyHistory(nodeId, page, pageSize);
       setNodeHistory(Array.isArray(data) ? data : []);
       setHistoryPagination(prev => ({
         ...prev,
+        current: page,
+        pageSize: pageSize,
         total: Array.isArray(data) ? data.length : 0,
-        current: 1, // 重置为第一页
       }));
     } catch (error) {
       message.error('获取节点历史失败');
@@ -103,20 +111,14 @@ const NodesPage = () => {
 
   // 处理表格分页变化
   const handleTableChange = (newPagination) => {
-    setPagination(prev => ({
-      ...prev,
-      current: newPagination.current,
-      pageSize: newPagination.pageSize,
-    }));
+    fetchNodes(newPagination.current, newPagination.pageSize);
   };
 
   // 处理历史记录表格分页变化
   const handleHistoryTableChange = (newPagination) => {
-    setHistoryPagination(prev => ({
-      ...prev,
-      current: newPagination.current,
-      pageSize: newPagination.pageSize,
-    }));
+    if (currentNode) {
+      fetchNodeHistory(currentNode.id, newPagination.current, newPagination.pageSize);
+    }
   };
 
   useEffect(() => {
@@ -126,7 +128,13 @@ const NodesPage = () => {
   // 查看节点详情
   const handleViewNode = (node) => {
     setCurrentNode(node);
-    fetchNodeHistory(node.id);
+    // 重置历史分页到第一页
+    setHistoryPagination(prev => ({
+      ...prev,
+      current: 1,
+      pageSize: 5,
+    }));
+    fetchNodeHistory(node.id, 1, 5);
     fetchNodeShareUrl(node.id);
     setModalVisible(true);
   };
@@ -196,7 +204,8 @@ const NodesPage = () => {
     {
       title: '操作',
       key: 'action',
-      width: 180,
+      width: 60,
+      fixed: 'right',
       render: (_, record) => (
         <div className="table-action">
           <Tooltip title="查看详情">
@@ -216,13 +225,6 @@ const NodesPage = () => {
       <Tabs activeKey={activeTab} onChange={setActiveTab}>
         <TabPane tab="所有节点" key="2">
           <div style={{ marginBottom: 16 }}>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={fetchNodes}
-              loading={loading}
-            >
-              刷新节点
-            </Button>
           </div>
           <Card>
             <div style={{ marginBottom: 16, display: 'flex', gap: 16 }}>
@@ -278,12 +280,12 @@ const NodesPage = () => {
                 <strong>上传速度:</strong> {currentNode.upload_speed ? `${currentNode.upload_speed}KB/s` : '-'}
               </p>
               <p><strong>最后测试时间:</strong> {currentNode.tested_at || '-'}</p>
-              <p><strong>分享链接:</strong> 
+              <p><strong>分享链接:</strong>
                 {currentNode.share_url ? (
                   <>
-                    <div 
-                      style={{ 
-                        width: '100%', 
+                    <div
+                      style={{
+                        width: '100%',
                         backgroundColor: '#f5f5f5',
                         padding: '8px 12px',
                         borderRadius: '4px',
@@ -294,9 +296,9 @@ const NodesPage = () => {
                     >
                       {currentNode.share_url}
                     </div>
-                    <Button 
-                      type="primary" 
-                      size="small" 
+                    <Button
+                      type="primary"
+                      size="small"
                       icon={<CopyOutlined />}
                       onClick={() => {
                         navigator.clipboard.writeText(currentNode.share_url)

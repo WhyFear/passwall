@@ -12,15 +12,11 @@ import (
 	"gorm.io/gorm"
 )
 
-type Page struct {
-	Page     int `form:"page" json:"page"`
-	PageSize int `form:"page_size" json:"page_size"`
-}
-
 type ProxyReq struct {
-	Page   Page   `form:"page"`
-	Status int    `form:"status"`
-	Order  string `form:"order"`
+	Page     int    `form:"page" json:"page"`
+	PageSize int    `form:"page_size" json:"page_size"`
+	Status   int    `form:"status"`
+	Order    string `form:"order"`
 }
 
 type ProxyResp struct {
@@ -53,11 +49,11 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		// 设置默认值
-		if req.Page.Page <= 0 {
-			req.Page.Page = 1
+		if req.Page <= 0 {
+			req.Page = 1
 		}
-		if req.Page.PageSize <= 0 {
-			req.Page.PageSize = 10
+		if req.Page <= 0 {
+			req.Page = 10
 		}
 
 		// 构建查询条件
@@ -72,8 +68,8 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 
 		// 构建分页查询参数
 		pageQuery := repository.PageQuery{
-			Page:     req.Page.Page,
-			PageSize: req.Page.PageSize,
+			Page:     req.Page,
+			PageSize: req.PageSize,
 			Filters:  filters,
 		}
 
@@ -99,17 +95,30 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 					URL: "未知",
 				}
 			}
-			result = append(result, ProxyResp{
-				ID:              int(proxy.ID),
-				SubscriptionUrl: subscription.URL,
-				Name:            proxy.Name,
-				Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
-				Status:          int(proxy.Status),
-				Ping:            proxy.Ping,
-				DownloadSpeed:   proxy.DownloadSpeed,
-				UploadSpeed:     proxy.UploadSpeed,
-				TestedAt:        *proxy.LatestTestTime,
-			})
+			if proxy.LatestTestTime == nil {
+				result = append(result, ProxyResp{
+					ID:              int(proxy.ID),
+					SubscriptionUrl: subscription.URL,
+					Name:            proxy.Name,
+					Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
+					Status:          int(proxy.Status),
+					Ping:            proxy.Ping,
+					DownloadSpeed:   proxy.DownloadSpeed,
+					UploadSpeed:     proxy.UploadSpeed,
+				})
+			} else {
+				result = append(result, ProxyResp{
+					ID:              int(proxy.ID),
+					SubscriptionUrl: subscription.URL,
+					Name:            proxy.Name,
+					Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
+					Status:          int(proxy.Status),
+					Ping:            proxy.Ping,
+					DownloadSpeed:   proxy.DownloadSpeed,
+					UploadSpeed:     proxy.UploadSpeed,
+					TestedAt:        *proxy.LatestTestTime,
+				})
+			}
 		}
 
 		// 返回分页数据

@@ -73,14 +73,21 @@ export const subscriptionApi = {
   // 获取订阅详情
   getSubscriptionDetail: (id, content = true) => api.get(`/subscriptions?id=${id}&content=${content}`),
 
-  // 创建订阅链接
-  getProxies: (data) => api.get('/get_proxies', data),
+  // 获取所有代理节点
+  getProxies: (params) => api.get('/get_proxies', params),
+
+  createProxy: (data) => api.post('/create_proxy', data),
 };
 
 // 节点相关API
 export const nodeApi = {
   // 获取代理历史
-  getProxyHistory: (id) => api.get(`/proxy/${id}/history`),
+  getProxyHistory: (id, page = 1, pageSize = 5) => api.get(`/proxy/${id}/history`, {
+    params: {
+      page: page,
+      pageSize: pageSize
+    }
+  }),
   // 获取代理分享链接
   getProxyShareUrl: (id) => api.get(`/subscribe?type=share_link&id=${id}`),
 }; 

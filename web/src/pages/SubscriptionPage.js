@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {Button, Form, Input, message, Modal, Table, Tabs} from 'antd';
-import {EyeOutlined, PlusOutlined, ReloadOutlined} from '@ant-design/icons';
+import {Button, Form, Input, message, Modal, Select, Table, Tabs} from 'antd';
+import {CopyOutlined, EyeOutlined, PlusOutlined, ReloadOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 
 const {TabPane} = Tabs;
@@ -29,22 +29,8 @@ const SubscriptionPage = () => {
   };
 
   useEffect(() => {
-    fetchSubscriptions();
+    fetchSubscriptions()
   }, []);
-
-  // 刷新订阅
-  const handleReloadSubscription = async () => {
-    try {
-      setLoading(true);
-      fetchSubscriptions();
-      message.success('刷新订阅成功');
-    } catch (error) {
-      message.error('刷新订阅失败');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // 添加订阅
   const handleAddSubscription = () => {
@@ -94,7 +80,7 @@ const SubscriptionPage = () => {
       await subscriptionApi.createProxy(values);
       message.success('添加订阅成功');
       setModalVisible(false);
-      fetchSubscriptions();
+      await fetchSubscriptions();
     } catch (error) {
       message.error('添加订阅失败');
       console.error(error);
@@ -138,13 +124,6 @@ const SubscriptionPage = () => {
           >
             新增
           </Button>
-          <Button
-            icon={<ReloadOutlined/>}
-            onClick={handleReloadSubscription}
-            loading={loading}
-          >
-            刷新订阅
-          </Button>
         </div>
         <Table
           columns={columns}
@@ -186,11 +165,36 @@ const SubscriptionPage = () => {
         >
           <Input placeholder="请输入订阅链接"/>
         </Form.Item>
+        <Form.Item
+          name="type"
+          label="类型"
+          rules={[{required: true, message: '请选择类型'}]}
+        >
+          <Select
+            style={{width: '100%'}}
+            placeholder="请选择订阅类型"
+            options={[{value: 'clash', label: 'Clash'}, {value: 'share_url', label: '分享链接'},]}
+          />
+        </Form.Item>
+
         {modalType === 'view' && currentSubscription && (<>
           <Form.Item label="创建时间">
             <Input value={currentSubscription.updated_at} disabled/>
           </Form.Item>
           {currentSubscription.content && (<Form.Item label="订阅内容">
+            <Button
+              type="primary"
+              size="small"
+              icon={<CopyOutlined/>}
+              onClick={() => {
+                navigator.clipboard.writeText(currentSubscription.content)
+                  .then(() => message.success('分享链接已复制到剪贴板'))
+                  .catch(() => message.error('复制失败，请手动复制'));
+              }}
+              disabled={!currentSubscription.content}
+            >
+              复制
+            </Button>
             <Input.TextArea
               value={currentSubscription.content}
               disabled
