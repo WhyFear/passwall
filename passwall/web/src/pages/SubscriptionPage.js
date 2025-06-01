@@ -59,7 +59,7 @@ const SubscriptionPage = () => {
         setModalType('view');
         setCurrentSubscription(record);
         setLoading(true);
-        
+
         // 调用API获取订阅详情，包含content内容
         subscriptionApi.getSubscriptionDetail(record.id, true)
             .then(data => {
@@ -190,15 +190,13 @@ const SubscriptionPage = () => {
                     <Form.Item label="创建时间">
                         <Input value={currentSubscription.updated_at} disabled/>
                     </Form.Item>
-                    {currentSubscription.content && (
-                        <Form.Item label="订阅内容">
-                            <Input.TextArea 
-                                value={currentSubscription.content} 
-                                disabled 
-                                autoSize={{ minRows: 3, maxRows: 10 }}
+                    {currentSubscription.content && (<Form.Item label="订阅内容">
+                            <Input.TextArea
+                                value={currentSubscription.content}
+                                disabled
+                                autoSize={{minRows: 3, maxRows: 10}}
                             />
-                        </Form.Item>
-                    )}
+                        </Form.Item>)}
                 </>)}
             </Form>
         </Modal>
