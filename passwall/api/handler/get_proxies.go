@@ -104,30 +104,20 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 					URL: "未知",
 				}
 			}
-			if proxy.LatestTestTime == nil {
-				result = append(result, ProxyResp{
-					ID:              int(proxy.ID),
-					SubscriptionUrl: subscription.URL,
-					Name:            proxy.Name,
-					Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
-					Status:          int(proxy.Status),
-					Ping:            proxy.Ping,
-					DownloadSpeed:   proxy.DownloadSpeed,
-					UploadSpeed:     proxy.UploadSpeed,
-				})
-			} else {
-				result = append(result, ProxyResp{
-					ID:              int(proxy.ID),
-					SubscriptionUrl: subscription.URL,
-					Name:            proxy.Name,
-					Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
-					Status:          int(proxy.Status),
-					Ping:            proxy.Ping,
-					DownloadSpeed:   proxy.DownloadSpeed,
-					UploadSpeed:     proxy.UploadSpeed,
-					TestedAt:        *proxy.LatestTestTime,
-				})
+			tempProxy := ProxyResp{
+				ID:              int(proxy.ID),
+				SubscriptionUrl: subscription.URL,
+				Name:            proxy.Name,
+				Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
+				Status:          int(proxy.Status),
+				Ping:            proxy.Ping,
+				DownloadSpeed:   proxy.DownloadSpeed,
+				UploadSpeed:     proxy.UploadSpeed,
 			}
+			if proxy.LatestTestTime != nil {
+				tempProxy.TestedAt = *proxy.LatestTestTime
+			}
+			result = append(result, tempProxy)
 		}
 
 		// 返回分页数据
