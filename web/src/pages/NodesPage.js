@@ -48,19 +48,29 @@ const NodesPage = () => {
     field: 'tested_at',
     order: 'descend',
   });
+  const [filters, setFilters] = useState({});
 
   // 获取所有节点
-  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter) => {
+  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
     try {
       setLoading(true);
-      const data = await subscriptionApi.getProxies({
-        params: {
-          page: page,
-          pageSize: pageSize,
-          sortField: sort.field,
-          sortOrder: sort.order,
-        }
-      });
+      
+      // 构建请求参数
+      const params = {
+        page: page,
+        pageSize: pageSize,
+        sortField: sort.field,
+        sortOrder: sort.order,
+      };
+      
+      // 处理状态筛选
+      if (filter.status && filter.status.length > 0) {
+        // 按status=1,2,3拼接
+        params.status = filter.status.join(',');
+      }
+      
+      const data = await subscriptionApi.getProxies({ params });
+      
       // 直接使用返回的items数组作为节点列表
       const nodeList = Array.isArray(data.items) ? data.items : [];
       setNodes(nodeList);
@@ -116,14 +126,21 @@ const NodesPage = () => {
   };
 
   // 处理表格分页变化
-  const handleTableChange = (newPagination, filters, newSorter) => {
+  const handleTableChange = (newPagination, newFilters, newSorter) => {
     const sort = newSorter.field ? {
       field: newSorter.field,
       order: newSorter.order || 'descend',
     } : sorter;
     
+    // 处理筛选条件
+    const filter = {};
+    if (newFilters.status && newFilters.status.length > 0) {
+      filter.status = newFilters.status;
+    }
+    
     setSorter(sort);
-    fetchNodes(newPagination.current, newPagination.pageSize, sort);
+    setFilters(filter);
+    fetchNodes(newPagination.current, newPagination.pageSize, sort, filter);
   };
 
   // 处理历史记录表格分页变化
@@ -179,6 +196,13 @@ const NodesPage = () => {
       key: 'status',
       render: (status) => <StatusTag status={status} />,
       sorter: true,
+      filters: [
+        { text: '未测试', value: -1 },
+        { text: '正常', value: 1 },
+        { text: '失败', value: 2 },
+        { text: '未知错误', value: 3 }
+      ],
+      filterMultiple: true,
     },
     {
       title: 'Ping',

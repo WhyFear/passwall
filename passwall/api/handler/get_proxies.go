@@ -5,6 +5,7 @@ import (
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,7 @@ import (
 type ProxyReq struct {
 	Page      int    `form:"page" json:"page"`
 	PageSize  int    `form:"pageSize" json:"pageSize"`
-	Status    int    `form:"status"`
+	Status    string `form:"status"`
 	SortField string `form:"sortField"`
 	SortOrder string `form:"sortOrder"`
 }
@@ -53,8 +54,8 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 		if req.Page <= 0 {
 			req.Page = 1
 		}
-		if req.Page <= 0 {
-			req.Page = 10
+		if req.PageSize <= 0 {
+			req.PageSize = 10
 		}
 
 		// 构建查询条件
@@ -63,8 +64,8 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 
 		// 构建过滤条件
 		filters := make(map[string]interface{})
-		if req.Status != 0 {
-			filters["status"] = req.Status
+		if len(req.Status) > 0 {
+			filters["status"] = strings.Split(req.Status, ",")
 		}
 
 		// 构建分页查询参数

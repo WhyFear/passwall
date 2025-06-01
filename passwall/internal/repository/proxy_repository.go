@@ -147,7 +147,16 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	// 应用过滤条件
 	if query.Filters != nil {
 		for key, value := range query.Filters {
-			db = db.Where(key, value)
+			// 特殊处理状态数组
+			if key == "status" {
+				if statusArray, ok := value.([]int); ok && len(statusArray) > 0 {
+					db = db.Where("status IN ?", statusArray)
+				} else {
+					db = db.Where(key, value)
+				}
+			} else {
+				db = db.Where(key, value)
+			}
 		}
 	}
 
