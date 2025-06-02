@@ -10,7 +10,7 @@ import (
 // SpeedTestHistoryRepository 测速历史记录仓库接口
 type SpeedTestHistoryRepository interface {
 	FindByID(id uint) (*model.SpeedTestHistory, error)
-	FindByProxyID(proxyID uint, limit int) ([]*model.SpeedTestHistory, error)
+	FindByProxyID(proxyID uint, page PageQuery) ([]*model.SpeedTestHistory, error)
 	FindByTimeRange(proxyID uint, startTime, endTime time.Time) ([]*model.SpeedTestHistory, error)
 	Create(history *model.SpeedTestHistory) error
 	Delete(id uint) error
@@ -38,18 +38,23 @@ func (r *GormSpeedTestHistoryRepository) FindByID(id uint) (*model.SpeedTestHist
 }
 
 // FindByProxyID 根据代理ID查找测速历史记录
-func (r *GormSpeedTestHistoryRepository) FindByProxyID(proxyID uint, limit int) ([]*model.SpeedTestHistory, error) {
+func (r *GormSpeedTestHistoryRepository) FindByProxyID(proxyID uint, page PageQuery) ([]*model.SpeedTestHistory, error) {
 	var histories []*model.SpeedTestHistory
 	query := r.db.Where("proxy_id = ?", proxyID).Order("created_at DESC")
 
-	// 限制返回数量
-	if limit > 0 {
-		query = query.Limit(limit)
+	// 设置默认值
+	if page.Page <= 0 {
+		page.Page = 1
 	}
 
-	result := query.Find(&histories)
-	if result.Error != nil {
-		return nil, result.Error
+	if page.PageSize <= 0 {
+		page.PageSize = 10
+	}
+	// 执行分页查询
+	if err := query.Offset((page.Page - 1) * page.PageSize).
+		Limit(page.PageSize).
+		Find(&histories).Error; err != nil {
+		return nil, err
 	}
 	return histories, nil
 }

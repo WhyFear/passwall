@@ -35,7 +35,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(db, services.TaskManager, services.ProxyTester))
 
 		apiGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
-		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(services.TaskManager, services.ProxyTester))
+		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(services.ProxyTester))
 
 		// 添加任务状态API
 		apiGroup.GET("/task_status", func(c *gin.Context) {
