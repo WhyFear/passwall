@@ -33,9 +33,10 @@ func (g *ShareLinkGenerator) Generate(proxies []*model.Proxy) ([]byte, error) {
 	if len(links) == 0 {
 		return nil, fmt.Errorf("没有可生成分享链接的代理")
 	}
+	result := strings.Join(links, "\n")
 	// 将links用base64编码
-	encodedLinks := base64.StdEncoding.EncodeToString([]byte(strings.Join(links, "\n")))
-	return []byte(encodedLinks), nil
+	result = base64.StdEncoding.EncodeToString([]byte(result))
+	return []byte(result), nil
 }
 
 // Format 返回生成的配置格式

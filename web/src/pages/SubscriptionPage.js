@@ -2,9 +2,6 @@ import React, {useEffect, useState} from 'react';
 import {Button, Form, Input, message, Modal, Select, Table, Tabs} from 'antd';
 import {CopyOutlined, EyeOutlined, PlusOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
-
-const {TabPane} = Tabs;
-
 const SubscriptionPage = () => {
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -114,7 +111,7 @@ const SubscriptionPage = () => {
 
   return (<div>
     <Tabs activeKey={activeTab} onChange={setActiveTab}>
-      <TabPane tab="订阅链接" key="1">
+      <items tab="订阅链接" key="1">
         <div style={{marginBottom: 16}}>
           <Button
             type="primary"
@@ -132,7 +129,7 @@ const SubscriptionPage = () => {
           loading={loading}
           pagination={{pageSize: 10}}
         />
-      </TabPane>
+      </items>
     </Tabs>
 
     {/* 添加/查看订阅的弹窗 */}

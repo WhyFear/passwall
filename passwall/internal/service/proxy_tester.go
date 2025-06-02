@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -372,8 +373,8 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 				return
 			}
 
-			log.Infoln("测试代理[代理ID:%d 名称:%v]结果: Ping=%dms, 下载=%dMB/s, 上传=%dMB/s",
-				p.ID, p.Name, result.Ping, result.DownloadSpeed/1024, result.UploadSpeed/1024)
+			log.Infoln("测试代理[代理ID:%d 名称:%v]结果: Ping=%dms, 下载=%v, 上传=%v",
+				p.ID, p.Name, result.Ping, formatSpeed(result.DownloadSpeed), formatSpeed(result.UploadSpeed))
 			// 更新代理状态
 			p.Ping = result.Ping
 			p.DownloadSpeed = result.DownloadSpeed
@@ -413,4 +414,15 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 	// 完成任务
 	s.taskManager.FinishTask(taskType, "")
 	log.Infoln("本次测试完成")
+}
+
+func formatSpeed(bytesPerSecond int64) string {
+	units := []string{"B/s", "KB/s", "MB/s", "GB/s", "TB/s"}
+	unit := 0
+	speed := bytesPerSecond
+	for speed >= 1024 && unit < len(units)-1 {
+		speed /= 1024
+		unit++
+	}
+	return fmt.Sprintf("%.2f%s", speed, units[unit])
 }
