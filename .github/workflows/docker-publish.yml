@@ -20,5 +20,5 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest .
+          docker build --no-cache -t ${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest .
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest
