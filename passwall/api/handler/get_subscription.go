@@ -40,20 +40,15 @@ func GetSubscriptions(db *gorm.DB) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch subscription"})
 				return
 			}
-			if req.Content {
-				results = append(results, SubscriptionResp{
-					ID:        int(subscription.ID),
-					Url:       subscription.URL,
-					UpdatedAt: subscription.UpdatedAt,
-					Content:   subscription.Content,
-				})
-			} else {
-				results = append(results, SubscriptionResp{
-					ID:        int(subscription.ID),
-					Url:       subscription.URL,
-					UpdatedAt: subscription.UpdatedAt,
-				})
+			tempSubscription := SubscriptionResp{
+				ID:        int(subscription.ID),
+				Url:       subscription.URL,
+				UpdatedAt: subscription.UpdatedAt,
 			}
+			if req.Content {
+				tempSubscription.Content = subscription.Content
+			}
+			results = append(results, tempSubscription)
 		} else {
 			subscriptions, err := subscriptionRepo.FindAll()
 			if err != nil {
@@ -61,20 +56,15 @@ func GetSubscriptions(db *gorm.DB) gin.HandlerFunc {
 				return
 			}
 			for _, subscription := range subscriptions {
-				if req.Content {
-					results = append(results, SubscriptionResp{
-						ID:        int(subscription.ID),
-						Url:       subscription.URL,
-						UpdatedAt: subscription.UpdatedAt,
-						Content:   subscription.Content,
-					})
-				} else {
-					results = append(results, SubscriptionResp{
-						ID:        int(subscription.ID),
-						Url:       subscription.URL,
-						UpdatedAt: subscription.UpdatedAt,
-					})
+				tempSubscription := SubscriptionResp{
+					ID:        int(subscription.ID),
+					Url:       subscription.URL,
+					UpdatedAt: subscription.UpdatedAt,
 				}
+				if req.Content {
+					tempSubscription.Content = subscription.Content
+				}
+				results = append(results, tempSubscription)
 			}
 		}
 		c.JSON(http.StatusOK, results)

@@ -17,6 +17,7 @@ type ProxyReq struct {
 	Page      int    `form:"page" json:"page"`
 	PageSize  int    `form:"pageSize" json:"pageSize"`
 	Status    string `form:"status"`
+	Type      string `form:"type"`
 	SortField string `form:"sortField"`
 	SortOrder string `form:"sortOrder"`
 }
@@ -26,11 +27,12 @@ type ProxyResp struct {
 	SubscriptionUrl string    `json:"subscription_url"`
 	Name            string    `json:"name"`
 	Address         string    `json:"address"`
+	Type            string    `json:"type"`
 	Status          int       `json:"status"`
 	Ping            int       `json:"ping"`
 	DownloadSpeed   int64     `json:"download_speed"`
 	UploadSpeed     int64     `json:"upload_speed"`
-	TestedAt        time.Time `json:"tested_at"`
+	LatestTestTime  time.Time `json:"latest_test_time"`
 	ShareUrl        string    `json:"share_url"`
 }
 
@@ -67,6 +69,9 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 		if len(req.Status) > 0 {
 			filters["status"] = strings.Split(req.Status, ",")
 		}
+		if len(req.Type) > 0 {
+			filters["type"] = strings.Split(req.Type, ",")
+		}
 
 		// 构建分页查询参数
 		pageQuery := repository.PageQuery{
@@ -77,16 +82,13 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 
 		// 设置排序
 		if req.SortField != "" {
-			if req.SortField == "tested_at" {
-				req.SortField = "latest_test_time"
-			}
 			if req.SortOrder == "ascend" {
 				pageQuery.OrderBy = req.SortField + " ASC"
 			} else {
 				pageQuery.OrderBy = req.SortField + " DESC"
 			}
 		} else {
-			pageQuery.OrderBy = "updated_at DESC"
+			pageQuery.OrderBy = "download_speed DESC"
 		}
 
 		// 执行分页查询
@@ -109,13 +111,14 @@ func GetProxies(db *gorm.DB) gin.HandlerFunc {
 				SubscriptionUrl: subscription.URL,
 				Name:            proxy.Name,
 				Address:         proxy.Domain + ":" + strconv.Itoa(proxy.Port),
+				Type:            string(proxy.Type),
 				Status:          int(proxy.Status),
 				Ping:            proxy.Ping,
 				DownloadSpeed:   proxy.DownloadSpeed,
 				UploadSpeed:     proxy.UploadSpeed,
 			}
 			if proxy.LatestTestTime != nil {
-				tempProxy.TestedAt = *proxy.LatestTestTime
+				tempProxy.LatestTestTime = *proxy.LatestTestTime
 			}
 			result = append(result, tempProxy)
 		}

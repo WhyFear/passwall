@@ -62,6 +62,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 		webGroup.GET("/get_proxies", handler.GetProxies(db))
 		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(db))
 		webGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
+		webGroup.GET("/get_types", handler.GetTypes(db))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

@@ -29,9 +29,8 @@ type ProxyRepository interface {
 	Create(proxy *model.Proxy) error
 	Update(proxy *model.Proxy) error
 	Delete(id uint) error
-	SaveSpeedTestResult(proxyID uint, result *model.SpeedTestResult) error
-	// 新增分页查询方法
 	FindPage(query PageQuery) (*PageResult, error)
+	GetTypes(types *[]string) error
 }
 
 // GormProxyRepository 基于GORM的代理服务器仓库实现
@@ -151,12 +150,16 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 			if key == "status" {
 				if statusArray, ok := value.([]int); ok && len(statusArray) > 0 {
 					db = db.Where("status IN ?", statusArray)
-				} else {
-					db = db.Where(key, value)
+					continue
 				}
-			} else {
-				db = db.Where(key, value)
 			}
+			if key == "type" {
+				if typeArray, ok := value.([]string); ok && len(typeArray) > 0 {
+					db = db.Where("type IN ?", typeArray)
+					continue
+				}
+			}
+			db = db.Where(key, value)
 		}
 	}
 
@@ -192,4 +195,15 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 		Total: total,
 		Items: proxies,
 	}, nil
+}
+
+// GetTypes 获取所有代理类型
+func (r *GormProxyRepository) GetTypes(types *[]string) error {
+	var proxyTypes []string
+	result := r.db.Model(&model.Proxy{}).Distinct("type").Pluck("type", &proxyTypes)
+	if result.Error != nil {
+		return result.Error
+	}
+	*types = proxyTypes
+	return nil
 }

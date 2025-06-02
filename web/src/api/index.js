@@ -90,4 +90,5 @@ export const nodeApi = {
   }),
   // 获取代理分享链接
   getProxyShareUrl: (id) => api.get(`/subscribe?type=share_link&id=${id}`),
+  getTypes: () => api.get('/get_types'),
 }; 
