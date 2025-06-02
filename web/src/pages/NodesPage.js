@@ -2,6 +2,7 @@ import {CopyOutlined, EyeOutlined} from '@ant-design/icons';
 import {Button, Card, message, Modal, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
+
 const StatusTag = ({status}) => {
   let color = 'default';
   let text = '未知';
@@ -399,20 +400,7 @@ const NodesPage = () => {
         <Card title="历史记录">
           <Table
             columns={[{
-              title: '测试时间', dataIndex: 'latest_test_time', key: 'latest_test_time', render: (text) => {
-                if (!text) return '-';
-                const date = new Date(text);
-                return date.toLocaleString('zh-CN', {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit'
-                });
-              }
-            }, {
-              title: '状态', dataIndex: 'status', key: 'status', render: (status) => <StatusTag status={status}/>
+              title: '测试时间', dataIndex: 'tested_at', key: 'tested_at', render: (text) => formatDate(text)
             }, {
               title: 'Ping', dataIndex: 'ping', key: 'ping', render: (ping) => ping ? `${ping}ms` : '-'
             }, {

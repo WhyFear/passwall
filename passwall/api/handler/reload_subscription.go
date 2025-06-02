@@ -14,7 +14,8 @@ type ReloadSubscriptionRequest struct {
 }
 
 // ReloadSubscription 重新加载订阅处理器
-func ReloadSubscription(taskManager service.TaskManager, proxyTester service.ProxyTester) gin.HandlerFunc {
+func ReloadSubscription(proxyTester service.ProxyTester) gin.HandlerFunc {
+	// TODO 完善逻辑
 	return func(c *gin.Context) {
 		var req ReloadSubscriptionRequest
 
