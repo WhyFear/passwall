@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"gorm.io/gorm/clause"
 	"passwall/internal/model"
 	"time"
 
@@ -27,6 +28,7 @@ type ProxyRepository interface {
 	FindAll(filters map[string]interface{}) ([]*model.Proxy, error)
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
 	Create(proxy *model.Proxy) error
+	BatchCreate(proxies []*model.Proxy) error
 	Update(proxy *model.Proxy) error
 	Delete(id uint) error
 	FindPage(query PageQuery) (*PageResult, error)
@@ -83,6 +85,15 @@ func (r *GormProxyRepository) FindByStatus(status model.ProxyStatus) ([]*model.P
 // Create 创建代理服务器
 func (r *GormProxyRepository) Create(proxy *model.Proxy) error {
 	return r.db.Create(proxy).Error
+}
+
+// BatchCreate 批量创建代理服务器
+func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
+	// TODO ON DUPLICATE KEY UPDATE
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{},                            // 冲突检测字段（唯一索引）
+		DoUpdates: clause.AssignmentColumns([]string{"config"}), // 冲突时更新的字段
+	}).Create(proxies).Error
 }
 
 // Update 更新代理服务器

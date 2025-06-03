@@ -293,7 +293,8 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 	// 如果没有代理需要测试，直接返回
 	if len(proxies) == 0 {
-		return errors.New("no proxies to test")
+		log.Infoln("no proxies to test")
+		return nil
 	}
 
 	// 开始任务

@@ -4,17 +4,18 @@ import (
 	"errors"
 	"io/ioutil"
 	"net/http"
+	"passwall/internal/repository"
 
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
-	"passwall/internal/repository"
 )
 
 // SubscriptionService 订阅服务接口
 type SubscriptionService interface {
 	GetSubscriptionByID(id uint) (*model.Subscription, error)
 	GetAllSubscriptions() ([]*model.Subscription, error)
-	CreateSubscription(url string, subType model.SubscriptionType) (*model.Subscription, error)
+	GetSubscriptionByURL(url string) (*model.Subscription, error)
+	CreateSubscription(subscription *model.Subscription) error
 	UpdateSubscription(subscription *model.Subscription) error
 	DeleteSubscription(id uint) error
 	ReloadSubscription(id uint) error
@@ -51,28 +52,17 @@ func (s *DefaultSubscriptionService) GetAllSubscriptions() ([]*model.Subscriptio
 	return s.subscriptionRepo.FindAll()
 }
 
+// GetSubscriptionByURL 根据URL获取订阅
+func (s *DefaultSubscriptionService) GetSubscriptionByURL(url string) (*model.Subscription, error) {
+	return s.subscriptionRepo.FindByURL(url)
+}
+
 // CreateSubscription 创建订阅
-func (s *DefaultSubscriptionService) CreateSubscription(url string, subType model.SubscriptionType) (*model.Subscription, error) {
-	// 1. 创建订阅记录
-	subscription := &model.Subscription{
-		URL:    url,
-		Type:   subType,
-		Status: model.SubscriptionStatusPending,
-	}
-
+func (s *DefaultSubscriptionService) CreateSubscription(subscription *model.Subscription) error {
 	if err := s.subscriptionRepo.Create(subscription); err != nil {
-		return nil, err
+		return err
 	}
-
-	// 2. 尝试加载订阅内容
-	if err := s.ReloadSubscription(subscription.ID); err != nil {
-		// 更新状态为无法处理
-		subscription.Status = model.SubscriptionStatusInvalid
-		_ = s.subscriptionRepo.Update(subscription)
-		return subscription, err
-	}
-
-	return subscription, nil
+	return nil
 }
 
 // UpdateSubscription 更新订阅

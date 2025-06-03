@@ -11,12 +11,14 @@ import (
 
 // Services 所有服务的集合
 type Services struct {
-	SubscriptionService SubscriptionService
-	ParserFactory       parser.ParserFactory
-	GeneratorFactory    generator.GeneratorFactory
-	TaskManager         TaskManager
-	ProxyTester         ProxyTester
-	SpeedTesterFactory  speedtester.SpeedTesterFactory
+	SubscriptionService     SubscriptionService
+	ProxyService            ProxyService
+	SpeedTestHistoryService SpeedTestHistoryService
+	TaskManager             TaskManager
+	ProxyTester             ProxyTester
+	ParserFactory           parser.ParserFactory
+	GeneratorFactory        generator.GeneratorFactory
+	SpeedTesterFactory      speedtester.SpeedTesterFactory
 }
 
 // NewServices 初始化所有服务
@@ -45,14 +47,18 @@ func NewServices(db *gorm.DB) *Services {
 
 	// 创建服务
 	subscriptionService := NewSubscriptionService(subscriptionRepo, proxyRepo, parserFactory)
+	proxyService := NewProxyService(proxyRepo)
+	speedTestHistoryService := NewSpeedTestHistoryService(speedTestHistoryRepo)
 	proxyTester := NewProxyTester(proxyRepo, subscriptionRepo, speedTestHistoryRepo, speedTesterFactory, parserFactory, taskManager)
 
 	return &Services{
-		SubscriptionService: subscriptionService,
-		ParserFactory:       parserFactory,
-		GeneratorFactory:    generatorFactory,
-		TaskManager:         taskManager,
-		ProxyTester:         proxyTester,
-		SpeedTesterFactory:  speedTesterFactory,
+		SubscriptionService:     subscriptionService,
+		ProxyService:            proxyService,
+		SpeedTestHistoryService: speedTestHistoryService,
+		ProxyTester:             proxyTester,
+		SpeedTesterFactory:      speedTesterFactory,
+		TaskManager:             taskManager,
+		ParserFactory:           parserFactory,
+		GeneratorFactory:        generatorFactory,
 	}
 }

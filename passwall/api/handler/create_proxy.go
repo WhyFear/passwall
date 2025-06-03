@@ -12,7 +12,6 @@ import (
 	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
-	"passwall/internal/repository"
 	"passwall/internal/service"
 	"passwall/internal/util"
 )
@@ -24,7 +23,7 @@ type CreateProxyRequest struct {
 }
 
 // CreateProxy 创建代理处理器
-func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
+func CreateProxy(db *gorm.DB, proxyService service.ProxyService, subscriptionService service.SubscriptionService, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -169,11 +168,8 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 			return
 		}
 
-		// 先创建一个订阅记录
-		subscriptionRepo := repository.NewSubscriptionRepository(db)
-
 		// 检查URL是否已存在
-		existingSub, err := subscriptionRepo.FindByURL(subscriptionURL)
+		existingSub, err := subscriptionService.GetSubscriptionByURL(subscriptionURL)
 		if err == nil && existingSub != nil {
 			// URL已存在，返回现有订阅ID
 			log.Infoln("订阅配置已存在:", subscriptionURL)
@@ -194,21 +190,17 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 		}
 
 		// 先落库
-		if err := subscriptionRepo.Create(subscription); err != nil {
+		if err := subscriptionService.CreateSubscription(subscription); err != nil {
 			// 检查是否是唯一键冲突错误
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-				// 尝试查找已存在的记录
-				existingSub, findErr := subscriptionRepo.FindByURL(subscriptionURL)
-				if findErr == nil && existingSub != nil {
-					log.Infoln("订阅配置已存在(创建时检测):", subscriptionURL)
-					c.JSON(http.StatusOK, gin.H{
-						"result":          "fail",
-						"status_code":     http.StatusOK,
-						"status_msg":      "订阅配置已存在",
-						"subscription_id": existingSub.ID,
-					})
-					return
-				}
+				log.Infoln("订阅配置已存在(创建时检测):", subscriptionURL)
+				c.JSON(http.StatusOK, gin.H{
+					"result":          "fail",
+					"status_code":     http.StatusOK,
+					"status_msg":      "订阅配置已存在",
+					"subscription_id": existingSub.ID,
+				})
+				return
 			}
 
 			// 其他错误
@@ -227,7 +219,7 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 			log.Errorln("解析订阅配置失败:", err)
 			// 更新订阅状态为无法处理
 			subscription.Status = model.SubscriptionStatusInvalid
-			subscriptionRepo.Update(subscription)
+			_ = subscriptionService.UpdateSubscription(subscription)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
@@ -236,41 +228,25 @@ func CreateProxy(db *gorm.DB, parserFactory parser.ParserFactory, proxyTester se
 			return
 		}
 
-		// 检查解析结果是否为空
-		if len(proxies) == 0 {
-			log.Errorln("订阅配置中未找到代理服务器")
-			// 更新订阅状态为无法处理
-			subscription.Status = model.SubscriptionStatusInvalid
-			subscriptionRepo.Update(subscription)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusBadRequest,
-				"status_msg":  "No proxies found in subscription",
-			})
-			return
-		}
-
 		// 保存解析出的代理服务器
-		proxyRepo := repository.NewProxyRepository(db)
-		savedCount := 0
 		for _, proxy := range proxies {
 			// 设置订阅ID
 			proxy.SubscriptionID = &subscription.ID
 			proxy.Status = model.ProxyStatusPending
-
-			// 保存代理服务器
-			if err := proxyRepo.Create(proxy); err != nil {
-				log.Errorln("保存代理服务器失败:", err)
-				continue
-			}
-			savedCount++
+		}
+		// 保存代理服务器
+		if err := proxyService.BatchCreateProxies(proxies); err != nil {
+			log.Errorln("保存代理服务器失败:", err)
 		}
 
 		// 更新订阅状态为正常
 		subscription.Status = model.SubscriptionStatusOK
-		subscriptionRepo.Update(subscription)
+		err = subscriptionService.UpdateSubscription(subscription)
+		if err != nil {
+			log.Errorln("更新订阅状态失败:", err)
+		}
 
-		log.Infoln("成功保存 %d/%d 个代理服务器", savedCount, len(proxies))
+		log.Infoln("成功保存 %d 个代理服务器", len(proxies))
 
 		// 异步处理解析
 		go func() {
