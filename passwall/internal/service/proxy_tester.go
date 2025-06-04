@@ -434,7 +434,7 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 	log.Infoln("本次测试完成")
 }
 
-func formatSpeed(bytesPerSecond int64) string {
+func formatSpeed(bytesPerSecond int) string {
 	units := []string{"B/s", "KB/s", "MB/s", "GB/s", "TB/s"}
 	unit := 0
 	speed := float64(bytesPerSecond)
