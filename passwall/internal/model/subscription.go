@@ -25,9 +25,9 @@ const (
 
 // Subscription 订阅源
 type Subscription struct {
-	ID        uint               `json:"id"`
-	URL       string             `json:"url" gorm:"uniqueIndex"` // 订阅URL或文件名，设置为唯一键
-	Content   string             `json:"content"`                // 订阅内容，对URL是链接，对文件是内容
+	ID        uint               `json:"id" gorm:"primaryKey;autoIncrement"`
+	URL       string             `json:"url" gorm:"uniqueIndex:idx_subscriptions_url"` // 订阅URL或文件名，设置为唯一键
+	Content   string             `json:"content"`                                      // 订阅内容，对URL是链接，对文件是内容
 	Type      SubscriptionType   `json:"type"`
 	Status    SubscriptionStatus `json:"status"`
 	CreatedAt time.Time          `json:"created_at"`
