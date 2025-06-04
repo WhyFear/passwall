@@ -28,6 +28,8 @@ type ProxyRepository interface {
 	FindByID(id uint) (*model.Proxy, error)
 	FindAll(filters map[string]interface{}) ([]*model.Proxy, error)
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
+	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
+	FindByDomainAndPort(domain string, port int) (*model.Proxy, error)
 	Create(proxy *model.Proxy) error
 	BatchCreate(proxies []*model.Proxy) error
 	Update(proxy *model.Proxy) error
@@ -83,6 +85,15 @@ func (r *GormProxyRepository) FindByStatus(status model.ProxyStatus) ([]*model.P
 		return nil, result.Error
 	}
 	return proxies, nil
+}
+
+func (r *GormProxyRepository) FindByDomainAndPort(domain string, port int) (*model.Proxy, error) {
+	var proxy model.Proxy
+	result := r.db.Where("domain = ? AND port = ?", domain, port).First(&proxy)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &proxy, nil
 }
 
 // Create 创建代理服务器

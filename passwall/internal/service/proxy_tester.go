@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -176,59 +175,29 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 				continue
 			}
 
-			// 保存解析的代理
-			oldProxies, err := s.proxyRepo.FindAll(map[string]interface{}{
-				"subscription_id": subscription.ID,
-			})
-			if err != nil {
-				log.Errorln("查找旧代理失败: %v", err)
-			}
-
-			// 将旧代理转换为映射以便快速查找
-			oldProxyMap := make(map[string]*model.Proxy)
-			if len(oldProxies) > 0 {
-				for _, oldProxy := range oldProxies {
-					// 使用代理的唯一标识(如域名+端口)作为键
-					key := oldProxy.Domain + ":" + strconv.Itoa(oldProxy.Port)
-					oldProxyMap[key] = oldProxy
-				}
-			}
-
-			// 记录已处理的代理ID，用于后续处理未匹配的旧代理
-			processedIDs := make(map[uint]bool)
-
-			// 处理新的代理列表
 			for _, newProxy := range newProxies {
-				newProxy.SubscriptionID = &subscription.ID
-
-				// 生成唯一标识
-				key := newProxy.Domain + ":" + strconv.Itoa(newProxy.Port)
-
-				// 检查是否存在匹配的旧代理，旧代理的状态不更新
-				if oldProxy, exists := oldProxyMap[key]; exists {
-					// 更新现有代理
-					oldProxy.Name = newProxy.Name
-					oldProxy.Type = newProxy.Type
-					oldProxy.Config = newProxy.Config
-
-					if err := s.proxyRepo.UpdateProxyConfig(oldProxy); err != nil {
-						log.Errorln("更新代理失败: %v", err)
+				oldProxies, err := s.proxyRepo.FindByDomainAndPort(newProxy.Domain, newProxy.Port)
+				if err != nil {
+					log.Errorln("查找旧代理失败: %v", err)
+				}
+				// 如果旧代理存在，则更新旧代理
+				if oldProxies != nil {
+					oldProxies.Name = newProxy.Name
+					oldProxies.Type = newProxy.Type
+					oldProxies.Config = newProxy.Config
+					if err := s.proxyRepo.UpdateProxyConfig(oldProxies); err != nil {
+						log.Errorln("更新"+oldProxies.Name+"代理配置失败: %v", err)
 						continue
 					}
-
-					// 标记为已处理
-					processedIDs[oldProxy.ID] = true
 				} else {
-					// 添加新代理
+					newProxy.SubscriptionID = &subscription.ID
 					newProxy.Status = model.ProxyStatusPending // 设置为待处理状态，等待后续测试
 					if err := s.proxyRepo.Create(newProxy); err != nil {
-						log.Errorln("保存代理失败: %v", err)
+						log.Errorln("保存"+newProxy.Name+"代理失败: %v", err)
 						continue
 					}
 				}
 			}
-
-			// 不处理未匹配的旧代理（可选：删除或标记为过期）
 
 			// 更新订阅状态
 			subscription.Status = model.SubscriptionStatusOK

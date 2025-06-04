@@ -67,7 +67,7 @@ func GetProxies(proxyService service.ProxyService) gin.HandlerFunc {
 		}
 
 		// 获取所有代理
-		proxies, err := proxyService.GetAllProxies(filters)
+		proxies, err := proxyService.GetProxiesByFilters(filters, req.SortField, req.SortOrder, req.PageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取代理列表失败"})
 			return
