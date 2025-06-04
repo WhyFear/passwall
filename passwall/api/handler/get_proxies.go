@@ -27,8 +27,8 @@ type ProxyResp struct {
 	Type            string    `json:"type"`
 	Status          int       `json:"status"`
 	Ping            int       `json:"ping"`
-	DownloadSpeed   int64     `json:"download_speed"`
-	UploadSpeed     int64     `json:"upload_speed"`
+	DownloadSpeed   int       `json:"download_speed"`
+	UploadSpeed     int       `json:"upload_speed"`
 	LatestTestTime  time.Time `json:"latest_test_time"`
 	ShareUrl        string    `json:"share_url"`
 }

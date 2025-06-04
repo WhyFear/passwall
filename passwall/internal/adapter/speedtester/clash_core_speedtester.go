@@ -66,8 +66,8 @@ func (t *ClashCoreSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult,
 	if len(results) > 0 {
 		return &model.SpeedTestResult{
 			Ping:          int(results[0].Latency.Milliseconds()),
-			DownloadSpeed: int64(results[0].DownloadSpeed), // 转换为KB/s
-			UploadSpeed:   int64(results[0].UploadSpeed),   // 转换为KB/s
+			DownloadSpeed: int(results[0].DownloadSpeed), // 转换为KB/s
+			UploadSpeed:   int(results[0].UploadSpeed),   // 转换为KB/s
 		}, nil
 	}
 

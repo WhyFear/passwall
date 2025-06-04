@@ -20,8 +20,8 @@ type GetProxyHistoryRequest struct {
 type GetProxyHistoryResponse struct {
 	ID            uint      `json:"id"`
 	Ping          int       `json:"ping"`
-	DownloadSpeed int64     `json:"download_speed"`
-	UploadSpeed   int64     `json:"upload_speed"`
+	DownloadSpeed int       `json:"download_speed"`
+	UploadSpeed   int       `json:"upload_speed"`
 	TestedAt      time.Time `json:"tested_at"`
 }
 
