@@ -125,6 +125,22 @@ func (s *Scheduler) UpdateJob(job config.CronJob) error {
 func (s *Scheduler) executeJob(job config.CronJob) {
 	log.Printf("Executing job: %s", job.Name)
 
+	// 添加panic恢复机制
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Job %s panic: %v", job.Name, r)
+
+			// 检查是否有正在运行的任务，尝试标记完成
+			taskTypes := []service.TaskType{service.TaskTypeSpeedTest, service.TaskTypeReloadSubs}
+			for _, taskType := range taskTypes {
+				if s.taskManager.IsTaskRunning(taskType) {
+					s.taskManager.FinishTask(taskType, "任务执行过程中发生严重错误")
+					log.Printf("Forced task %s to finish due to panic", taskType)
+				}
+			}
+		}
+	}()
+
 	// 检查是否有任务在运行
 	if s.taskManager.IsAnyTaskRunning() {
 		log.Printf("Another task is running, skipping job: %s", job.Name)
