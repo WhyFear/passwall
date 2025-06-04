@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
 	"passwall/internal/service"
 )
@@ -20,7 +19,7 @@ type TestProxyServerRequest struct {
 }
 
 // TestProxyServer 测试代理服务器处理器
-func TestProxyServer(db *gorm.DB, taskManager service.TaskManager, proxyTester service.ProxyTester) gin.HandlerFunc {
+func TestProxyServer(taskManager service.TaskManager, proxyTester service.ProxyTester) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req TestProxyServerRequest
 

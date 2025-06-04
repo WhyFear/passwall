@@ -2,13 +2,12 @@ package handler
 
 import (
 	"net/http"
+	"passwall/internal/repository"
+	"passwall/internal/service"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
-	"passwall/internal/repository"
 )
 
 // GetProxyHistoryRequest 获取代理历史请求
@@ -27,7 +26,7 @@ type GetProxyHistoryResponse struct {
 }
 
 // GetProxyHistory 获取代理测速历史记录
-func GetProxyHistory(db *gorm.DB) gin.HandlerFunc {
+func GetProxyHistory(speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req GetProxyHistoryRequest
 
@@ -52,16 +51,15 @@ func GetProxyHistory(db *gorm.DB) gin.HandlerFunc {
 			})
 			return
 		}
-		// 创建仓库
-		speedTestHistoryRepo := repository.NewSpeedTestHistoryRepository(db)
 
+		// 创建分页参数
 		page := repository.PageQuery{
 			Page:     req.Page,
 			PageSize: req.PageSize,
 		}
 
 		// 根据参数获取历史记录
-		histories, err := speedTestHistoryRepo.FindByProxyID(req.ProxyID, page)
+		histories, err := speedTestHistoryService.GetSpeedTestHistoryByProxyID(req.ProxyID, &page)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",

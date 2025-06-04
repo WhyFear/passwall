@@ -7,8 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/metacubex/mihomo/log"
-	"gorm.io/gorm"
-
 	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
@@ -23,7 +21,7 @@ type CreateProxyRequest struct {
 }
 
 // CreateProxy 创建代理处理器
-func CreateProxy(db *gorm.DB, proxyService service.ProxyService, subscriptionService service.SubscriptionService, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
+func CreateProxy(proxyService service.ProxyService, subscriptionService service.SubscriptionService, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -265,7 +263,6 @@ func CreateProxy(db *gorm.DB, proxyService service.ProxyService, subscriptionSer
 			"status_msg":      "订阅配置已接收，正在异步处理",
 			"subscription_id": subscription.ID,
 			"proxy_count":     len(proxies),
-			"saved_count":     savedCount,
 		})
 	}
 }
