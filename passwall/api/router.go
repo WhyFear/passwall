@@ -31,11 +31,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 	apiGroup.Use(authMiddleware)
 	{
 		// 公开API
-		apiGroup.POST("/create_proxy", handler.CreateProxy(db, services.ParserFactory, services.ProxyTester))
-		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(db, services.TaskManager, services.ProxyTester))
+		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionService, services.ParserFactory, services.ProxyTester))
+		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
 
-		apiGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
-		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(services.ProxyTester))
+		apiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, cfg.Token, services.GeneratorFactory))
+		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(services.SubscriptionService))
 
 		// 添加任务状态API
 		apiGroup.GET("/task_status", func(c *gin.Context) {
@@ -57,12 +57,12 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 	// 需要认证的API
 	webGroup.Use(webAuthMiddleware)
 	{
-		webGroup.POST("/create_proxy", handler.CreateProxy(db, services.ParserFactory, services.ProxyTester))
-		webGroup.GET("/subscriptions", handler.GetSubscriptions(db))
-		webGroup.GET("/get_proxies", handler.GetProxies(db))
-		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(db))
-		webGroup.GET("/subscribe", handler.GetSubscribe(db, cfg.Token, services.GeneratorFactory))
-		webGroup.GET("/get_types", handler.GetTypes(db))
+		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionService, services.ParserFactory, services.ProxyTester))
+		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionService))
+		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService))
+		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(services.SpeedTestHistoryService))
+		webGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, cfg.Token, services.GeneratorFactory))
+		webGroup.GET("/get_types", handler.GetTypes(services.ProxyService))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

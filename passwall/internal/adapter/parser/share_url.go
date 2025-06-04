@@ -37,6 +37,7 @@ func (p *ShareURLParser) Parse(content []byte) ([]*model.Proxy, error) {
 		singleProxy, err := parseProxies(proxy)
 		if err != nil {
 			log.Warnln("parse proxies error: %v", err)
+			continue
 		}
 		proxyList = append(proxyList, singleProxy)
 	}

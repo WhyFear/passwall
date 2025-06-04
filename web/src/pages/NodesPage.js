@@ -131,7 +131,7 @@ const NodesPage = () => {
         ...prev, share_url: atob(data),
       }));
     } catch (error) {
-      message.error('获取节点历史失败');
+      message.error('获取节点分享链接失败：' + error.message);
       console.error(error);
     } finally {
       setHistoryLoading(false);

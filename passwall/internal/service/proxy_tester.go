@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -176,59 +175,29 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 				continue
 			}
 
-			// 保存解析的代理
-			oldProxies, err := s.proxyRepo.FindAll(map[string]interface{}{
-				"subscription_id": subscription.ID,
-			})
-			if err != nil {
-				log.Errorln("查找旧代理失败: %v", err)
-			}
-
-			// 将旧代理转换为映射以便快速查找
-			oldProxyMap := make(map[string]*model.Proxy)
-			if len(oldProxies) > 0 {
-				for _, oldProxy := range oldProxies {
-					// 使用代理的唯一标识(如域名+端口)作为键
-					key := oldProxy.Domain + ":" + strconv.Itoa(oldProxy.Port)
-					oldProxyMap[key] = oldProxy
-				}
-			}
-
-			// 记录已处理的代理ID，用于后续处理未匹配的旧代理
-			processedIDs := make(map[uint]bool)
-
-			// 处理新的代理列表
 			for _, newProxy := range newProxies {
-				newProxy.SubscriptionID = &subscription.ID
-
-				// 生成唯一标识
-				key := newProxy.Domain + ":" + strconv.Itoa(newProxy.Port)
-
-				// 检查是否存在匹配的旧代理，旧代理的状态不更新
-				if oldProxy, exists := oldProxyMap[key]; exists {
-					// 更新现有代理
-					oldProxy.Name = newProxy.Name
-					oldProxy.Type = newProxy.Type
-					oldProxy.Config = newProxy.Config
-
-					if err := s.proxyRepo.Update(oldProxy); err != nil {
-						log.Errorln("更新代理失败: %v", err)
+				oldProxies, err := s.proxyRepo.FindByDomainAndPort(newProxy.Domain, newProxy.Port)
+				if err != nil {
+					log.Errorln("查找旧代理失败: %v", err)
+				}
+				// 如果旧代理存在，则更新旧代理
+				if oldProxies != nil {
+					oldProxies.Name = newProxy.Name
+					oldProxies.Type = newProxy.Type
+					oldProxies.Config = newProxy.Config
+					if err := s.proxyRepo.UpdateProxyConfig(oldProxies); err != nil {
+						log.Errorln("更新"+oldProxies.Name+"代理配置失败: %v", err)
 						continue
 					}
-
-					// 标记为已处理
-					processedIDs[oldProxy.ID] = true
 				} else {
-					// 添加新代理
+					newProxy.SubscriptionID = &subscription.ID
 					newProxy.Status = model.ProxyStatusPending // 设置为待处理状态，等待后续测试
 					if err := s.proxyRepo.Create(newProxy); err != nil {
-						log.Errorln("保存代理失败: %v", err)
+						log.Errorln("保存"+newProxy.Name+"代理失败: %v", err)
 						continue
 					}
 				}
 			}
-
-			// 不处理未匹配的旧代理（可选：删除或标记为过期）
 
 			// 更新订阅状态
 			subscription.Status = model.SubscriptionStatusOK
@@ -293,7 +262,8 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 	// 如果没有代理需要测试，直接返回
 	if len(proxies) == 0 {
-		return errors.New("no proxies to test")
+		log.Infoln("no proxies to test")
+		return nil
 	}
 
 	// 开始任务
@@ -303,6 +273,14 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 	// 异步执行测试
 	go func() {
+		// 添加defer函数来捕获testProxiesAsync中可能发生的panic
+		defer func() {
+			if r := recover(); r != nil {
+				log.Errorln("测试代理任务发生panic: %v", r)
+				// 确保任务被标记为完成
+				s.taskManager.FinishTask(taskType, fmt.Sprintf("任务发生异常: %v", r))
+			}
+		}()
 		s.testProxiesAsync(proxies, concurrent, taskType)
 	}()
 
@@ -311,6 +289,15 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 // testProxiesAsync 异步测试代理
 func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent int, taskType TaskType) {
+	// 添加外层函数的panic恢复
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("testProxiesAsync函数发生panic: %v", r)
+			// 确保任务状态被正确标记为完成
+			s.taskManager.FinishTask(taskType, fmt.Sprintf("测试任务发生异常: %v", r))
+		}
+	}()
+
 	// 创建工作池
 	wg := &sync.WaitGroup{}
 	semaphore := make(chan struct{}, concurrent)
@@ -328,7 +315,7 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 					log.Errorln("测试代理时发生panic[代理ID:%d]: %v", p.ID, r)
 					// 更新代理状态为失败
 					p.Status = model.ProxyStatusUnknowError
-					if err := s.proxyRepo.Update(p); err != nil {
+					if err := s.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 						log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 					}
 				}
@@ -357,7 +344,7 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 			if err != nil {
 				log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
 				p.Status = model.ProxyStatusUnknowError
-				if err := s.proxyRepo.Update(p); err != nil {
+				if err := s.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 					log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 				}
 				return
@@ -367,7 +354,7 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 			if result == nil {
 				log.Errorln("测试代理返回空结果[代理ID:%d]", p.ID)
 				p.Status = model.ProxyStatusFailed
-				if err := s.proxyRepo.Update(p); err != nil {
+				if err := s.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 					log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 				}
 				return
@@ -401,7 +388,7 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 			}
 
 			// 保存代理
-			if err := s.proxyRepo.Update(p); err != nil {
+			if err := s.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 				log.Errorln("更新代理失败[代理ID:%d]: %v", p.ID, err)
 			}
 		}(proxy)
@@ -416,10 +403,10 @@ func (s *proxyTesterImpl) testProxiesAsync(proxies []*model.Proxy, concurrent in
 	log.Infoln("本次测试完成")
 }
 
-func formatSpeed(bytesPerSecond int64) string {
+func formatSpeed(bytesPerSecond int) string {
 	units := []string{"B/s", "KB/s", "MB/s", "GB/s", "TB/s"}
 	unit := 0
-	speed := bytesPerSecond
+	speed := float64(bytesPerSecond)
 	for speed >= 1024 && unit < len(units)-1 {
 		speed /= 1024
 		unit++

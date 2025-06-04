@@ -7,11 +7,10 @@ import (
 
 	"passwall/internal/adapter/generator"
 	"passwall/internal/model"
-	"passwall/internal/repository"
+	"passwall/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/metacubex/mihomo/log"
-	"gorm.io/gorm"
 )
 
 type SubscribeReq struct {
@@ -27,7 +26,7 @@ type SubscribeReq struct {
 }
 
 // GetSubscribe 获取订阅处理器
-func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
+func GetSubscribe(proxyService service.ProxyService, configToken string, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 解析请求参数
 		var req SubscribeReq
@@ -58,12 +57,11 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 		id := req.ID
 
 		// 查询代理
-		proxyRepo := repository.NewProxyRepository(db)
 		var proxies []*model.Proxy
 
 		if id > 0 {
 			// 根据ID查询订阅
-			proxy, err := proxyRepo.FindByID(uint(id))
+			proxy, err := proxyService.GetProxyByID(uint(id))
 			if err != nil {
 				log.Infoln("没有找到符合条件的代理服务器")
 				c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
@@ -88,33 +86,9 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 				filters["type"] = proxyTypeList
 			}
 
-			// 构建查询参数
-			pageQuery := repository.PageQuery{
-				Filters: filters,
-			}
-
-			// 设置排序
-			sortField := req.Sort
-			if sortField != "" {
-				if req.SortOrder == "ascend" || req.SortOrder == "asc" {
-					pageQuery.OrderBy = sortField + " ASC"
-				} else {
-					pageQuery.OrderBy = sortField + " DESC"
-				}
-			} else {
-				// 默认按下载速度降序排序
-				pageQuery.OrderBy = "download_speed DESC"
-			}
-
-			// 限制返回的代理数量
-			if limit > 0 {
-				pageQuery.PageSize = limit
-			} else {
-				pageQuery.PageSize = 10000
-			}
-
-			// 执行查询
-			queryResult, err := proxyRepo.FindPage(pageQuery)
+			// 获取所有符合条件的代理
+			var err error
+			proxies, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, limit)
 			if err != nil {
 				log.Errorln("查询代理服务器失败:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -124,8 +98,6 @@ func GetSubscribe(db *gorm.DB, configToken string, generatorFactory generator.Ge
 				})
 				return
 			}
-
-			proxies = queryResult.Items
 
 			// 如果没有代理，返回空订阅
 			if len(proxies) == 0 {
