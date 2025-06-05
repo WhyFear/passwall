@@ -1,7 +1,7 @@
 package speedtester
 
 import (
-	"errors"
+	"fmt"
 	"passwall/internal/model"
 )
 
@@ -39,7 +39,7 @@ func NewSpeedTesterFactory() SpeedTesterFactory {
 func (f *speedTesterFactoryImpl) GetSpeedTester(proxyType model.ProxyType) (SpeedTester, error) {
 	tester, exists := f.typeToTester[proxyType]
 	if !exists {
-		return nil, errors.New("unsupported proxy type for speed testing: " + string(proxyType))
+		return nil, fmt.Errorf("unsupported proxy type for speed testing: %s", proxyType)
 	}
 	return tester, nil
 }

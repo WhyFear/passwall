@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"passwall/internal/service/task"
 
 	"github.com/gin-gonic/gin"
 
@@ -19,7 +20,7 @@ type TestProxyServerRequest struct {
 }
 
 // TestProxyServer 测试代理服务器处理器
-func TestProxyServer(taskManager service.TaskManager, proxyTester service.ProxyTester) gin.HandlerFunc {
+func TestProxyServer(taskManager task.TaskManager, proxyTester service.ProxyTester) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req TestProxyServerRequest
 
@@ -39,7 +40,7 @@ func TestProxyServer(taskManager service.TaskManager, proxyTester service.ProxyT
 		}
 
 		// 检查是否有任务在运行
-		if taskManager.IsAnyTaskRunning() {
+		if taskManager.IsAnyRunning() {
 			c.JSON(http.StatusConflict, gin.H{
 				"result":      "task_running",
 				"status_code": http.StatusConflict,

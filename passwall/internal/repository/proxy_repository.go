@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"passwall/internal/model"
 	"time"
 
@@ -23,11 +24,18 @@ type PageResult struct {
 	Items []*model.Proxy
 }
 
+// ProxyFilter 代理过滤条件
+type ProxyFilter struct {
+	Status []model.ProxyStatus
+	Types  []model.ProxyType
+}
+
 // ProxyRepository 代理服务器仓库接口
 type ProxyRepository interface {
 	FindByID(id uint) (*model.Proxy, error)
 	FindAll(filters map[string]interface{}) ([]*model.Proxy, error)
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
+	FindByFilter(filter *ProxyFilter) ([]*model.Proxy, error)
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
 	FindByDomainAndPort(domain string, port int) (*model.Proxy, error)
 	Create(proxy *model.Proxy) error
@@ -77,6 +85,31 @@ func (r *GormProxyRepository) FindAll(filters map[string]interface{}) ([]*model.
 	return proxies, nil
 }
 
+// FindByFilter 根据过滤条件查找代理服务器
+func (r *GormProxyRepository) FindByFilter(filter *ProxyFilter) ([]*model.Proxy, error) {
+	var proxies []*model.Proxy
+	query := r.db
+
+	// 应用过滤条件
+	if filter != nil {
+		// 按状态过滤
+		if len(filter.Status) > 0 {
+			query = query.Where("status IN ?", filter.Status)
+		}
+
+		// 按类型过滤
+		if len(filter.Types) > 0 {
+			query = query.Where("type IN ?", filter.Types)
+		}
+	}
+
+	result := query.Find(&proxies)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return proxies, nil
+}
+
 // FindByStatus 根据状态查找代理服务器
 func (r *GormProxyRepository) FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error) {
 	var proxies []*model.Proxy
@@ -90,8 +123,13 @@ func (r *GormProxyRepository) FindByStatus(status model.ProxyStatus) ([]*model.P
 func (r *GormProxyRepository) FindByDomainAndPort(domain string, port int) (*model.Proxy, error) {
 	var proxy model.Proxy
 	result := r.db.Where("domain = ? AND port = ?", domain, port).First(&proxy)
+	// 区分是没记录还是出错
 	if result.Error != nil {
-		return nil, result.Error
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil // 没有找到记录
+		} else {
+			return nil, result.Error // 其他错误
+		}
 	}
 	return &proxy, nil
 }

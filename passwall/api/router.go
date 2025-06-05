@@ -1,9 +1,8 @@
 package api
 
 import (
+	"context"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"passwall/api/handler"
 	"passwall/api/middleware"
 	"passwall/config"
@@ -12,7 +11,11 @@ import (
 )
 
 // SetupRouter 设置API路由
-func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, scheduler *scheduler.Scheduler) *gin.Engine {
+func SetupRouter(cfg *config.Config, services *service.Services, scheduler *scheduler.Scheduler) *gin.Engine {
+	ctx := context.Background()
+	// 将并发数添加到上下文中
+	ctx = context.WithValue(ctx, "concurrent", cfg.Concurrent)
+
 	// 创建Gin路由
 	router := gin.Default()
 
@@ -31,15 +34,16 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 	apiGroup.Use(authMiddleware)
 	{
 		// 公开API
-		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionService, services.ParserFactory, services.ProxyTester))
+		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester))
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
+		apiGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 
-		apiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, cfg.Token, services.GeneratorFactory))
-		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(services.SubscriptionService))
+		apiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
+		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 
 		// 添加任务状态API
-		apiGroup.GET("/task_status", func(c *gin.Context) {
-			c.JSON(200, services.TaskManager.GetAllTaskStatus())
+		apiGroup.GET("/task_all_status", func(c *gin.Context) {
+			c.JSON(200, services.TaskManager.GetAllStatus())
 		})
 
 		// 添加调度器状态API
@@ -57,12 +61,28 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, services *service.Services, sc
 	// 需要认证的API
 	webGroup.Use(webAuthMiddleware)
 	{
-		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionService, services.ParserFactory, services.ProxyTester))
-		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionService))
-		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService))
+		// 新增订阅
+		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester))
+		// 获取订阅链接
+		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionManager))
+		// 刷新订阅
+		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
+
+		// 获取代理信息
+		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager))
+		// 获取代理历史测速记录
 		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(services.SpeedTestHistoryService))
-		webGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, cfg.Token, services.GeneratorFactory))
+		// 生成代理分享链接
+		webGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
+		// 测试代理服务器
+		webGroup.POST("/test_proxy_server", handler.TestProxy(ctx, services.NewTester))
+		// 获取所有代理类型
 		webGroup.GET("/get_types", handler.GetTypes(services.ProxyService))
+
+		// 获取指定任务状态
+		webGroup.GET("/get_task_status", handler.GetTaskStatus(services.TaskManager))
+		// 停止任务
+		webGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

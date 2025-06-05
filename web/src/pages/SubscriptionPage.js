@@ -1,7 +1,9 @@
-import React, {useEffect, useState} from 'react';
-import {Button, Form, Input, message, Modal, Select, Table, Tabs} from 'antd';
-import {CopyOutlined, EyeOutlined, PlusOutlined} from '@ant-design/icons';
-import {subscriptionApi} from '../api';
+import React, {useEffect, useRef, useState} from 'react';
+import {Button, Form, Input, message, Modal, Progress, Select, Table, Tabs} from 'antd';
+import {CopyOutlined, EyeOutlined, PlusOutlined, StopOutlined} from '@ant-design/icons';
+import {nodeApi, subscriptionApi} from '../api';
+import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+
 const SubscriptionPage = () => {
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -10,6 +12,8 @@ const SubscriptionPage = () => {
   const [currentSubscription, setCurrentSubscription] = useState(null);
   const [form] = Form.useForm();
   const [activeTab, setActiveTab] = useState('1');
+  const [taskStatus, setTaskStatus] = useState(null);
+  const timerRef = useRef(null);
 
   // 获取订阅列表
   const fetchSubscriptions = async () => {
@@ -27,7 +31,53 @@ const SubscriptionPage = () => {
 
   useEffect(() => {
     fetchSubscriptions()
+
+    // 设置定时器，每3秒获取一次任务状态
+    timerRef.current = setInterval(() => {
+      fetchTaskStatusHandler();
+    }, 3000);
+
+    // 组件卸载时清除定时器
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
   }, []);
+
+
+  // 获取任务状态
+  const fetchTaskStatusHandler = async () => {
+    await fetchTaskStatus("reload_subs", setTaskStatus);
+  };
+
+  // 停止任务
+  const handleStopTask = async () => {
+    await stopTask("reload_subs", setTaskStatus);
+  };
+
+  // 测试代理
+  const handleReloadSubs = async (nodeId) => {
+    try {
+      const params = {};
+      if (nodeId) {
+        params.id = nodeId;
+      }
+      const data = await subscriptionApi.reloadSubs(params);
+      if (data.status_code === 200) {
+        message.success('任务已启动');
+        // 立即获取一次任务状态
+        setTimeout(() => {
+          fetchTaskStatusHandler();
+        }, 500);
+      } else {
+        message.error('任务执行失败：' + data.status_msg);
+      }
+    } catch (error) {
+      message.error('任务执行失败：' + error.message);
+      console.error(error);
+    }
+  };
 
   // 添加订阅
   const handleAddSubscription = () => {
@@ -112,7 +162,29 @@ const SubscriptionPage = () => {
   return (<div>
     <Tabs activeKey={activeTab} onChange={setActiveTab}>
       <items tab="订阅链接" key="1">
-        <div style={{marginBottom: 16}}>
+        <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
+          <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
+            {taskStatus && taskStatus.State === 0 && (
+              <div style={{display: 'flex', alignItems: 'center', marginRight: 16}}>
+                <Progress
+                  type="circle"
+                  percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+                  size="small"
+                  style={{marginRight: 8}}
+                />
+                <span style={{marginRight: 8}}>
+                  处理中: {taskStatus.Completed}/{taskStatus.Total}
+                </span>
+                <Button
+                  type="primary"
+                  danger
+                  icon={<StopOutlined/>}
+                  onClick={handleStopTask}
+                >
+                  停止任务
+                </Button>
+              </div>)}
+          </div>
           <Button
             type="primary"
             icon={<PlusOutlined/>}
@@ -120,6 +192,15 @@ const SubscriptionPage = () => {
             style={{marginRight: 8}}
           >
             新增
+          </Button>
+          <Button
+            type="primary"
+            onClick={() => {
+              handleReloadSubs(null)
+            }}
+            style={{marginRight: 16}}
+          >
+            重新获取所有订阅
           </Button>
         </div>
         <Table
