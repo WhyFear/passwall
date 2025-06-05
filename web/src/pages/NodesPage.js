@@ -1,7 +1,8 @@
-import {CopyOutlined, EyeOutlined} from '@ant-design/icons';
-import {Button, Card, message, Modal, Table, Tabs, Tag, Tooltip} from 'antd';
-import React, {useEffect, useState} from 'react';
+import {CheckOutlined, CopyOutlined, EyeOutlined, StopOutlined} from '@ant-design/icons';
+import {Button, Card, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
+import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
+import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 
 const StatusTag = ({status}) => {
   let color = 'default';
@@ -67,6 +68,8 @@ const NodesPage = () => {
   });
   const [filters, setFilters] = useState({});
   const [nodeTypes, setNodeTypes] = useState([]);
+  const [taskStatus, setTaskStatus] = useState(null);
+  const timerRef = useRef(null);
 
   // 获取所有节点
   const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
@@ -153,6 +156,34 @@ const NodesPage = () => {
     }
   };
 
+  // 获取任务状态
+  const fetchTaskStatusHandler = async () => {
+    await fetchTaskStatus("speed_test", setTaskStatus);
+  };
+
+  // 停止任务
+  const handleStopTask = async () => {
+    await stopTask("speed_test", setTaskStatus);
+  };
+
+  // 启动定时器
+  useEffect(() => {
+    // 初始获取一次任务状态
+    fetchTaskStatusHandler();
+
+    // 设置定时器，每3秒获取一次任务状态
+    timerRef.current = setInterval(() => {
+      fetchTaskStatusHandler();
+    }, 3000);
+
+    // 组件卸载时清除定时器
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
   // 处理表格分页变化
   const handleTableChange = (newPagination, newFilters, newSorter) => {
     const sort = newSorter.field ? {
@@ -223,6 +254,38 @@ const NodesPage = () => {
       }
     } catch (error) {
       message.error('获取订阅链接失败');
+      console.error(error);
+    }
+  };
+
+  const handleTestProxy = async (nodeId) => {
+    try {
+      const params = {};
+
+      // 检查 filters.status 是否存在且是数组
+      if (filters.status && Array.isArray(filters.status) && filters.status.length > 0) {
+        params.status = filters.status.join(',');
+      }
+
+      // 检查 filters.type 是否存在且是数组
+      if (filters.type && Array.isArray(filters.type) && filters.type.length > 0) {
+        params.type = filters.type.join(',');
+      }
+      if (nodeId) {
+        params.id = nodeId;
+      }
+      const data = await nodeApi.testProxy(params);
+      if (data.status_code === 200) {
+        message.success('测速任务已启动');
+        // 立即获取一次任务状态
+        setTimeout(() => {
+          fetchTaskStatusHandler();
+        }, 500);
+      } else {
+        message.error('测速失败：' + data.status_msg);
+      }
+    } catch (error) {
+      message.error('测速失败：' + error.message);
       console.error(error);
     }
   };
@@ -298,12 +361,19 @@ const NodesPage = () => {
     render: (text) => formatDate(text),
     sorter: true,
   }, {
-    title: '操作', key: 'action', width: 60, fixed: 'right', render: (_, record) => (<div className="table-action">
+    title: '操作', key: 'action', width: 100, fixed: 'right', render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
         <Button
           type="text"
           icon={<EyeOutlined/>}
           onClick={() => handleViewNode(record)}
+        />
+      </Tooltip>
+      <Tooltip title="测速">
+        <Button
+          type="text"
+          icon={<CheckOutlined/>}
+          onClick={() => handleTestProxy(record.id)}
         />
       </Tooltip>
     </div>),
@@ -313,6 +383,38 @@ const NodesPage = () => {
     <Tabs activeKey={activeTab} onChange={setActiveTab}>
       <items tab="所有节点" key="2">
         <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
+          <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
+            {taskStatus && taskStatus.State === 0 && (
+              <div style={{display: 'flex', alignItems: 'center', marginRight: 16}}>
+                <Progress
+                  type="circle"
+                  percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+                  size="small"
+                  style={{marginRight: 8}}
+                />
+                <span style={{marginRight: 8}}>
+                  测速进行中: {taskStatus.Completed}/{taskStatus.Total}
+                </span>
+                <Button
+                  type="primary"
+                  danger
+                  icon={<StopOutlined/>}
+                  onClick={handleStopTask}
+                >
+                  停止任务
+                </Button>
+              </div>
+            )}
+          </div>
+          <Button
+            type="primary"
+            onClick={() => {
+              handleTestProxy(null)
+            }}
+            style={{marginRight: 16}}
+          >
+            按当前参数进行测速
+          </Button>
           <Button
             type="primary"
             onClick={() => {

@@ -8,7 +8,7 @@ import (
 type SpeedTestHistoryService interface {
 	GetSpeedTestHistoryByID(id uint) (*model.SpeedTestHistory, error)
 	GetSpeedTestHistoryByProxyID(proxyID uint, page *repository.PageQuery) ([]*model.SpeedTestHistory, error)
-	CreateSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error)
+	SaveSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error)
 }
 
 type DefaultSpeedTestHistoryService struct {
@@ -37,7 +37,7 @@ func (s *DefaultSpeedTestHistoryService) GetSpeedTestHistoryByProxyID(proxyID ui
 	return speedtestHistory, nil
 }
 
-func (s *DefaultSpeedTestHistoryService) CreateSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error) {
+func (s *DefaultSpeedTestHistoryService) SaveSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error) {
 	err := s.speedtestHistory.Create(history)
 	if err != nil {
 		return nil, err

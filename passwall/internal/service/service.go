@@ -1,6 +1,9 @@
 package service
 
 import (
+	"passwall/internal/service/proxy"
+	"passwall/internal/service/task"
+
 	"gorm.io/gorm"
 
 	"passwall/internal/adapter/generator"
@@ -11,11 +14,12 @@ import (
 
 // Services 所有服务的集合
 type Services struct {
-	SubscriptionService     SubscriptionService
+	SubscriptionManager     proxy.SubscriptionManager
 	ProxyService            ProxyService
 	SpeedTestHistoryService SpeedTestHistoryService
-	TaskManager             TaskManager
 	ProxyTester             ProxyTester
+	NewTester               proxy.Tester
+	TaskManager             task.TaskManager
 	ParserFactory           parser.ParserFactory
 	GeneratorFactory        generator.GeneratorFactory
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
@@ -23,10 +27,8 @@ type Services struct {
 
 // NewServices 初始化所有服务
 func NewServices(db *gorm.DB) *Services {
-	// 创建仓库
-	proxyRepo := repository.NewProxyRepository(db)
-	subscriptionRepo := repository.NewSubscriptionRepository(db)
-	speedTestHistoryRepo := repository.NewSpeedTestHistoryRepository(db)
+	// 创建仓库集合
+	repos := repository.NewRepositories(db)
 
 	// 创建解析器工厂并注册解析器
 	parserFactory := parser.NewParserFactory()
@@ -43,19 +45,27 @@ func NewServices(db *gorm.DB) *Services {
 	generatorFactory.RegisterGenerator("share_link", generator.NewShareLinkGenerator())
 
 	// 创建任务管理器
-	taskManager := NewTaskManager()
+	taskManager := task.NewTaskManager()
 
 	// 创建服务
-	subscriptionService := NewSubscriptionService(subscriptionRepo, proxyRepo, parserFactory)
-	proxyService := NewProxyService(proxyRepo)
-	speedTestHistoryService := NewSpeedTestHistoryService(speedTestHistoryRepo)
-	proxyTester := NewProxyTester(proxyRepo, subscriptionRepo, speedTestHistoryRepo, speedTesterFactory, parserFactory, taskManager)
+	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.Proxy, parserFactory, taskManager)
+	proxyService := NewProxyService(repos.Proxy)
+	speedTestHistoryService := NewSpeedTestHistoryService(repos.SpeedTestHistory)
+
+	// 创建代理测试服务
+	// 目前有两个实现：
+	// 1. NewProxyTester - 新的实现，直接使用 proxy 包中的服务
+	// 2. NewProxyTesterAdapter - 适配器实现，兼容旧版接口
+	// 这里我们使用新的实现，因为适配器是为了兼容旧版接口而存在的
+	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager)
+	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
 
 	return &Services{
-		SubscriptionService:     subscriptionService,
+		SubscriptionManager:     subscriptionManager,
 		ProxyService:            proxyService,
 		SpeedTestHistoryService: speedTestHistoryService,
 		ProxyTester:             proxyTester,
+		NewTester:               newTester,
 		SpeedTesterFactory:      speedTesterFactory,
 		TaskManager:             taskManager,
 		ParserFactory:           parserFactory,

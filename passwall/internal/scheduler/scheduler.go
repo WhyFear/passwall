@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"log"
+	"passwall/internal/service/task"
 	"sync"
 	"time"
 
@@ -16,7 +17,7 @@ type Scheduler struct {
 	cron        *cron.Cron
 	jobMutex    sync.Mutex
 	isRunning   bool
-	taskManager service.TaskManager
+	taskManager task.TaskManager
 	proxyTester service.ProxyTester
 	jobIDs      map[string]cron.EntryID // 存储任务ID，用于更新
 }
@@ -24,14 +25,14 @@ type Scheduler struct {
 // NewScheduler 创建调度器
 func NewScheduler() *Scheduler {
 	return &Scheduler{
-		cron:      cron.New(cron.WithSeconds(), cron.WithChain(cron.Recover(cron.DefaultLogger))),
+		cron:      cron.New(cron.WithSeconds(), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger))),
 		isRunning: false,
 		jobIDs:    make(map[string]cron.EntryID),
 	}
 }
 
 // SetServices 设置服务
-func (s *Scheduler) SetServices(taskManager service.TaskManager, proxyTester service.ProxyTester) {
+func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester service.ProxyTester) {
 	s.taskManager = taskManager
 	s.proxyTester = proxyTester
 }
@@ -131,9 +132,9 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 			log.Printf("Job %s panic: %v", job.Name, r)
 
 			// 检查是否有正在运行的任务，尝试标记完成
-			taskTypes := []service.TaskType{service.TaskTypeSpeedTest, service.TaskTypeReloadSubs}
+			taskTypes := []task.TaskType{task.TaskTypeSpeedTest, task.TaskTypeReloadSubs}
 			for _, taskType := range taskTypes {
-				if s.taskManager.IsTaskRunning(taskType) {
+				if s.taskManager.IsRunning(taskType) {
 					s.taskManager.FinishTask(taskType, "任务执行过程中发生严重错误")
 					log.Printf("Forced task %s to finish due to panic", taskType)
 				}
@@ -142,7 +143,7 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 	}()
 
 	// 检查是否有任务在运行
-	if s.taskManager.IsAnyTaskRunning() {
+	if s.taskManager.IsAnyRunning() {
 		log.Printf("Another task is running, skipping job: %s", job.Name)
 		return
 	}

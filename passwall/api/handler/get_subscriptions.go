@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
-	"passwall/internal/service"
+	"passwall/internal/service/proxy"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type SubscriptionReq struct {
@@ -19,7 +20,7 @@ type SubscriptionResp struct {
 }
 
 // GetSubscriptions 获取存储的订阅链接
-func GetSubscriptions(subscriptionService service.SubscriptionService) gin.HandlerFunc {
+func GetSubscriptions(subscriptionManager proxy.SubscriptionManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		// 解析请求参数
@@ -33,7 +34,7 @@ func GetSubscriptions(subscriptionService service.SubscriptionService) gin.Handl
 		// 根据content参数来判断是否需要获取内容，如果content为true，则获取内容，否则获取所有订阅
 		var results []SubscriptionResp
 		if req.ID > 0 {
-			subscription, err := subscriptionService.GetSubscriptionByID(uint(req.ID))
+			subscription, err := subscriptionManager.GetSubscriptionByID(uint(req.ID))
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch subscription"})
 				return
@@ -48,7 +49,7 @@ func GetSubscriptions(subscriptionService service.SubscriptionService) gin.Handl
 			}
 			results = append(results, tempSubscription)
 		} else {
-			subscriptions, err := subscriptionService.GetAllSubscriptions()
+			subscriptions, err := subscriptionManager.GetAllSubscriptions()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch subscriptions"})
 				return
