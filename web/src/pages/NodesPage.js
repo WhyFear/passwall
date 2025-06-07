@@ -1,9 +1,11 @@
-import {CheckOutlined, CopyOutlined, EyeOutlined, StopOutlined} from '@ant-design/icons';
+import {CheckOutlined, EyeOutlined, StopOutlined} from '@ant-design/icons';
 import {Button, Card, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {formatDate} from '../utils/timeUtils';
 
+// 状态标签组件
 const StatusTag = ({status}) => {
   let color = 'default';
   let text = '未知';
@@ -25,13 +27,20 @@ const StatusTag = ({status}) => {
   return <Tag color={color}>{text}</Tag>;
 };
 
-const formatDate = (date) => {
-  if (!date) return '-';
-  const d = new Date(date);
-  return d.toLocaleString('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
-  });
-}
+// 信息项组件，用于显示节点详情中的每一项
+const InfoItem = ({label, value}) => {
+  return (<div style={{display: 'flex', alignItems: 'center', marginBottom: '8px'}}>
+    <strong style={{width: '100px', textAlign: 'right', marginRight: '8px'}}>{label}:</strong>
+    <span style={{
+      flex: 1,
+      backgroundColor: '#f5f5f5',
+      padding: '4px 8px',
+      borderRadius: '4px',
+      border: '1px solid #e8e8e8',
+      wordBreak: 'break-all'
+    }}>{value}</span>
+  </div>);
+};
 
 // 格式化速度的函数
 const formatSpeed = (bytesPerSecond) => {
@@ -129,7 +138,12 @@ const NodesPage = () => {
   const fetchNodeShareUrl = async (nodeId) => {
     try {
       setHistoryLoading(true);
-      const data = await nodeApi.getProxyShareUrl(nodeId);
+      let data = await nodeApi.getProxyShareUrl(nodeId);
+      // 先判断data是否有status_code字段，如果有，说明是错误信息
+      if (data.status_code) {
+        message.error('获取节点分享链接失败：' + data.status_msg);
+        return;
+      }
       setCurrentNode(prev => ({
         ...prev, share_url: atob(data),
       }));
@@ -403,8 +417,7 @@ const NodesPage = () => {
                 >
                   停止任务
                 </Button>
-              </div>
-            )}
+              </div>)}
           </div>
           <Button
             type="primary"
@@ -456,47 +469,15 @@ const NodesPage = () => {
     >
       {currentNode && (<div>
         <Card title="基本信息" style={{marginBottom: 16}}>
-          <p><strong>名称:</strong> {currentNode.name || '未命名'}</p>
-          <p><strong>订阅链接:</strong> {currentNode.subscription_url}</p>
-          <p><strong>地址:</strong> {currentNode.address}</p>
-          <p><strong>状态:</strong> <StatusTag status={currentNode.status}/></p>
-          <p><strong>Ping:</strong> {currentNode.ping ? `${currentNode.ping}ms` : '-'}</p>
-          <p>
-            <strong>下载速度:</strong> {formatSpeed(currentNode.download_speed)}
-          </p>
-          <p>
-            <strong>上传速度:</strong> {formatSpeed(currentNode.upload_speed)}
-          </p>
-          <p><strong>最后测试时间:</strong> {formatDate(currentNode.latest_test_time)}</p>
-          <p><strong>分享链接:</strong>
-            {currentNode.share_url ? (<>
-              <div
-                style={{
-                  width: '100%',
-                  backgroundColor: '#f5f5f5',
-                  padding: '8px 12px',
-                  borderRadius: '4px',
-                  border: '1px solid #e8e8e8',
-                  marginBottom: '8px',
-                  wordBreak: 'break-all'
-                }}
-              >
-                {currentNode.share_url}
-              </div>
-              <Button
-                type="primary"
-                size="small"
-                icon={<CopyOutlined/>}
-                onClick={() => {
-                  navigator.clipboard.writeText(currentNode.share_url)
-                    .then(() => message.success('分享链接已复制到剪贴板'))
-                    .catch(() => message.error('复制失败，请手动复制'));
-                }}
-              >
-                复制
-              </Button>
-            </>) : '-'}
-          </p>
+          <InfoItem label="名称" value={currentNode.name || '未命名'}/>
+          <InfoItem label="订阅链接" value={currentNode.subscription_url}/>
+          <InfoItem label="地址" value={currentNode.address}/>
+          <InfoItem label="状态" value={<StatusTag status={currentNode.status}/>}/>
+          <InfoItem label="Ping" value={currentNode.ping ? `${currentNode.ping}ms` : '-'}/>
+          <InfoItem label="下载速度" value={formatSpeed(currentNode.download_speed)}/>
+          <InfoItem label="上传速度" value={formatSpeed(currentNode.upload_speed)}/>
+          <InfoItem label="最近测试时间" value={formatDate(currentNode.latest_test_time)}/>
+          <InfoItem label="分享链接" value={currentNode.share_url} isMultiLine={true}/>
         </Card>
 
         <Card title="历史记录">

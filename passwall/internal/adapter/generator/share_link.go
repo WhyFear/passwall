@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/metacubex/mihomo/log"
 	"net/url"
 	"strings"
 
@@ -62,10 +63,152 @@ func generateShareLink(proxy *model.Proxy) (string, error) {
 		return generateSSLink(proxy)
 	case model.ProxyTypeTuic:
 		return generateTuicLink(proxy)
+	case model.ProxyTypeAnyTLS:
+		return generateAnyTLSLink(proxy)
+	case model.ProxyTypeHttp:
+		return generateHttpLink(proxy)
+	case model.ProxyTypeSSR:
+		return generateSSRLink(proxy)
+
 	// 可以根据需要添加其他协议的支持
 	default:
 		return "", fmt.Errorf("不支持的代理类型: %s", proxy.Type)
 	}
+}
+
+func generateHttpLink(proxy *model.Proxy) (string, error) {
+	if proxy.Type != model.ProxyTypeHttp {
+		return "", fmt.Errorf("不支持的代理类型: %s", proxy.Type)
+	}
+
+	var config map[string]any
+	err := json.Unmarshal([]byte(proxy.Config), &config)
+	if err != nil {
+		return "", fmt.Errorf("解析Http config配置失败: %v", err)
+	}
+
+	// 构建基本链接
+	var auth string
+	if username, ok := config["username"].(string); ok && username != "" {
+		if password, ok := config["password"].(string); ok {
+			auth = fmt.Sprintf("%s:%s@", username, password)
+		} else {
+			auth = fmt.Sprintf("%s@", username)
+		}
+	}
+
+	// 确定协议前缀
+	protocol := "http"
+	if tls, ok := config["tls"].(bool); ok && tls {
+		protocol = "https"
+	}
+
+	// 构建基本链接
+	link := fmt.Sprintf("%s://%s%s:%d", protocol, auth, proxy.Domain, proxy.Port)
+
+	// 添加查询参数
+	params := make(map[string]string)
+
+	// 处理TLS相关参数
+	if tls, ok := config["tls"].(bool); ok && tls {
+		params["tls"] = "1"
+	}
+
+	if fingerprint, ok := config["fingerprint"].(string); ok && fingerprint != "" {
+		params["fingerprint"] = fingerprint
+	}
+
+	if skipCertVerify, ok := config["skip-cert-verify"].(bool); ok && skipCertVerify {
+		params["skip-cert-verify"] = "1"
+	}
+
+	// 处理IP版本
+	if ipVersion, ok := config["ip-version"].(string); ok && ipVersion != "" {
+		validVersions := []string{"dual", "ipv4", "ipv6", "ipv4-prefer", "ipv6-prefer"}
+		for _, v := range validVersions {
+			if v == ipVersion {
+				params["ip-version"] = ipVersion
+				break
+			}
+		}
+	}
+
+	// 构建URL
+	urlObj, _ := url.Parse(link)
+
+	// 添加查询参数
+	if len(params) > 0 {
+		q := urlObj.Query()
+		for k, v := range params {
+			q.Add(k, v)
+		}
+		urlObj.RawQuery = q.Encode()
+	}
+
+	// 设置URL片段（Fragment）为代理名称
+	if proxy.Name != "" {
+		urlObj.Fragment = proxy.Name
+	} else {
+		urlObj.Fragment = fmt.Sprintf("HTTP %s:%d", proxy.Domain, proxy.Port)
+	}
+
+	return urlObj.String(), nil
+}
+
+func generateAnyTLSLink(proxy *model.Proxy) (string, error) {
+	// https://github.com/anytls/anytls-go/blob/main/docs/uri_scheme.md
+	// 格式参考了 Hysteria2
+	if proxy.Type != model.ProxyTypeAnyTLS {
+		return "", fmt.Errorf("不支持的代理类型: %s", proxy.Type)
+	}
+
+	var config map[string]any
+	err := json.Unmarshal([]byte(proxy.Config), &config)
+	if err != nil {
+		return "", fmt.Errorf("解析anytls config配置失败: %v", err)
+	}
+
+	password, ok := config["password"].(string)
+	if !ok || password == "" {
+		return "", fmt.Errorf("anytls配置缺少密码")
+	}
+
+	// 构建基本链接
+	link := fmt.Sprintf("anytls://%s@%s:%d", password, proxy.Domain, proxy.Port)
+
+	// 添加查询参数
+	params := make(map[string]string)
+
+	// 处理SNI
+	if sni, ok := config["sni"].(string); ok && sni != "" {
+		params["sni"] = sni
+	}
+
+	// 处理证书验证
+	if skipCertVerify, ok := config["skip-cert-verify"].(bool); ok && skipCertVerify {
+		params["insecure"] = "1"
+	}
+
+	// 构建URL
+	urlObj, _ := url.Parse(link)
+
+	// 添加查询参数
+	if len(params) > 0 {
+		q := urlObj.Query()
+		for k, v := range params {
+			q.Add(k, v)
+		}
+		urlObj.RawQuery = q.Encode()
+	}
+
+	// 设置URL片段（Fragment）为代理名称
+	if proxy.Name != "" {
+		urlObj.Fragment = proxy.Name
+	} else {
+		urlObj.Fragment = fmt.Sprintf("anytls %s:%d", proxy.Domain, proxy.Port)
+	}
+
+	return urlObj.String(), nil
 }
 
 func generateTrojanLink(proxy *model.Proxy) (string, error) {
@@ -369,7 +512,11 @@ func generateVLessLink(proxy *model.Proxy) (string, error) {
 
 	// 构建URL
 	link := fmt.Sprintf("vless://%s@%s:%d", uuid, proxy.Domain, port)
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 	q := urlObj.Query()
 
 	for k, v := range params {
@@ -488,6 +635,83 @@ func generateSSLink(proxy *model.Proxy) (string, error) {
 	}
 
 	return link, nil
+}
+
+// generateSSRLink 生成ShadowsocksR分享链接
+func generateSSRLink(proxy *model.Proxy) (string, error) {
+	if proxy.Type != model.ProxyTypeSSR {
+		return "", fmt.Errorf("不支持的代理类型: %s", proxy.Type)
+	}
+
+	var config map[string]any
+	err := json.Unmarshal([]byte(proxy.Config), &config)
+	if err != nil {
+		return "", fmt.Errorf("解析SSR config配置失败: %v", err)
+	}
+
+	// 获取必要参数
+	cipher, ok := config["cipher"].(string)
+	if !ok || cipher == "" {
+		return "", fmt.Errorf("ssr配置缺少加密方式")
+	}
+
+	password, ok := config["password"].(string)
+	if !ok || password == "" {
+		return "", fmt.Errorf("ssr配置缺少密码")
+	}
+
+	protocol, ok := config["protocol"].(string)
+	if !ok || protocol == "" {
+		return "", fmt.Errorf("ssr配置缺少协议")
+	}
+
+	obfs, ok := config["obfs"].(string)
+	if !ok || obfs == "" {
+		return "", fmt.Errorf("ssr配置缺少混淆")
+	}
+
+	// 构建基本部分
+	// 格式: server:port:protocol:method:obfs:password_base64/?params
+	passwordBase64 := base64.StdEncoding.EncodeToString([]byte(password))
+	baseLink := fmt.Sprintf("%s:%d:%s:%s:%s:%s",
+		proxy.Domain,
+		proxy.Port,
+		protocol,
+		cipher,
+		obfs,
+		passwordBase64,
+	)
+
+	// 添加参数
+	params := make([]string, 0)
+
+	// 处理协议参数
+	if protocolParam, ok := config["protocol-param"].(string); ok && protocolParam != "" {
+		protocolParamBase64 := base64.StdEncoding.EncodeToString([]byte(protocolParam))
+		params = append(params, fmt.Sprintf("protoparam=%s", protocolParamBase64))
+	}
+
+	// 处理混淆参数
+	if obfsParam, ok := config["obfs-param"].(string); ok && obfsParam != "" {
+		obfsParamBase64 := base64.StdEncoding.EncodeToString([]byte(obfsParam))
+		params = append(params, fmt.Sprintf("obfsparam=%s", obfsParamBase64))
+	}
+
+	// 添加备注（名称）
+	if proxy.Name != "" {
+		remarksBase64 := base64.StdEncoding.EncodeToString([]byte(proxy.Name))
+		params = append(params, fmt.Sprintf("remarks=%s", remarksBase64))
+	}
+
+	// 构建完整链接
+	fullLink := baseLink
+	if len(params) > 0 {
+		fullLink = fmt.Sprintf("%s/?%s", baseLink, strings.Join(params, "&"))
+	}
+
+	// Base64编码整个链接
+	encodedLink := base64.StdEncoding.EncodeToString([]byte(fullLink))
+	return fmt.Sprintf("ssr://%s", encodedLink), nil
 }
 
 func generateHysteria2Link(proxy *model.Proxy) (string, error) {

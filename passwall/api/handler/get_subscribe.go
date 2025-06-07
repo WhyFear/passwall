@@ -65,9 +65,6 @@ func GetSubscribe(proxyService service.ProxyService, generatorFactory generator.
 			if req.StatusStr != "" {
 				statusList := strings.Split(req.StatusStr, ",")
 				filters["status"] = statusList
-			} else {
-				// 如果没有指定状态，默认使用正常状态
-				filters["status"] = []model.ProxyStatus{model.ProxyStatusOK}
 			}
 			// 和status一样，处理proxy_type
 			if req.ProxyType != "" {
@@ -117,12 +114,20 @@ func GetSubscribe(proxyService service.ProxyService, generatorFactory generator.
 		// 生成订阅内容
 		content, err := subscribeGenerator.Generate(proxies)
 		if err != nil {
-			log.Errorln("生成订阅内容失败:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusInternalServerError,
-				"status_msg":  "Failed to generate subscription: " + err.Error(),
-			})
+			log.Errorln("生成订阅内容失败: %v", err.Error())
+			if err.Error() == "没有可生成分享链接的代理" {
+				c.JSON(http.StatusOK, gin.H{
+					"result":      "fail",
+					"status_code": http.StatusNotImplemented,
+					"status_msg":  "暂不支持该订阅类型生成分享链接",
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"result":      "fail",
+					"status_code": http.StatusInternalServerError,
+					"status_msg":  "Failed to generate subscription: " + err.Error(),
+				})
+			}
 			return
 		}
 
