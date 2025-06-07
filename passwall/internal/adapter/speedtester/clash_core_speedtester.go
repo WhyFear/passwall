@@ -56,6 +56,7 @@ func (t *ClashCoreSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult,
 		MaxLatency:       1000 * time.Millisecond,
 		MinDownloadSpeed: 0,
 		MinUploadSpeed:   0,
+		Concurrent:       5,
 	})
 	results := make([]*speedtester.Result, 0)
 	speedTester.TestProxies(allProxies, func(result *speedtester.Result) {
@@ -97,5 +98,12 @@ func (t *ClashCoreSpeedTester) SupportedTypes() []model.ProxyType {
 		model.ProxyTypeSSR,
 		model.ProxyTypeHysteria,
 		model.ProxyTypeHysteria2,
+		model.ProxyTypeWireGuard,
+		model.ProxyTypeSnell,
+		model.ProxyTypeHttp,
+		model.ProxyTypeMieru,
+		model.ProxyTypeAnyTLS,
+		model.ProxyTypeSsh,
 	}
+
 }

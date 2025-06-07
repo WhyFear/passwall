@@ -1,8 +1,30 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Button, Form, Input, message, Modal, Progress, Select, Table, Tabs} from 'antd';
+import {Button, Form, Input, message, Modal, Progress, Select, Table, Tabs, Tag} from 'antd';
 import {CopyOutlined, EyeOutlined, PlusOutlined, StopOutlined} from '@ant-design/icons';
-import {nodeApi, subscriptionApi} from '../api';
+import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {formatDate} from '../utils/timeUtils';
+
+const StatusTag = ({status}) => {
+  let color = 'default';
+  let text = '未知';
+
+  if (status === -1) {
+    color = 'default';
+    text = '新订阅';
+  } else if (status === 1) {
+    color = 'success';
+    text = '代理拉取成功';
+  } else if (status === 2) {
+    color = 'error';
+    text = '代理拉取失败';
+  } else if (status === 3) {
+    color = 'warning';
+    text = '未知错误';
+  }
+
+  return <Tag color={color}>{text}</Tag>;
+};
 
 const SubscriptionPage = () => {
   const [subscriptions, setSubscriptions] = useState([]);
@@ -142,6 +164,8 @@ const SubscriptionPage = () => {
   }, {
     title: '链接', dataIndex: 'url', key: 'url', ellipsis: true,
   }, {
+    title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (status) => <StatusTag status={status}/>,
+  }, {
     title: '上次更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, render: (text) => {
       if (!text) return '-';
       const date = new Date(text);
@@ -247,6 +271,7 @@ const SubscriptionPage = () => {
           name="type"
           label="类型"
           rules={[{required: true, message: '请选择类型'}]}
+          style={modalType === 'view' ? {display: 'none'} : {}}
         >
           <Select
             style={{width: '100%'}}
@@ -257,7 +282,10 @@ const SubscriptionPage = () => {
 
         {modalType === 'view' && currentSubscription && (<>
           <Form.Item label="创建时间">
-            <Input value={currentSubscription.updated_at} disabled/>
+            <Input value={formatDate(currentSubscription.created_at)} disabled/>
+          </Form.Item>
+          <Form.Item label="更新时间">
+            <Input value={formatDate(currentSubscription.updated_at)} disabled/>
           </Form.Item>
           {currentSubscription.content && (<Form.Item label="订阅内容">
             <Button

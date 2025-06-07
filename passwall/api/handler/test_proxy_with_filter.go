@@ -53,6 +53,7 @@ func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
 			for _, t := range typeList {
 				types = append(types, model.ProxyType(t))
 			}
+			filter.Types = types
 		}
 
 		// 创建测试请求

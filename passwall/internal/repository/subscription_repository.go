@@ -40,7 +40,7 @@ func (r *GormSubscriptionRepository) FindByID(id uint) (*model.Subscription, err
 // FindAll 查找所有订阅
 func (r *GormSubscriptionRepository) FindAll() ([]*model.Subscription, error) {
 	var subscriptions []*model.Subscription
-	result := r.db.Find(&subscriptions)
+	result := r.db.Order("updated_at desc").Find(&subscriptions)
 	if result.Error != nil {
 		return nil, result.Error
 	}

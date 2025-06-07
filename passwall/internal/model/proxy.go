@@ -11,12 +11,18 @@ const (
 	ProxyTypeVMess     ProxyType = "vmess"
 	ProxyTypeVLess     ProxyType = "vless"
 	ProxyTypeSS        ProxyType = "ss"
+	ProxyTypeSSR       ProxyType = "ssr"
 	ProxyTypeTrojan    ProxyType = "trojan"
 	ProxyTypeSocks5    ProxyType = "socks5"
 	ProxyTypeTuic      ProxyType = "tuic"
-	ProxyTypeSSR       ProxyType = "ssr"
 	ProxyTypeHysteria  ProxyType = "hysteria"
 	ProxyTypeHysteria2 ProxyType = "hysteria2"
+	ProxyTypeSnell     ProxyType = "snell"
+	ProxyTypeHttp      ProxyType = "http"
+	ProxyTypeWireGuard ProxyType = "wireguard"
+	ProxyTypeMieru     ProxyType = "mieru"
+	ProxyTypeAnyTLS    ProxyType = "anytls"
+	ProxyTypeSsh       ProxyType = "ssh"
 )
 
 // ProxyStatus 代理状态
