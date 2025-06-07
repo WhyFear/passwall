@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Button, Form, Input, message, Modal, Progress, Select, Table, Tabs, Tag} from 'antd';
-import {CopyOutlined, EyeOutlined, PlusOutlined, StopOutlined} from '@ant-design/icons';
+import {CopyOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
@@ -14,10 +14,10 @@ const StatusTag = ({status}) => {
     text = '新订阅';
   } else if (status === 1) {
     color = 'success';
-    text = '代理拉取成功';
+    text = '拉取成功';
   } else if (status === 2) {
     color = 'error';
-    text = '代理拉取失败';
+    text = '拉取失败';
   } else if (status === 3) {
     color = 'warning';
     text = '未知错误';
@@ -174,13 +174,22 @@ const SubscriptionPage = () => {
       });
     }
   }, {
-    title: '操作', key: 'action', width: 120, render: (_, record) => (<Button
-      type="link"
-      icon={<EyeOutlined/>}
-      onClick={() => handleViewSubscription(record)}
-    >
-      查看内容
-    </Button>),
+    title: '操作', key: 'action', width: 260, render: (_, record) => (<div>
+      <Button
+        type="text"
+        icon={<EyeOutlined/>}
+        onClick={() => handleViewSubscription(record)}
+      >
+        查看内容
+      </Button>
+      <Button
+        type="text"
+        icon={<ReloadOutlined/>}
+        onClick={() => handleReloadSubs(record.id)}
+      >
+        刷新订阅
+      </Button>
+    </div>),
   },];
 
   return (<div>
