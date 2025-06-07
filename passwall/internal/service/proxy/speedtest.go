@@ -78,16 +78,19 @@ func (s *speedTestServiceImpl) SaveTestResult(ctx context.Context, proxy *model.
 		CreatedAt:     now,
 	}
 
-	if err := s.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
-		return fmt.Errorf("保存测速历史记录失败: %w", err)
-	}
+	// 使用安全的数据库操作函数进行批量操作
+	return SafeDBOperation(func() error {
+		if err := s.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
+			return fmt.Errorf("保存测速历史记录失败: %w", err)
+		}
 
-	// 更新代理信息
-	if err := s.proxyRepo.UpdateSpeedTestInfo(proxy); err != nil {
-		return fmt.Errorf("更新代理信息失败: %w", err)
-	}
+		// 更新代理信息
+		if err := s.proxyRepo.UpdateSpeedTestInfo(proxy); err != nil {
+			return fmt.Errorf("更新代理信息失败: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // GetProxyTestHistory 获取代理测速历史
