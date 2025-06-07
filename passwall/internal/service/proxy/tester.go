@@ -272,7 +272,7 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 			p.LatestTestTime = &now
 
 			if result.DownloadSpeed == 0 {
-				log.Infoln("测试代理[代理ID:%d 名称:%v]无速度", p.ID, p.Name)
+				log.Debugln("测试代理[代理ID:%d 名称:%v]无速度", p.ID, p.Name)
 				p.Status = model.ProxyStatusFailed
 			}
 
