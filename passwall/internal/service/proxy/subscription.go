@@ -74,18 +74,24 @@ func (s *subscriptionManagerImpl) GetSubscriptionByURL(url string) (*model.Subsc
 
 // CreateSubscription 创建订阅
 func (s *subscriptionManagerImpl) CreateSubscription(subscription *model.Subscription) error {
-	return s.subscriptionRepo.Create(subscription)
+	return SafeDBOperation(func() error {
+		return s.subscriptionRepo.Create(subscription)
+	})
 }
 
 // UpdateSubscription 更新订阅
 func (s *subscriptionManagerImpl) UpdateSubscription(subscription *model.Subscription) error {
-	return s.subscriptionRepo.Update(subscription)
+	return SafeDBOperation(func() error {
+		return s.subscriptionRepo.Update(subscription)
+	})
 }
 
 // DeleteSubscription 删除订阅
 func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
 	// TODO: 考虑是否需要删除关联的代理服务器
-	return s.subscriptionRepo.Delete(id)
+	return SafeDBOperation(func() error {
+		return s.subscriptionRepo.Delete(id)
+	})
 }
 
 // RefreshSubscription 刷新单个订阅
@@ -258,16 +264,26 @@ func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, 
 	content, err := util.DownloadFromURL(subscription.URL, downloadOptions)
 	if err != nil {
 		log.Errorln("下载订阅内容失败: %v", err)
-		subscription.Status = model.SubscriptionStatusExpired
-		s.subscriptionRepo.Update(subscription)
+
+		// 使用安全的数据库操作函数
+		SafeDBOperation(func() error {
+			subscription.Status = model.SubscriptionStatusExpired
+			return s.subscriptionRepo.Update(subscription)
+		})
+
 		return fmt.Errorf("下载订阅内容失败: %w", err)
 	}
 
 	// 解析并保存代理
 	if err := s.ParseAndSaveProxies(ctx, subscription, content); err != nil {
 		log.Errorln("解析订阅内容失败: %v", err)
-		subscription.Status = model.SubscriptionStatusInvalid
-		s.subscriptionRepo.Update(subscription)
+
+		// 使用安全的数据库操作函数
+		SafeDBOperation(func() error {
+			subscription.Status = model.SubscriptionStatusInvalid
+			return s.subscriptionRepo.Update(subscription)
+		})
+
 		return err
 	}
 
@@ -280,23 +296,38 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	subParser, err := s.parserFactory.GetParser(string(subscription.Type))
 	if err != nil {
 		log.Errorln("获取解析器失败: %v", err)
-		subscription.Status = model.SubscriptionStatusInvalid
-		s.subscriptionRepo.Update(subscription)
+
+		// 使用安全的数据库操作函数
+		SafeDBOperation(func() error {
+			subscription.Status = model.SubscriptionStatusInvalid
+			return s.subscriptionRepo.Update(subscription)
+		})
+
 		return fmt.Errorf("获取解析器失败: %w", err)
 	}
 
 	newProxies, err := subParser.Parse(content)
 	if err != nil {
 		log.Errorln("解析订阅内容失败: %v", err)
-		subscription.Status = model.SubscriptionStatusInvalid
-		s.subscriptionRepo.Update(subscription)
+
+		// 使用安全的数据库操作函数
+		SafeDBOperation(func() error {
+			subscription.Status = model.SubscriptionStatusInvalid
+			return s.subscriptionRepo.Update(subscription)
+		})
+
 		return fmt.Errorf("解析订阅内容失败: %w", err)
 	}
 
 	if len(newProxies) == 0 {
 		log.Errorln("未从订阅中解析出任何代理")
-		subscription.Status = model.SubscriptionStatusInvalid
-		s.subscriptionRepo.Update(subscription)
+
+		// 使用安全的数据库操作函数
+		SafeDBOperation(func() error {
+			subscription.Status = model.SubscriptionStatusInvalid
+			return s.subscriptionRepo.Update(subscription)
+		})
+
 		return fmt.Errorf("未从订阅中解析出任何代理")
 	}
 
@@ -323,28 +354,33 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 			if oldProxy.Name == newProxy.Name && oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
 				continue
 			}
-			if err := s.proxyRepo.UpdateProxyConfig(oldProxy); err != nil {
-				log.Errorln("更新代理配置失败[%s]: %v", oldProxy.Name, err)
-				continue
-			}
+			SafeDBOperation(func() error {
+				if err := s.proxyRepo.UpdateProxyConfig(oldProxy); err != nil {
+					log.Errorln("更新代理配置失败[%s]: %v", oldProxy.Name, err)
+					return err
+				}
+				return nil
+			})
 		} else {
 			// 如果旧代理不存在，则创建新代理
 			newProxy.SubscriptionID = &subscription.ID
 			newProxy.Status = model.ProxyStatusPending // 设置为待处理状态，等待后续测试
-			if err := s.proxyRepo.Create(newProxy); err != nil {
-				log.Errorln("保存代理失败[%s]: %v", newProxy.Name, err)
-				continue
-			}
+			SafeDBOperation(func() error {
+				if err := s.proxyRepo.Create(newProxy); err != nil {
+					log.Errorln("保存代理失败[%s]: %v", newProxy.Name, err)
+					return err
+				}
+				return nil
+			})
 		}
 	}
 
 	// 更新订阅状态
 	subscription.Status = model.SubscriptionStatusOK
 	subscription.Content = string(content)
-	if err := s.subscriptionRepo.Update(subscription); err != nil {
-		log.Errorln("更新订阅状态失败: %v", err)
-		return fmt.Errorf("更新订阅状态失败: %w", err)
-	}
+	SafeDBOperation(func() error {
+		return s.subscriptionRepo.Update(subscription)
+	})
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理", subscription.URL, len(newProxies))
 	return nil

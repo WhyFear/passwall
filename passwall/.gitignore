@@ -6,7 +6,7 @@
 *.dylib
 *.test
 *.out
-passwall
+passwall.db*
 config.yaml
 build
 node_modules

@@ -44,6 +44,16 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
+	// 对于SQLite，设置PRAGMA参数以提高并发性能
+	if dbConfig.Driver == "sqlite" {
+		// 设置WAL模式，提高并发性能
+		DB.Exec("PRAGMA journal_mode = WAL")
+		// 设置busy_timeout，避免"database is locked"错误
+		DB.Exec("PRAGMA busy_timeout = 5000")
+		// 设置同步模式为NORMAL，提高性能
+		DB.Exec("PRAGMA synchronous = NORMAL")
+	}
+
 	// 自动迁移表结构
 	err = DB.AutoMigrate(
 		&model.Proxy{},

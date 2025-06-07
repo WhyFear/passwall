@@ -227,7 +227,11 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 				if r := recover(); r != nil {
 					log.Errorln("测试代理过程中发生panic[代理ID:%d]: %v", p.ID, r)
 					p.Status = model.ProxyStatusUnknowError
-					if err := t.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
+
+					// 使用安全的数据库操作函数
+					if err := SafeDBOperation(func() error {
+						return t.proxyRepo.UpdateSpeedTestInfo(p)
+					}); err != nil {
 						log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 					}
 				}
@@ -246,7 +250,11 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 			if err != nil {
 				log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
 				p.Status = model.ProxyStatusFailed
-				if err := t.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
+
+				// 使用安全的数据库操作函数
+				if err := SafeDBOperation(func() error {
+					return t.proxyRepo.UpdateSpeedTestInfo(p)
+				}); err != nil {
 					log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 				}
 				return
@@ -264,26 +272,30 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 			p.LatestTestTime = &now
 
 			if result.DownloadSpeed == 0 {
-				log.Infoln("测试代理[代理ID:%d 名称:%v]无速度", p.ID, p.Name)
+				log.Debugln("测试代理[代理ID:%d 名称:%v]无速度", p.ID, p.Name)
 				p.Status = model.ProxyStatusFailed
 			}
 
-			// 保存测速历史记录
-			speedTestHistory := &model.SpeedTestHistory{
-				ProxyID:       p.ID,
-				Ping:          result.Ping,
-				DownloadSpeed: result.DownloadSpeed,
-				UploadSpeed:   result.UploadSpeed,
-				TestTime:      now,
-				CreatedAt:     now,
-			}
-			if err := t.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
-				log.Errorln("保存测速历史记录失败: %v", err)
-			}
+			// 使用安全的数据库操作函数进行批量操作
+			if err := SafeDBOperation(func() error {
+				// 保存测速历史记录
+				speedTestHistory := &model.SpeedTestHistory{
+					ProxyID:       p.ID,
+					Ping:          result.Ping,
+					DownloadSpeed: result.DownloadSpeed,
+					UploadSpeed:   result.UploadSpeed,
+					TestTime:      now,
+					CreatedAt:     now,
+				}
+				if err := t.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
+					log.Errorln("保存测速历史记录失败: %v", err)
+					return err
+				}
 
-			// 保存代理状态
-			if err := t.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
-				log.Errorln("更新代理失败[代理ID:%d]: %v", p.ID, err)
+				// 保存代理状态
+				return t.proxyRepo.UpdateSpeedTestInfo(p)
+			}); err != nil {
+				log.Errorln("更新代理数据失败[代理ID:%d]: %v", p.ID, err)
 			}
 		}(proxy)
 	}
