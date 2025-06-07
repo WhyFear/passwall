@@ -134,7 +134,11 @@ func generateHttpLink(proxy *model.Proxy) (string, error) {
 	}
 
 	// 构建URL
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 
 	// 添加查询参数
 	if len(params) > 0 {
@@ -190,7 +194,11 @@ func generateAnyTLSLink(proxy *model.Proxy) (string, error) {
 	}
 
 	// 构建URL
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 
 	// 添加查询参数
 	if len(params) > 0 {
@@ -304,7 +312,11 @@ func generateTrojanLink(proxy *model.Proxy) (string, error) {
 	}
 
 	// 构建URL
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 
 	// 添加查询参数
 	if len(params) > 0 {
@@ -772,7 +784,11 @@ func generateHysteria2Link(proxy *model.Proxy) (string, error) {
 	}
 
 	// 构建URL
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 
 	// 添加查询参数
 	if len(params) > 0 {
@@ -899,7 +915,11 @@ func generateHysteriaLink(proxy *model.Proxy) (string, error) {
 	}
 
 	// 构建URL
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 
 	// 添加查询参数
 	if len(params) > 0 {
@@ -1027,7 +1047,11 @@ func generateTuicLink(proxy *model.Proxy) (string, error) {
 	}
 
 	// 构建URL
-	urlObj, _ := url.Parse(link)
+	urlObj, err := url.Parse(link)
+	if err != nil {
+		log.Errorln("解析URL失败: %v", err.Error())
+		return "", err
+	}
 
 	// 添加查询参数
 	if len(params) > 0 {
