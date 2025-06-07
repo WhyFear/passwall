@@ -77,6 +77,8 @@ export const subscriptionApi = {
   getProxies: (params) => api.get('/get_proxies', params),
 
   createProxy: (data) => api.post('/create_proxy', data),
+
+  reloadSubs: (params) => api.post('/reload_subscription', params),
 };
 
 // 节点相关API
@@ -91,4 +93,13 @@ export const nodeApi = {
   // 获取代理分享链接
   getProxyShareUrl: (id) => api.get(`/subscribe?type=share_link&id=${id}`),
   getTypes: () => api.get('/get_types'),
+  testProxy: (params) => api.post('/test_proxy_server', params),
+};
+
+// 任务相关API
+export const taskApi = {
+  // 获取任务状态
+  getTaskStatus: (taskType) => api.get('/get_task_status', {params: {task_type: taskType}}),
+  // 停止任务
+  stopTask: (taskType) => api.post('/stop_task', {task_type: taskType}),
 }; 

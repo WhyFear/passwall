@@ -5,13 +5,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-	"github.com/metacubex/mihomo/log"
 	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
 	"passwall/internal/service"
+	"passwall/internal/service/proxy"
 	"passwall/internal/util"
+
+	"github.com/gin-gonic/gin"
+	"github.com/metacubex/mihomo/log"
 )
 
 // CreateProxyRequest 创建代理请求
@@ -21,7 +23,7 @@ type CreateProxyRequest struct {
 }
 
 // CreateProxy 创建代理处理器
-func CreateProxy(proxyService service.ProxyService, subscriptionService service.SubscriptionService, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
+func CreateProxy(proxyService service.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -167,7 +169,7 @@ func CreateProxy(proxyService service.ProxyService, subscriptionService service.
 		}
 
 		// 检查URL是否已存在
-		existingSub, err := subscriptionService.GetSubscriptionByURL(subscriptionURL)
+		existingSub, err := subscriptionManager.GetSubscriptionByURL(subscriptionURL)
 		if err == nil && existingSub != nil {
 			// URL已存在，返回现有订阅ID
 			log.Infoln("订阅配置已存在:", subscriptionURL)
@@ -188,15 +190,14 @@ func CreateProxy(proxyService service.ProxyService, subscriptionService service.
 		}
 
 		// 先落库
-		if err := subscriptionService.CreateSubscription(subscription); err != nil {
+		if err := subscriptionManager.CreateSubscription(subscription); err != nil {
 			// 检查是否是唯一键冲突错误
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 				log.Infoln("订阅配置已存在(创建时检测):", subscriptionURL)
 				c.JSON(http.StatusOK, gin.H{
-					"result":          "fail",
-					"status_code":     http.StatusOK,
-					"status_msg":      "订阅配置已存在",
-					"subscription_id": existingSub.ID,
+					"result":      "fail",
+					"status_code": http.StatusOK,
+					"status_msg":  "订阅配置已存在",
 				})
 				return
 			}
@@ -217,7 +218,7 @@ func CreateProxy(proxyService service.ProxyService, subscriptionService service.
 			log.Errorln("解析订阅配置失败:", err)
 			// 更新订阅状态为无法处理
 			subscription.Status = model.SubscriptionStatusInvalid
-			_ = subscriptionService.UpdateSubscription(subscription)
+			_ = subscriptionManager.UpdateSubscription(subscription)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
@@ -227,10 +228,10 @@ func CreateProxy(proxyService service.ProxyService, subscriptionService service.
 		}
 
 		// 保存解析出的代理服务器
-		for _, proxy := range proxies {
+		for _, singleProxy := range proxies {
 			// 设置订阅ID
-			proxy.SubscriptionID = &subscription.ID
-			proxy.Status = model.ProxyStatusPending
+			singleProxy.SubscriptionID = &subscription.ID
+			singleProxy.Status = model.ProxyStatusPending
 		}
 		// 保存代理服务器
 		if err := proxyService.BatchCreateProxies(proxies); err != nil {
@@ -239,7 +240,7 @@ func CreateProxy(proxyService service.ProxyService, subscriptionService service.
 
 		// 更新订阅状态为正常
 		subscription.Status = model.SubscriptionStatusOK
-		err = subscriptionService.UpdateSubscription(subscription)
+		err = subscriptionManager.UpdateSubscription(subscription)
 		if err != nil {
 			log.Errorln("更新订阅状态失败:", err)
 		}

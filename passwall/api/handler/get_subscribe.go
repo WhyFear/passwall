@@ -26,7 +26,7 @@ type SubscribeReq struct {
 }
 
 // GetSubscribe 获取订阅处理器
-func GetSubscribe(proxyService service.ProxyService, configToken string, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
+func GetSubscribe(proxyService service.ProxyService, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 解析请求参数
 		var req SubscribeReq
@@ -36,17 +36,6 @@ func GetSubscribe(proxyService service.ProxyService, configToken string, generat
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
 				"status_msg":  "Invalid request parameters: " + err.Error(),
-			})
-			return
-		}
-
-		// 验证token
-		token := req.Token
-		if token == "" || token != configToken {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusUnauthorized,
-				"status_msg":  "Unauthorized",
 			})
 			return
 		}
@@ -88,7 +77,7 @@ func GetSubscribe(proxyService service.ProxyService, configToken string, generat
 
 			// 获取所有符合条件的代理
 			var err error
-			proxies, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, limit)
+			proxies, _, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, 1, limit)
 			if err != nil {
 				log.Errorln("查询代理服务器失败:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{

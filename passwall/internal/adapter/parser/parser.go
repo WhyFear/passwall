@@ -66,18 +66,22 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 	singleProxy.Name = proxy["name"].(string)
 	singleProxy.Type = model.StringToProxyType(proxy["type"].(string))
 	singleProxy.Domain = proxy["server"].(string)
-	// 先判断port是否是int类型, float64类型需要转换成int
-	if portInt, ok := proxy["port"].(int); ok {
-		singleProxy.Port = portInt
-	} else if portFloat, ok := proxy["port"].(float64); ok {
-		singleProxy.Port = int(portFloat)
-	} else {
-		port, err := strconv.Atoi(proxy["port"].(string))
+	// 根据不同类型处理端口值
+	switch portValue := proxy["port"].(type) {
+	case int:
+		singleProxy.Port = portValue
+	case float64:
+		singleProxy.Port = int(portValue)
+	case string:
+		port, err := strconv.Atoi(portValue)
 		if err != nil {
-			err = fmt.Errorf("convert port error: %v", err)
-			return nil, err
+			return nil, fmt.Errorf("解析端口错误: %v", err)
 		}
 		singleProxy.Port = port
+	case nil:
+		return nil, fmt.Errorf("端口值不能为空")
+	default:
+		return nil, fmt.Errorf("不支持的端口类型: %T", proxy["port"])
 	}
 
 	// 整个proxy是一个map，需要转换成json格式

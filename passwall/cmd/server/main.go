@@ -40,7 +40,7 @@ func main() {
 	}
 
 	// 5. 启动HTTP服务器
-	router := api.SetupRouter(cfg, db, services, newScheduler)
+	router := api.SetupRouter(cfg, services, newScheduler)
 
 	// 创建HTTP服务器
 	server := &http.Server{
