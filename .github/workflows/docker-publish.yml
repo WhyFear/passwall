@@ -3,6 +3,9 @@ name: Docker Build
 on:
   push:
     branches: [ "master" ]
+    tags:
+      - 'v*'
+      - 'test'
   workflow_dispatch:
 
 jobs:
@@ -18,7 +21,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set Docker tags
+        id: docker_tags
+        run: |
+          if [[ $GITHUB_REF == refs/tags/test ]]; then
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/passwall:test" >> $GITHUB_OUTPUT
+          elif [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/passwall:$VERSION,${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         run: |
-          docker build --no-cache -t ${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest .
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/passwall:latest
+          IFS=',' read -ra TAGS <<< "${{ steps.docker_tags.outputs.tags }}"
+          for tag in "${TAGS[@]}"; do
+            echo "Building and pushing: $tag"
+            docker build --no-cache -t $tag .
+            docker push $tag
+          done
