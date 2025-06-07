@@ -1,6 +1,6 @@
 import axios from 'axios';
 import config from '../config';
-import { clearToken } from '../utils/tokenUtils';
+import {clearToken} from '../utils/tokenUtils';
 
 const API_BASE_URL = config.apiBaseUrl;
 
@@ -77,6 +77,12 @@ export const subscriptionApi = {
   getProxies: (params) => api.get('/get_proxies', params),
 
   createProxy: (data) => api.post('/create_proxy', data),
+
+  createProxyWithFormData: (formData) => api.post('/create_proxy', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }),
 
   reloadSubs: (params) => api.post('/reload_subscription', params),
 };

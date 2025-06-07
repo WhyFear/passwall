@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"passwall/config"
@@ -244,6 +245,13 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Conte
 // refreshSubscriptionAsync 异步刷新单个订阅
 func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, subscription *model.Subscription) error {
 	log.Infoln("开始刷新订阅: %s", subscription.URL)
+	if subscription.URL == "" {
+		return fmt.Errorf("订阅为空")
+	}
+	if !strings.HasPrefix(subscription.URL, "http") {
+		log.Infoln("非下载链接，无需刷新")
+		return nil
+	}
 
 	// 设置下载选项，包括代理
 	downloadOptions := &util.DownloadOptions{

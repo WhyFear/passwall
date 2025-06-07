@@ -1,9 +1,9 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Button, Form, Input, message, Modal, Progress, Select, Table, Tabs, Tag} from 'antd';
-import {CopyOutlined, EyeOutlined, PlusOutlined, StopOutlined} from '@ant-design/icons';
+import {Button, Form, message, Modal, Progress, Table, Tabs, Tag} from 'antd';
+import {EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
-import {formatDate} from '../utils/timeUtils';
+import SubscriptionForm from '../components/SubscriptionForm';
 
 const StatusTag = ({status}) => {
   let color = 'default';
@@ -14,10 +14,10 @@ const StatusTag = ({status}) => {
     text = '新订阅';
   } else if (status === 1) {
     color = 'success';
-    text = '代理拉取成功';
+    text = '拉取成功';
   } else if (status === 2) {
     color = 'error';
-    text = '代理拉取失败';
+    text = '拉取失败';
   } else if (status === 3) {
     color = 'warning';
     text = '未知错误';
@@ -36,6 +36,7 @@ const SubscriptionPage = () => {
   const [activeTab, setActiveTab] = useState('1');
   const [taskStatus, setTaskStatus] = useState(null);
   const timerRef = useRef(null);
+  const [uploadType, setUploadType] = useState('url');
 
   // 获取订阅列表
   const fetchSubscriptions = async () => {
@@ -101,11 +102,20 @@ const SubscriptionPage = () => {
     }
   };
 
+  // 监听表单字段变化
+  const handleFormValuesChange = (changedValues) => {
+    if ('upload_type' in changedValues) {
+      setUploadType(changedValues.upload_type);
+    }
+  };
+
   // 添加订阅
   const handleAddSubscription = () => {
     setModalType('add');
     setCurrentSubscription(null);
     form.resetFields();
+    setUploadType('url');
+    form.setFieldsValue({upload_type: 'url'});
     setModalVisible(true);
   };
 
@@ -146,13 +156,35 @@ const SubscriptionPage = () => {
       const values = await form.validateFields();
       setLoading(true);
 
-      await subscriptionApi.createProxy(values);
+      // 处理表单提交
+      if (values.upload_type === 'file' && values.content) {
+        // 使用FormData处理文件上传
+        const formData = new FormData();
+        formData.append('type', values.type);
+        formData.append('upload_type', values.upload_type);
+
+        // 将内容转为文件
+        const contentBlob = new Blob([values.content], {type: 'text/plain'});
+        formData.append('file', contentBlob, 'subscription.txt');
+
+        await subscriptionApi.createProxyWithFormData(formData);
+      } else {
+        // 处理URL提交
+        await subscriptionApi.createProxy({
+          type: values.type, upload_type: values.upload_type, url: values.url || '', content: values.content || ''
+        });
+      }
+
       message.success('添加订阅成功');
       setModalVisible(false);
       await fetchSubscriptions();
     } catch (error) {
-      message.error('添加订阅失败');
-      console.error(error);
+      if (error.errorFields) {
+        message.error('请填写必填字段');
+      } else {
+        message.error(`添加订阅失败: ${error.message || '未知错误'}`);
+        console.error(error);
+      }
     } finally {
       setLoading(false);
     }
@@ -174,13 +206,22 @@ const SubscriptionPage = () => {
       });
     }
   }, {
-    title: '操作', key: 'action', width: 120, render: (_, record) => (<Button
-      type="link"
-      icon={<EyeOutlined/>}
-      onClick={() => handleViewSubscription(record)}
-    >
-      查看内容
-    </Button>),
+    title: '操作', key: 'action', width: 260, render: (_, record) => (<div>
+      <Button
+        type="text"
+        icon={<EyeOutlined/>}
+        onClick={() => handleViewSubscription(record)}
+      >
+        查看内容
+      </Button>
+      <Button
+        type="text"
+        icon={<ReloadOutlined/>}
+        onClick={() => handleReloadSubs(record.id)}
+      >
+        刷新订阅
+      </Button>
+    </div>),
   },];
 
   return (<div>
@@ -251,64 +292,17 @@ const SubscriptionPage = () => {
         onClick={handleSubmit}
       >
         确定
-      </Button>,] : [<Button key="close" type="primary" onClick={() => setModalVisible(false)}>
+      </Button>] : [<Button key="close" type="primary" onClick={() => setModalVisible(false)}>
         关闭
-      </Button>,]}
+      </Button>]}
     >
-      <Form
+      <SubscriptionForm
         form={form}
-        layout="vertical"
-        disabled={modalType === 'view'}
-      >
-        <Form.Item
-          name="url"
-          label="订阅链接"
-          rules={[{required: true, message: '请输入订阅链接'}]}
-        >
-          <Input placeholder="请输入订阅链接"/>
-        </Form.Item>
-        <Form.Item
-          name="type"
-          label="类型"
-          rules={[{required: true, message: '请选择类型'}]}
-          style={modalType === 'view' ? {display: 'none'} : {}}
-        >
-          <Select
-            style={{width: '100%'}}
-            placeholder="请选择订阅类型"
-            options={[{value: 'clash', label: 'Clash'}, {value: 'share_url', label: '分享链接'},]}
-          />
-        </Form.Item>
-
-        {modalType === 'view' && currentSubscription && (<>
-          <Form.Item label="创建时间">
-            <Input value={formatDate(currentSubscription.created_at)} disabled/>
-          </Form.Item>
-          <Form.Item label="更新时间">
-            <Input value={formatDate(currentSubscription.updated_at)} disabled/>
-          </Form.Item>
-          {currentSubscription.content && (<Form.Item label="订阅内容">
-            <Button
-              type="primary"
-              size="small"
-              icon={<CopyOutlined/>}
-              onClick={() => {
-                navigator.clipboard.writeText(currentSubscription.content)
-                  .then(() => message.success('分享链接已复制到剪贴板'))
-                  .catch(() => message.error('复制失败，请手动复制'));
-              }}
-              disabled={!currentSubscription.content}
-            >
-              复制
-            </Button>
-            <Input.TextArea
-              value={currentSubscription.content}
-              disabled
-              autoSize={{minRows: 3, maxRows: 10}}
-            />
-          </Form.Item>)}
-        </>)}
-      </Form>
+        modalType={modalType}
+        uploadType={uploadType}
+        currentSubscription={currentSubscription}
+        onValuesChange={handleFormValuesChange}
+      />
     </Modal>
   </div>);
 };

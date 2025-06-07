@@ -1,4 +1,4 @@
-import {CheckOutlined, EyeOutlined, StopOutlined} from '@ant-design/icons';
+import {EyeOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {Button, Card, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
@@ -386,7 +386,7 @@ const NodesPage = () => {
       <Tooltip title="测速">
         <Button
           type="text"
-          icon={<CheckOutlined/>}
+          icon={<ReloadOutlined/>}
           onClick={() => handleTestProxy(record.id)}
         />
       </Tooltip>
@@ -437,23 +437,21 @@ const NodesPage = () => {
             按当前参数导出订阅链接
           </Button>
         </div>
-        <Card>
-          <Table
-            columns={columns}
-            dataSource={nodes}
-            rowKey="id"
-            loading={loading}
-            pagination={{
-              ...pagination,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total) => `共 ${total} 条记录`,
-              pageSizeOptions: ['10', '20', '50', '100']
-            }}
-            onChange={handleTableChange}
-            scroll={{x: 1200}}
-          />
-        </Card>
+        <Table
+          columns={columns}
+          dataSource={nodes}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            ...pagination,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total) => `共 ${total} 条记录`,
+            pageSizeOptions: ['10', '20', '50', '100']
+          }}
+          onChange={handleTableChange}
+          scroll={{x: 1200}}
+        />
       </items>
     </Tabs>
 
