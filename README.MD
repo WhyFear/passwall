@@ -1,172 +1,59 @@
-## 三大功能
+# PassWall
 
-**导入服务器配置/订阅源：**
+PassWall 是一个功能强大的代理服务器管理工具，支持多种代理协议、自动测速、定时任务和订阅管理。它提供了直观的Web界面和灵活的API，让您轻松管理和使用各类代理服务器。
 
-1. clash订阅配置文件
-2. v2ray/xray订阅配置文件
-3. raw配置（vless、vmess、trojan）
-4. 其他
+## 使用指南
 
-**测速能力，支持定时测试，调用接口触发测试**
+1. 访问Web界面：`http://localhost:8080`
+2. 使用配置文件中设置的token进行登录
+3. 在"订阅管理"页面导入订阅
+4. 在"节点管理"页面查看和测试节点
+5. 使用生成的订阅链接配置您的客户端
 
-1. xray
-2. mihomo（支持多种协议）
-3. trojan
+## 安装部署
 
-**提供多种订阅配置**
+## 配置文件说明
 
-1. clash
-2. v2ray/xray配置文件
+```yaml
+token: "your_token"  # API访问令牌
+concurrent: 30  # 默认并发数
 
-## 配置文件设计
+server:
+  address: "0.0.0.0:8080"  # 服务器监听地址
 
-```YAML
-token: "123"   # 获取订阅链接时，token必填
-cron_jobs:
-  - name: "想写啥写啥，给自己看的"
-    schedule: "*/5 * * * * *"
-    reload_subscrib_config: true
-    test_all: true
-    test_failed: true
-    test_speed: true
-    concurrent: 5
-  - name: "可以每天定时单线程测速，注意同时只能运行一个任务"
-    schedule: "*/5 * * * * *"
-    reload_subscrib_config: false
+database:
+  driver: "sqlite"  # 数据库类型
+  dsn: "passwall.db"  # 数据库连接字符串
+
+proxy:
+  enabled: false  # 是否启用代理
+  url: "socks5://127.0.0.1:7890"  # 代理地址
+
+cron_jobs: # 定时任务配置
+  - name: "每6小时测试所有节点"  # 任务名称
+    schedule: "0 0 */6 * * *"  # Cron表达式
+    reload_subscribe_config: true  # 是否重新加载订阅
+    test_all: true  # 是否测试所有节点
+    test_new: false  # 是否测试新节点
+    test_failed: false  # 是否测试失败节点
+    test_speed: false  # 是否测速
+    concurrent: 30  # 并发数
+
+  - name: "每天凌晨3点测试节点速度"
+    schedule: "0 0 3 * * *"
+    reload_subscribe_config: false
     test_all: false
+    test_new: false
     test_failed: false
     test_speed: true
+    concurrent: 1
 ```
-
-## 接口设计
-
-### 创建订阅源
-
-**path: create_proxy**
-
-method: post
-
-入参
-
-| 入参 | 格式       | 是否必填                             | 示例                                                     |
-| ------ | ------------ | -------------------------------------- | ---------------------------------------------------------- |
-| url  | string     | 与file二选一必填，二者都填以file为准 | socks://Og\=\=@dsm.893843891.xyz:7890#DSM-mihomo<br /> |
-| file | 二进制文件 | 与url二选一必填，二者都填以file为准  | 二进制文件。<br />                                           |
-| type | string     | 必填                                 | clash、v2ray、trojan                                     |
-
-出参
-
-| 参数            | 格式   | 示例          |
-| ----------------- | -------- | --------------- |
-| result          | string | success、fail |
-| status\_code | int    | 200、400等    |
-| status\_msg  | string | OK            |
-
-流程图
-
-![whiteboard_exported_image.png](assets/whiteboard_exported_image.png)
-
-### 触发测速
-
-**path: test_proxy_server**
-
-method: post/get
-
-入参：
-
-任务提交后会异步运行，同时运行的测速任务只能有一个，如果有在进行中的任务，会返回失败
-
-| 参数                           | 格式          | 是否必填 | 示例                                                                      |
-| -------------------------------- | --------------- | ---------- | --------------------------------------------------------------------------- |
-| reload\_subscrib\_config | bool          | 否       | 默认为false，为true则会重新处理所有订阅配置文件                           |
-| test\_all                   | bool          | 否       | 默认为**true**，为true则会重新对所有节点多线程测速，参数优先级最高                |
-| test\_failed                | bool          | 否       | 默认为false，为true则只对status\=2和3的节点多线程测速，参数优先级第二  |
-| test\_speed                 | bool          | 否       | 默认为false，为true则对所有status\=1节点进行单进程测速，参数优先级第三 |
-| concurrent                     | int（\>1） | 否       | 默认为5线程测速，test\_speed为true时不生效                             |
-
-出参
-
-| 参数            | 格式   | 示例                                                                                          |
-| ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
-| result          | string | task\_running（有任务在运行），task\_submit(任务提交成功)，unknow\_error（未知错误） |
-| status\_code | int    | 200、400等                                                                                    |
-| status\_msg  | string | OK                                                                                            |
-
-流程图
-
-![whiteboard_exported_image (1).png](assets/whiteboard_exported_image%20%281%29.png)
-
-### 获取订阅链接
-
-**path: subscribe**
-
-Method: get
-
-入参：
-
-任务提交后会异步运行，同时运行的测速任务只能有一个，如果有在进行中的任务，会返回失败
-
-| 参数   | 格式   | 是否必填 | 示例                                                     |
-| -------- | -------- | ---------- | ---------------------------------------------------------- |
-| token  | string | 是       | 配置文件中配置的token                                    |
-| type   | string | 否       | share\_url、clash、v2ray。默认为share\_url分享链接 |
-| status | list   | 否       | [0,1,2] 返回指定状态的服务器                             |
-
-出参：
-
-成功时返回订阅链接/文件内容
-
-失败时，返回status\_code+status\_msg
-
-## 定时任务设计
-
-参考：https://space.coze.cn/s/70L2IPu2UkY/
-
-执行时调用触发测速接口
-
-## 数据库设计
-
-### 主表：单节点数据库设计，联合主键（ip/domin+port）
-
-| **id** | **subscribe_url_id**                                                        | **ip/domin** | **port** | **proxy_type**<br />    | **config(节点配置)** | **ping** | **download_speed** | upload\_speed | **status** | **latest_test_time** | **create_time** | **update_time** |
-| -- | --------------------------------------------------------- | -- | -- | ------- | -- | -- | -- | ------------------ | -- | -- | -- | -- |
-|  | 不一定有值                                              |  |  | ss    |  |  |  |                  |  |  |  |  |
-|  | 如果subscribe\_url不同，但是节点相同，则覆写为最新的 |  |  | vless |  |  |  |                  |  |  |  |  |
-|  |                                                         |  |  | sock5 |  |  |  |                  |  |  |  |  |
-
-### 订阅链接的数据库设计（节点可能会更新）,主键subscribe\_url
-
-| **id**  | **subscribe_url(配置文件链接)** |  | **status**<br />                        | **create_time**<br /> | **update_time** |
-| --- | -- | -- | --------------------------- | ---- | -- |
-| 1 |  |  | 0（待处理）               |    |  |
-| 2 |  |  | 1（正常可拉取）           |    |  |
-|   |  |  | 2（无法处理）             |    |  |
-|   |  |  | 3（曾经可处理，现在失效） |    |  |
-
-### 历史测速记录
-
-| **id** | **proxy_id**         | **ping** | **download_speed** | upload\_speed | **test_time** |
-| -- | ---------- | -- | -- | ------------------ | -- |
-|  | 主表的id |  |  |                  |  |
-|  |          |  |  |                  |  |
-
-## 订阅status状态机设计
-
-![whiteboard_exported_image (2).png](assets/whiteboard_exported_image%20%282%29.png)
-
-## 参考链接
-
-https://wiki.metacubex.one/config/proxy-providers/content/#\_\_tabbed\_1\_1
-
-https://linux.do/t/topic/683144
-
-## Docker部署
 
 ### 使用预构建镜像
 
 ```bash
 # 拉取最新镜像
-docker pull 用户名/passwall:latest
+docker pull pakro888/passwall:latest
 
 # 运行容器
 docker run -d \
@@ -174,7 +61,7 @@ docker run -d \
   -p 8080:8080 \
   -v $(pwd)/config.yaml:/app/config.yaml \
   -v $(pwd)/data:/app/data \
-  用户名/passwall:latest
+  pakro888/passwall:latest
 ```
 
 ### 使用Docker Compose
@@ -182,21 +69,246 @@ docker run -d \
 1. 创建`config.yaml`文件，配置您的服务参数
 2. 运行以下命令启动服务：
 
+```yaml
+version: '3'
+
+services:
+  passwall:
+    image: pakro888/passwall:latest
+    container_name: passwall
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - TZ=Asia/Shanghai
+```
+
 ```bash
 docker-compose up -d
 ```
 
-### 自行构建镜像
+## 功能特点
 
-```bash
-# 构建镜像
-docker build -t passwall:latest .
+### 1. 多协议支持
 
-# 运行容器
-docker run -d \
-  --name passwall \
-  -p 8080:8080 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  -v $(pwd)/data:/app/data \
-  passwall:latest
+- VMess、VLess、SS、SSR、Trojan、Socks5等多种协议
+- Hysteria、Tuic、WireGuard等新型协议
+
+### 2. 订阅管理
+
+- 支持导入多种格式的订阅源
+  - Clash配置文件
+  - V2ray/Xray配置文件
+  - 原始配置（vless、vmess、trojan等）
+- 自动解析和管理节点信息
+
+### 3. 测速能力
+
+- 支持多线程并发测试
+- 定时自动测试所有节点
+- 单独测试失败节点
+- 详细的速度测试（延迟、上传、下载速度）
+- 支持多种测速工具：
+  - Xray
+  - Mihomo（支持多种协议）
+  - Trojan
+
+### 4. 订阅生成
+
+- 生成多种格式的订阅配置
+  - Clash配置
+  - V2ray/Xray配置文件
+  - 分享链接
+
+### 5. 定时任务
+
+- 灵活配置定时测试任务
+- 支持多种测试模式（全部节点、失败节点、测速等）
+
+## 系统架构
+
+### 整体架构
+
+```mermaid
+graph TD
+    A[用户] --> B[前端Web界面]
+    B --> C[API接口]
+    C --> D[代理服务]
+    
+    subgraph 前端功能
+    B1[订阅管理] --> B
+    B2[节点管理] --> B
+    B3[测速功能] --> B
+    B4[订阅链接生成] --> B
+    end
+    
+    subgraph 后端服务
+    C --> E[订阅管理服务]
+    C --> F[代理测试服务]
+    C --> G[任务管理服务]
+    C --> H[定时调度服务]
+    end
+    
+    E --> I[(数据库)]
+    F --> I
+    G --> I
+    
+    J[定时任务] --> H
+    H --> F
+    
+    K[外部订阅源] --> E
+    E --> D
+    
+    L[测速结果] --> F
+    F --> D
 ```
+
+### 订阅处理流程
+
+```mermaid
+graph TD
+    A[导入订阅] --> B{订阅类型?}
+    B -->|Clash| C[Clash解析器]
+    B -->|V2ray| D[V2ray解析器]
+    
+    C --> F[解析节点配置]
+    D --> F
+    E --> F
+    
+    F --> G[保存到数据库]
+    G --> H[测试节点连通性]
+    H --> I{测试结果}
+    I -->|成功| J[更新状态为可用]
+    I -->|失败| K[更新状态为不可用]
+    
+    L[定时任务] --> M{任务类型?}
+    M -->|测试全部| N[测试所有节点]
+    M -->|测试失败| O[测试失败节点]
+    M -->|测速| P[测试节点速度]
+    
+    N --> H
+    O --> H
+    P --> Q[单线程测速]
+    Q --> R[更新节点速度信息]
+```
+
+### 订阅生成流程
+
+```mermaid
+graph TD
+    A[用户请求订阅] --> B{验证Token}
+    B -->|失败| C[返回错误]
+    B -->|成功| D{订阅类型?}
+    
+    D -->|share_url| E[生成分享链接]
+    D -->|clash| F[生成Clash配置]
+    D -->|v2ray| G[生成V2ray配置]
+    
+    E --> H[返回订阅内容]
+    F --> H
+    G --> H
+    
+    I[节点状态过滤] --> J{状态列表}
+    J -->|指定状态| K[筛选指定状态节点]
+    J -->|全部| L[获取全部节点]
+    
+    K --> M[生成订阅内容]
+    L --> M
+    M --> H
+```
+
+## 数据库设计
+
+### 代理节点表 (Proxy)
+
+| 字段名              | 类型       | 说明           |
+|------------------|----------|--------------|
+| id               | uint     | 主键           |
+| subscription_id  | uint     | 订阅ID (外键)    |
+| name             | string   | 节点名称         |
+| domain           | string   | 域名/IP        |
+| port             | int      | 端口           |
+| type             | string   | 代理类型         |
+| config           | string   | 节点配置(JSON格式) |
+| ping             | int      | 延迟(ms)       |
+| download_speed   | int      | 下载速度(KB/s)   |
+| upload_speed     | int      | 上传速度(KB/s)   |
+| status           | int      | 状态           |
+| pinned           | bool     | 是否置顶         |
+| latest_test_time | datetime | 最近测试时间       |
+| created_at       | datetime | 创建时间         |
+| updated_at       | datetime | 更新时间         |
+
+### 订阅表 (Subscription)
+
+| 字段名        | 类型       | 说明        |
+|------------|----------|-----------|
+| id         | uint     | 主键        |
+| url        | string   | 订阅URL/文件名 |
+| content    | string   | 订阅内容      |
+| type       | string   | 订阅类型      |
+| status     | int      | 状态        |
+| created_at | datetime | 创建时间      |
+| updated_at | datetime | 更新时间      |
+
+### 测速历史表 (SpeedTestHistory)
+
+| 字段名            | 类型       | 说明         |
+|----------------|----------|------------|
+| id             | uint     | 主键         |
+| proxy_id       | uint     | 代理ID (外键)  |
+| ping           | int      | 延迟(ms)     |
+| download_speed | int      | 下载速度(KB/s) |
+| upload_speed   | int      | 上传速度(KB/s) |
+| test_time      | datetime | 测试时间       |
+
+
+
+## API接口
+
+### 公共API
+
+- `POST /api/create_proxy` - 创建代理节点/导入订阅
+- `POST /api/test_proxy_server` - 触发节点测试
+- `POST /api/stop_task` - 停止测试任务
+- `GET /api/subscribe` - 获取订阅链接
+- `POST /api/reload_subscription` - 重新加载订阅
+- `GET /api/task_all_status` - 获取所有任务状态
+- `GET /api/scheduler_status` - 获取调度器状态
+
+### Web界面API
+
+- `GET /web/api/subscriptions` - 获取所有订阅
+- `GET /web/api/get_proxies` - 获取所有代理节点
+- `GET /web/api/proxy/:id/history` - 获取节点历史测速记录
+- `GET /web/api/get_types` - 获取所有代理类型
+- `POST /web/api/pin_proxy` - 置顶/取消置顶节点
+- `GET /web/api/get_task_status` - 获取指定任务状态
+
+
+
+## 技术栈
+
+- 后端：Go (Gin框架)
+- 前端：React + Ant Design
+- 数据库：SQLite
+- 容器化：Docker
+
+## 开发计划
+
+- [ ] 支持更多订阅格式
+- [ ] 优化测速算法
+
+## 特别鸣谢
+
+https://github.com/MetaCubeX/mihomo 提供的核心能力
+
+https://github.com/faceair/clash-speedtest 项目提供的测速支持
+
+## License
+
+This software is released under the GPL-3.0 license.
