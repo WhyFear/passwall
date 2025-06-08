@@ -4,11 +4,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/metacubex/mihomo/log"
 	"net/url"
 	"strings"
 
+	"github.com/metacubex/mihomo/log"
+
 	"passwall/internal/model"
+	"passwall/internal/util"
 )
 
 // ShareLinkGenerator 分享链接生成器
@@ -47,6 +49,17 @@ func (g *ShareLinkGenerator) Format() string {
 
 // generateShareLink 根据代理类型生成相应的分享链接
 func generateShareLink(proxy *model.Proxy) (string, error) {
+	// 验证代理配置
+	var config map[string]any
+	err := json.Unmarshal([]byte(proxy.Config), &config)
+	if err != nil {
+		return "", fmt.Errorf("解析代理配置失败: %v", err)
+	}
+	if err = util.ValidateByType(proxy.Type, config); err != nil {
+		log.Warnln("代理配置验证失败: %v, domain=%v, port=%v", err, proxy.Domain, proxy.Port)
+		return "", fmt.Errorf("代理配置验证失败: %v", err)
+	}
+
 	// 实现参考：https://github1s.com/clash-verge-rev/clash-verge-rev/blob/dev/src/utils/uri-parser.ts
 	switch proxy.Type {
 	case model.ProxyTypeVMess:
