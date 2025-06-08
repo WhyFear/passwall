@@ -2,6 +2,95 @@
 
 PassWall 是一个功能强大的代理服务器管理工具，支持多种代理协议、自动测速、定时任务和订阅管理。它提供了直观的Web界面和灵活的API，让您轻松管理和使用各类代理服务器。
 
+## 使用指南
+
+1. 访问Web界面：`http://localhost:8080`
+2. 使用配置文件中设置的token进行登录
+3. 在"订阅管理"页面导入订阅
+4. 在"节点管理"页面查看和测试节点
+5. 使用生成的订阅链接配置您的客户端
+
+## 安装部署
+
+## 配置文件说明
+
+```yaml
+token: "your_token"  # API访问令牌
+concurrent: 30  # 默认并发数
+
+server:
+  address: "0.0.0.0:8080"  # 服务器监听地址
+
+database:
+  driver: "sqlite"  # 数据库类型
+  dsn: "passwall.db"  # 数据库连接字符串
+
+proxy:
+  enabled: false  # 是否启用代理
+  url: "socks5://127.0.0.1:7890"  # 代理地址
+
+cron_jobs: # 定时任务配置
+  - name: "每6小时测试所有节点"  # 任务名称
+    schedule: "0 0 */6 * * *"  # Cron表达式
+    reload_subscribe_config: true  # 是否重新加载订阅
+    test_all: true  # 是否测试所有节点
+    test_new: false  # 是否测试新节点
+    test_failed: false  # 是否测试失败节点
+    test_speed: false  # 是否测速
+    concurrent: 30  # 并发数
+
+  - name: "每天凌晨3点测试节点速度"
+    schedule: "0 0 3 * * *"
+    reload_subscribe_config: false
+    test_all: false
+    test_new: false
+    test_failed: false
+    test_speed: true
+    concurrent: 1
+```
+
+### 使用预构建镜像
+
+```bash
+# 拉取最新镜像
+docker pull pakro888/passwall:latest
+
+# 运行容器
+docker run -d \
+  --name passwall \
+  -p 8080:8080 \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  -v $(pwd)/data:/app/data \
+  pakro888/passwall:latest
+```
+
+### 使用Docker Compose
+
+1. 创建`config.yaml`文件，配置您的服务参数
+2. 运行以下命令启动服务：
+
+```yaml
+version: '3'
+
+services:
+  passwall:
+    image: pakro888/passwall:latest
+    container_name: passwall
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - TZ=Asia/Shanghai
+```
+
+```bash
+docker-compose up -d
+```
+
 ## 功能特点
 
 ### 1. 多协议支持
@@ -85,7 +174,6 @@ graph TD
     A[导入订阅] --> B{订阅类型?}
     B -->|Clash| C[Clash解析器]
     B -->|V2ray| D[V2ray解析器]
-    B -->|Raw| E[Raw解析器]
     
     C --> F[解析节点配置]
     D --> F
@@ -178,42 +266,7 @@ graph TD
 | upload_speed   | int      | 上传速度(KB/s) |
 | test_time      | datetime | 测试时间       |
 
-## 配置文件说明
 
-```yaml
-token: "xeh8ptGMVY^ymHiZ"  # API访问令牌
-concurrent: 30  # 默认并发数
-
-server:
-  address: "0.0.0.0:8080"  # 服务器监听地址
-
-database:
-  driver: "sqlite"  # 数据库类型
-  dsn: "passwall.db"  # 数据库连接字符串
-
-proxy:
-  enabled: true  # 是否启用代理
-  url: "socks5://dsm.893843891.xyz:7890"  # 代理地址
-
-cron_jobs: # 定时任务配置
-  - name: "每6小时测试所有节点"  # 任务名称
-    schedule: "0 0 */6 * * *"  # Cron表达式
-    reload_subscribe_config: true  # 是否重新加载订阅
-    test_all: true  # 是否测试所有节点
-    test_new: false  # 是否测试新节点
-    test_failed: false  # 是否测试失败节点
-    test_speed: false  # 是否测速
-    concurrent: 30  # 并发数
-
-  - name: "每天凌晨3点测试节点速度"
-    schedule: "0 0 3 * * *"
-    reload_subscribe_config: false
-    test_all: false
-    test_new: false
-    test_failed: false
-    test_speed: true
-    concurrent: 1
-```
 
 ## API接口
 
@@ -236,54 +289,7 @@ cron_jobs: # 定时任务配置
 - `POST /web/api/pin_proxy` - 置顶/取消置顶节点
 - `GET /web/api/get_task_status` - 获取指定任务状态
 
-## 安装部署
 
-### 使用预构建镜像
-
-```bash
-# 拉取最新镜像
-docker pull 用户名/passwall:latest
-
-# 运行容器
-docker run -d \
-  --name passwall \
-  -p 8080:8080 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  -v $(pwd)/data:/app/data \
-  用户名/passwall:latest
-```
-
-### 使用Docker Compose
-
-1. 创建`config.yaml`文件，配置您的服务参数
-2. 运行以下命令启动服务：
-
-```bash
-docker-compose up -d
-```
-
-### 自行构建镜像
-
-```bash
-# 构建镜像
-docker build -t passwall:latest .
-
-# 运行容器
-docker run -d \
-  --name passwall \
-  -p 8080:8080 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  -v $(pwd)/data:/app/data \
-  passwall:latest
-```
-
-## 使用指南
-
-1. 访问Web界面：`http://localhost:8080`
-2. 使用配置文件中设置的token进行登录
-3. 在"订阅管理"页面导入订阅
-4. 在"节点管理"页面查看和测试节点
-5. 使用生成的订阅链接配置您的客户端
 
 ## 技术栈
 
@@ -294,8 +300,15 @@ docker run -d \
 
 ## 开发计划
 
-- [ ] 支持更多代理协议
-- [ ] 增强Web界面功能
-- [ ] 添加用户权限管理
 - [ ] 支持更多订阅格式
 - [ ] 优化测速算法
+
+## 特别鸣谢
+
+https://github.com/MetaCubeX/mihomo 提供的核心能力
+
+https://github.com/faceair/clash-speedtest 项目提供的测速支持
+
+## License
+
+This software is released under the GPL-3.0 license.
