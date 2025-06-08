@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/metacubex/mihomo/log"
+	"passwall/internal/util"
 	"strconv"
 
 	"passwall/internal/model"
@@ -90,6 +92,12 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 		err = fmt.Errorf("marshal proxy error: %v", err)
 		return nil, err
 	}
+	// 验证代理配置是否包含必要的字段
+	if err = util.ValidateByType(singleProxy.Type, proxy); err != nil {
+		log.Errorln("校验代理配置失败: %v，domain=%v, port=%v", err, singleProxy.Domain, singleProxy.Port)
+		return nil, fmt.Errorf("校验代理配置失败: %v", err)
+	}
+
 	singleProxy.Config = string(jsonData)
 	return &singleProxy, nil
 }
