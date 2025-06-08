@@ -27,6 +27,7 @@ type ProxyResp struct {
 	Address         string    `json:"address"`
 	Type            string    `json:"type"`
 	Status          int       `json:"status"`
+	Pinned          bool      `json:"pinned"`
 	Ping            int       `json:"ping"`
 	DownloadSpeed   int       `json:"download_speed"`
 	UploadSpeed     int       `json:"upload_speed"`
@@ -98,6 +99,7 @@ func GetProxies(proxyService service.ProxyService, subscriptionManager proxy.Sub
 				Address:         singleProxy.Domain + ":" + strconv.Itoa(singleProxy.Port),
 				Type:            string(singleProxy.Type),
 				Status:          int(singleProxy.Status),
+				Pinned:          singleProxy.Pinned,
 				Ping:            singleProxy.Ping,
 				DownloadSpeed:   singleProxy.DownloadSpeed,
 				UploadSpeed:     singleProxy.UploadSpeed,

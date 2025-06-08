@@ -48,6 +48,7 @@ type Proxy struct {
 	DownloadSpeed  int         `json:"download_speed" gorm:"index:idx_proxies_download_speed;index:idx_filter_sort"` // 下载速度(KB/s)
 	UploadSpeed    int         `json:"upload_speed" gorm:"index:idx_proxies_upload_speed;index:idx_filter_sort"`     // 上传速度(KB/s)
 	Status         ProxyStatus `json:"status" gorm:"index:idx_proxies_status;index:idx_filter_sort;index:idx_latest_time_status"`
+	Pinned         bool        `json:"pinned" gorm:"index:idx_proxies_pinned;default:false"` // 是否置顶
 	LatestTestTime *time.Time  `json:"latest_test_time" gorm:"index:idx_proxies_latest_test_time;index:idx_filter_sort;index:idx_latest_time_status"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`

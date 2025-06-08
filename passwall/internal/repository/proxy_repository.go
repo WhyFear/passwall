@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"github.com/enfein/mieru/v3/pkg/log"
 	"passwall/internal/model"
 	"time"
 
@@ -43,6 +44,7 @@ type ProxyRepository interface {
 	Update(proxy *model.Proxy) error
 	UpdateSpeedTestInfo(proxy *model.Proxy) error
 	UpdateProxyConfig(proxy *model.Proxy) error
+	PinProxy(id uint, pin bool) error
 	Delete(id uint) error
 	FindPage(query PageQuery) (*PageResult, error)
 	GetTypes(types *[]string) error
@@ -300,5 +302,15 @@ func (r *GormProxyRepository) GetTypes(types *[]string) error {
 		return result.Error
 	}
 	*types = proxyTypes
+	return nil
+}
+
+func (r *GormProxyRepository) PinProxy(id uint, pin bool) error {
+	db := r.db.Model(&model.Proxy{})
+	result := db.Where("id =?", id).Update("pinned", pin)
+	if result.Error != nil {
+		log.Errorf("更新代理状态失败: %v", result.Error)
+		return result.Error
+	}
 	return nil
 }
