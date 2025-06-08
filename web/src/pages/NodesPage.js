@@ -122,9 +122,9 @@ const NodesPage = () => {
     try {
       setHistoryLoading(true);
       const data = await nodeApi.getProxyHistory(nodeId, page, pageSize);
-      setNodeHistory(Array.isArray(data) ? data : []);
+      setNodeHistory(Array.isArray(data?.items) ? data.items : []);
       setHistoryPagination(prev => ({
-        ...prev, current: page, pageSize: pageSize, total: Array.isArray(data) ? data.length : 0,
+        ...prev, current: page, pageSize: pageSize, total: data?.total || 0,
       }));
     } catch (error) {
       message.error('获取节点历史失败');
@@ -492,10 +492,11 @@ const NodesPage = () => {
       width={800}
     >
       {currentNode && (<div>
-        <Card title="基本信息" style={{marginBottom: 16}}>
+        <Card title="基本信息" style={{marginBottom: 5}}>
           <InfoItem label="名称" value={currentNode.name || '未命名'}/>
           <InfoItem label="订阅链接" value={currentNode.subscription_url}/>
           <InfoItem label="地址" value={currentNode.address}/>
+          <InfoItem label="节点类型" value={currentNode.type}/>
           <InfoItem label="状态" value={<StatusTag status={currentNode.status}/>}/>
           <InfoItem label="Ping" value={currentNode.ping ? `${currentNode.ping}ms` : '-'}/>
           <InfoItem label="下载速度" value={formatSpeed(currentNode.download_speed)}/>
