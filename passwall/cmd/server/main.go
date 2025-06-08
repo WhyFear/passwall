@@ -23,6 +23,7 @@ func main() {
 	}
 
 	// 2. 初始化数据库
+	// 注意：这里会自动迁移数据库结构
 	db, err := repository.InitDB(cfg.Database)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)

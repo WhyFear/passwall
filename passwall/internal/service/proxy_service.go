@@ -3,6 +3,7 @@ package service
 import (
 	"passwall/internal/model"
 	"passwall/internal/repository"
+	"passwall/internal/service/proxy"
 )
 
 type ProxyService interface {
@@ -12,6 +13,7 @@ type ProxyService interface {
 	CreateProxy(proxy *model.Proxy) error
 	BatchCreateProxies(proxies []*model.Proxy) error
 	GetTypes() ([]string, error)
+	PinProxy(id uint, pin bool) error
 }
 
 type DefaultProxyService struct {
@@ -39,15 +41,16 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}
 	}
 
 	// 设置排序
+	pageQuery.OrderBy = "pinned desc,"
 	if sort != "" {
 		if sortOrder == "ascend" || sortOrder == "asc" {
-			pageQuery.OrderBy = sort + " ASC"
+			pageQuery.OrderBy += sort + " ASC"
 		} else {
-			pageQuery.OrderBy = sort + " DESC"
+			pageQuery.OrderBy += sort + " DESC"
 		}
 	} else {
 		// 默认按下载速度降序排序
-		pageQuery.OrderBy = "download_speed DESC"
+		pageQuery.OrderBy += "download_speed DESC"
 	}
 	// 限制返回的页数
 	if page > 0 {
@@ -91,4 +94,13 @@ func (s *DefaultProxyService) GetTypes() ([]string, error) {
 	var types []string
 	err := s.proxyRepo.GetTypes(&types)
 	return types, err
+}
+func (s *DefaultProxyService) PinProxy(id uint, pin bool) error {
+	err := proxy.SafeDBOperation(func() error {
+		return s.proxyRepo.PinProxy(id, pin)
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -78,6 +78,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/test_proxy_server", handler.TestProxy(ctx, services.NewTester))
 		// 获取所有代理类型
 		webGroup.GET("/get_types", handler.GetTypes(services.ProxyService))
+		// 置顶代理
+		webGroup.POST("/pin_proxy", handler.PinProxy(services.ProxyService))
 
 		// 获取指定任务状态
 		webGroup.GET("/get_task_status", handler.GetTaskStatus(services.TaskManager))

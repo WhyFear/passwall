@@ -1,4 +1,4 @@
-import {EyeOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
+import {EyeOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {Button, Card, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
@@ -304,6 +304,25 @@ const NodesPage = () => {
     }
   };
 
+  // 处理节点置顶
+  const handlePinProxy = async (nodeId, currentPinned) => {
+    try {
+      // 调用置顶接口，传递相反的状态以切换
+      const newPinned = !currentPinned;
+      const data = await nodeApi.pinProxy(nodeId, newPinned);
+      if (data && data.status_code === 200) {
+        message.success(newPinned ? '节点已置顶' : '节点已取消置顶');
+        // 刷新节点列表
+        fetchNodes(pagination.current, pagination.pageSize, sorter, filters);
+      } else {
+        message.error((newPinned ? '置顶' : '取消置顶') + '失败：' + (data?.status_msg || '未知错误'));
+      }
+    } catch (error) {
+      message.error((currentPinned ? '取消置顶' : '置顶') + '失败：' + error.message);
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     fetchNodes();
     fetchNodeTypes();
@@ -375,7 +394,7 @@ const NodesPage = () => {
     render: (text) => formatDate(text),
     sorter: true,
   }, {
-    title: '操作', key: 'action', width: 100, fixed: 'right', render: (_, record) => (<div className="table-action">
+    title: '操作', key: 'action', width: 120, fixed: 'right', render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
         <Button
           type="text"
@@ -388,6 +407,13 @@ const NodesPage = () => {
           type="text"
           icon={<ReloadOutlined/>}
           onClick={() => handleTestProxy(record.id)}
+        />
+      </Tooltip>
+      <Tooltip title={record.pinned ? "取消置顶" : "置顶"}>
+        <Button
+          type="text"
+          icon={record.pinned ? <PushpinFilled/> : <PushpinOutlined/>}
+          onClick={() => handlePinProxy(record.id, record.pinned)}
         />
       </Tooltip>
     </div>),
@@ -455,7 +481,7 @@ const NodesPage = () => {
       </items>
     </Tabs>
 
-    {/* 节点详情弹窗 */}
+    {/* 节点详情弹窗，这两个弹窗写的跟shit一样 */}
     <Modal
       title="节点详情"
       open={modalVisible}
