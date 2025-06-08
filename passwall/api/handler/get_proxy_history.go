@@ -25,6 +25,11 @@ type GetProxyHistoryResponse struct {
 	TestedAt      time.Time `json:"tested_at"`
 }
 
+type SpeedHistoryPaginatedResponse struct {
+	Total int64                     `json:"total"`
+	Items []GetProxyHistoryResponse `json:"items"`
+}
+
 // GetProxyHistory 获取代理测速历史记录
 func GetProxyHistory(speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -59,7 +64,7 @@ func GetProxyHistory(speedTestHistoryService service.SpeedTestHistoryService) gi
 		}
 
 		// 根据参数获取历史记录
-		histories, err := speedTestHistoryService.GetSpeedTestHistoryByProxyID(req.ProxyID, &page)
+		pageQueryResult, err := speedTestHistoryService.GetSpeedTestHistoryByProxyID(req.ProxyID, &page)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
@@ -68,8 +73,8 @@ func GetProxyHistory(speedTestHistoryService service.SpeedTestHistoryService) gi
 			})
 			return
 		}
-		result := make([]GetProxyHistoryResponse, 0, len(histories))
-		for _, history := range histories {
+		result := make([]GetProxyHistoryResponse, 0, len(pageQueryResult.Items))
+		for _, history := range pageQueryResult.Items {
 			result = append(result, GetProxyHistoryResponse{
 				ID:            history.ID,
 				Ping:          history.Ping,
@@ -80,6 +85,9 @@ func GetProxyHistory(speedTestHistoryService service.SpeedTestHistoryService) gi
 		}
 
 		// 直接返回历史记录数组
-		c.JSON(http.StatusOK, result)
+		c.JSON(http.StatusOK, SpeedHistoryPaginatedResponse{
+			Total: pageQueryResult.Total,
+			Items: result,
+		})
 	}
 }

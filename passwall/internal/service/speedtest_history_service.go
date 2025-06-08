@@ -7,7 +7,7 @@ import (
 
 type SpeedTestHistoryService interface {
 	GetSpeedTestHistoryByID(id uint) (*model.SpeedTestHistory, error)
-	GetSpeedTestHistoryByProxyID(proxyID uint, page *repository.PageQuery) ([]*model.SpeedTestHistory, error)
+	GetSpeedTestHistoryByProxyID(proxyID uint, page *repository.PageQuery) (repository.SpeedTestHistoryPageResult, error)
 	SaveSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error)
 }
 
@@ -29,12 +29,12 @@ func (s *DefaultSpeedTestHistoryService) GetSpeedTestHistoryByID(id uint) (*mode
 	return speedtestHistory, nil
 }
 
-func (s *DefaultSpeedTestHistoryService) GetSpeedTestHistoryByProxyID(proxyID uint, page *repository.PageQuery) ([]*model.SpeedTestHistory, error) {
-	speedtestHistory, err := s.speedtestHistory.FindByProxyID(proxyID, *page)
+func (s *DefaultSpeedTestHistoryService) GetSpeedTestHistoryByProxyID(proxyID uint, page *repository.PageQuery) (repository.SpeedTestHistoryPageResult, error) {
+	result, err := s.speedtestHistory.FindByProxyID(proxyID, *page)
 	if err != nil {
-		return nil, err
+		return repository.SpeedTestHistoryPageResult{}, err
 	}
-	return speedtestHistory, nil
+	return result, nil
 }
 
 func (s *DefaultSpeedTestHistoryService) SaveSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error) {

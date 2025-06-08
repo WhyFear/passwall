@@ -17,7 +17,7 @@ type SpeedTestService interface {
 	SaveTestResult(ctx context.Context, proxy *model.Proxy, result *model.SpeedTestResult) error
 
 	// GetProxyTestHistory 获取代理测速历史
-	GetProxyTestHistory(ctx context.Context, proxyID uint, limit int) ([]*model.SpeedTestHistory, error)
+	GetProxyTestHistory(ctx context.Context, proxyID uint, limit int) (repository.SpeedTestHistoryPageResult, error)
 
 	// GetLatestTestResult 获取最新测速结果
 	GetLatestTestResult(ctx context.Context, proxyID uint) (*model.SpeedTestHistory, error)
@@ -94,7 +94,7 @@ func (s *speedTestServiceImpl) SaveTestResult(ctx context.Context, proxy *model.
 }
 
 // GetProxyTestHistory 获取代理测速历史
-func (s *speedTestServiceImpl) GetProxyTestHistory(ctx context.Context, proxyID uint, limit int) ([]*model.SpeedTestHistory, error) {
+func (s *speedTestServiceImpl) GetProxyTestHistory(ctx context.Context, proxyID uint, limit int) (repository.SpeedTestHistoryPageResult, error) {
 	if limit <= 0 {
 		limit = 10 // 默认返回10条记录
 	}
@@ -108,7 +108,7 @@ func (s *speedTestServiceImpl) GetProxyTestHistory(ctx context.Context, proxyID 
 
 	history, err := s.speedTestHistoryRepo.FindByProxyID(proxyID, pageQuery)
 	if err != nil {
-		return nil, fmt.Errorf("获取代理测速历史失败: %w", err)
+		return repository.SpeedTestHistoryPageResult{}, fmt.Errorf("获取代理测速历史失败: %w", err)
 	}
 
 	return history, nil
@@ -121,9 +121,9 @@ func (s *speedTestServiceImpl) GetLatestTestResult(ctx context.Context, proxyID 
 		return nil, err
 	}
 
-	if len(history) == 0 {
+	if len(history.Items) == 0 {
 		return nil, nil
 	}
 
-	return history[0], nil
+	return history.Items[0], nil
 }
