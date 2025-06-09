@@ -394,6 +394,13 @@ const NodesPage = () => {
     render: (text) => formatDate(text),
     sorter: true,
   }, {
+    title: '成功率',
+    dataIndex: 'success_rate',
+    key: 'success_rate',
+    align: 'right',
+    render: (rate) => `${rate}%`,
+    width: 120,
+  }, {
     title: '操作', key: 'action', width: 120, fixed: 'right', render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
         <Button
@@ -501,6 +508,7 @@ const NodesPage = () => {
           <InfoItem label="Ping" value={currentNode.ping ? `${currentNode.ping}ms` : '-'}/>
           <InfoItem label="下载速度" value={formatSpeed(currentNode.download_speed)}/>
           <InfoItem label="上传速度" value={formatSpeed(currentNode.upload_speed)}/>
+          <InfoItem label="节点创建时间" value={formatDate(currentNode.created_at)}/>
           <InfoItem label="最近测试时间" value={formatDate(currentNode.latest_test_time)}/>
           <InfoItem label="分享链接" value={currentNode.share_url} isMultiLine={true}/>
         </Card>

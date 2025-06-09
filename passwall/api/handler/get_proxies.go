@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"github.com/metacubex/mihomo/log"
 	"net/http"
+	"passwall/internal/repository"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"strconv"
@@ -33,16 +35,18 @@ type ProxyResp struct {
 	UploadSpeed     int       `json:"upload_speed"`
 	LatestTestTime  time.Time `json:"latest_test_time"`
 	ShareUrl        string    `json:"share_url"`
+	CreatedAt       time.Time `json:"created_at"`
+	SuccessRate     float64   `json:"success_rate"`
 }
 
 // PaginatedResponse 分页响应
 type PaginatedResponse struct {
 	Total int64       `json:"total"`
-	Items interface{} `json:"items"`
+	Items []ProxyResp `json:"items"`
 }
 
 // GetProxies 获取所有代理
-func GetProxies(proxyService service.ProxyService, subscriptionManager proxy.SubscriptionManager) gin.HandlerFunc {
+func GetProxies(proxyService service.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 解析请求参数
 		var req ProxyReq
@@ -91,6 +95,27 @@ func GetProxies(proxyService service.ProxyService, subscriptionManager proxy.Sub
 					}
 				}
 			}
+			successRate := 0.0
+			page := &repository.PageQuery{}
+			speedTestHistory, err := speedTestHistoryService.GetSpeedTestHistoryByProxyID(singleProxy.ID, page)
+			if err == nil {
+				successCount := 0
+				for _, history := range speedTestHistory.Items {
+					if history.DownloadSpeed > 0 {
+						successCount++
+					}
+				}
+				if successCount == 0 {
+					log.Infoln("代理 %s 的测速历史记录中没有成功的记录", singleProxy.Name)
+				}
+				if len(speedTestHistory.Items) > 0 {
+					// 两位小数
+					successRate = float64(successCount) / float64(len(speedTestHistory.Items)) * 100
+					successRate, _ = strconv.ParseFloat(strconv.FormatFloat(successRate, 'f', 2, 64), 64)
+				}
+			} else {
+				log.Infoln("获取代理 %s 的测速历史记录失败: %v", singleProxy.Name, err)
+			}
 
 			tempProxy := ProxyResp{
 				ID:              int(singleProxy.ID),
@@ -103,6 +128,8 @@ func GetProxies(proxyService service.ProxyService, subscriptionManager proxy.Sub
 				Ping:            singleProxy.Ping,
 				DownloadSpeed:   singleProxy.DownloadSpeed,
 				UploadSpeed:     singleProxy.UploadSpeed,
+				CreatedAt:       singleProxy.CreatedAt,
+				SuccessRate:     successRate,
 			}
 			if singleProxy.LatestTestTime != nil {
 				tempProxy.LatestTestTime = *singleProxy.LatestTestTime
