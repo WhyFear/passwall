@@ -2,12 +2,12 @@ package handler
 
 import (
 	"net/http"
-	"passwall/internal/service"
+	"passwall/internal/service/proxy"
 
 	"github.com/gin-gonic/gin"
 )
 
-func GetTypes(proxyService service.ProxyService) gin.HandlerFunc {
+func GetTypes(proxyService proxy.ProxyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		types, err := proxyService.GetTypes()
 		if err != nil {

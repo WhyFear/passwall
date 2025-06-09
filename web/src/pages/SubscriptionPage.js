@@ -54,7 +54,7 @@ const SubscriptionPage = () => {
 
   useEffect(() => {
     fetchSubscriptions()
-
+    fetchTaskStatusHandler();
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
       fetchTaskStatusHandler();
@@ -197,6 +197,12 @@ const SubscriptionPage = () => {
     title: '链接', dataIndex: 'url', key: 'url', ellipsis: true,
   }, {
     title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (status) => <StatusTag status={status}/>,
+  }, {
+    title: '节点数量',
+    dataIndex: 'proxy_num',
+    key: 'proxy_num',
+    width: 120,
+    render: (proxy_num) => (proxy_num) ? proxy_num : '-',
   }, {
     title: '上次更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, render: (text) => {
       if (!text) return '-';

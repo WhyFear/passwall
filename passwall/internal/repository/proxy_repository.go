@@ -48,6 +48,7 @@ type ProxyRepository interface {
 	Delete(id uint) error
 	FindPage(query PageQuery) (*PageResult, error)
 	GetTypes(types *[]string) error
+	CountBySubscriptionID(subscriptionID uint) (int64, error)
 }
 
 // GormProxyRepository 基于GORM的代理服务器仓库实现
@@ -313,4 +314,13 @@ func (r *GormProxyRepository) PinProxy(id uint, pin bool) error {
 		return result.Error
 	}
 	return nil
+}
+
+func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64, error) {
+	var count int64
+	result := r.db.Model(&model.Proxy{}).Where("subscription_id =?", subscriptionID).Count(&count)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return count, nil
 }

@@ -15,7 +15,7 @@ import (
 // Services 所有服务的集合
 type Services struct {
 	SubscriptionManager     proxy.SubscriptionManager
-	ProxyService            ProxyService
+	ProxyService            proxy.ProxyService
 	SpeedTestHistoryService SpeedTestHistoryService
 	ProxyTester             ProxyTester
 	NewTester               proxy.Tester
@@ -49,7 +49,7 @@ func NewServices(db *gorm.DB) *Services {
 
 	// 创建服务
 	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.Proxy, parserFactory, taskManager)
-	proxyService := NewProxyService(repos.Proxy)
+	proxyService := proxy.NewProxyService(repos.Proxy)
 	speedTestHistoryService := NewSpeedTestHistoryService(repos.SpeedTestHistory)
 
 	// 创建代理测试服务

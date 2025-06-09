@@ -46,7 +46,7 @@ type PaginatedResponse struct {
 }
 
 // GetProxies 获取所有代理
-func GetProxies(proxyService service.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
+func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 解析请求参数
 		var req ProxyReq
