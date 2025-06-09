@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 	"net/http"
-	"passwall/internal/service"
+	"passwall/internal/service/proxy"
 )
 
 type PinProxyReq struct {
@@ -11,7 +11,7 @@ type PinProxyReq struct {
 	Pinned bool `json:"pinned"`
 }
 
-func PinProxy(service service.ProxyService) gin.HandlerFunc {
+func PinProxy(service proxy.ProxyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req PinProxyReq
 		if err := c.ShouldBindJSON(&req); err != nil {

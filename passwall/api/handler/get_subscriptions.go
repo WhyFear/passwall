@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/metacubex/mihomo/log"
 	"net/http"
 	"passwall/internal/model"
 	"passwall/internal/service/proxy"
@@ -19,11 +20,12 @@ type SubscriptionResp struct {
 	Status    int       `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	ProxyNum  int64     `json:"proxy_num,omitempty"`
 	Content   string    `json:"content,omitempty"`
 }
 
 // GetSubscriptions 获取存储的订阅链接
-func GetSubscriptions(subscriptionManager proxy.SubscriptionManager) gin.HandlerFunc {
+func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyService proxy.ProxyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		// 解析请求参数
@@ -53,12 +55,19 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager) gin.Handler
 			subscriptions = allSubscriptions
 		}
 		for _, subscription := range subscriptions {
+			// 获取代理数量
+			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID)
+			if err != nil {
+				log.Infoln("Failed to get proxy num:", err)
+				proxyNum = 0
+			}
 			tempSubscription := SubscriptionResp{
 				ID:        int(subscription.ID),
 				Url:       subscription.URL,
 				Status:    int(subscription.Status),
 				CreatedAt: subscription.CreatedAt,
 				UpdatedAt: subscription.UpdatedAt,
+				ProxyNum:  proxyNum,
 			}
 			if req.Content {
 				tempSubscription.Content = subscription.Content

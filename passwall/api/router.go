@@ -64,7 +64,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		// 新增订阅
 		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester))
 		// 获取订阅链接
-		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionManager))
+		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionManager, services.ProxyService))
 		// 刷新订阅
 		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 

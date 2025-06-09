@@ -2,15 +2,14 @@ package handler
 
 import (
 	"net/http"
+	"passwall/internal/service/proxy"
 	"strconv"
 	"strings"
 
-	"passwall/internal/adapter/generator"
-	"passwall/internal/model"
-	"passwall/internal/service"
-
 	"github.com/gin-gonic/gin"
 	"github.com/metacubex/mihomo/log"
+	"passwall/internal/adapter/generator"
+	"passwall/internal/model"
 )
 
 type SubscribeReq struct {
@@ -26,7 +25,7 @@ type SubscribeReq struct {
 }
 
 // GetSubscribe 获取订阅处理器
-func GetSubscribe(proxyService service.ProxyService, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
+func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 解析请求参数
 		var req SubscribeReq
@@ -50,13 +49,13 @@ func GetSubscribe(proxyService service.ProxyService, generatorFactory generator.
 
 		if id > 0 {
 			// 根据ID查询订阅
-			proxy, err := proxyService.GetProxyByID(uint(id))
+			singleProxy, err := proxyService.GetProxyByID(uint(id))
 			if err != nil {
 				log.Infoln("没有找到符合条件的代理服务器")
 				c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
 				return
 			}
-			proxies = append(proxies, proxy)
+			proxies = append(proxies, singleProxy)
 		} else {
 			// 构建过滤条件
 			filters := make(map[string]interface{})
@@ -94,8 +93,8 @@ func GetSubscribe(proxyService service.ProxyService, generatorFactory generator.
 		}
 
 		if req.WithIndex {
-			for i, proxy := range proxies {
-				proxy.Name = "[" + strconv.Itoa(i+1) + "]-" + proxy.Name
+			for i, singleProxy := range proxies {
+				singleProxy.Name = "[" + strconv.Itoa(i+1) + "]-" + singleProxy.Name
 			}
 		}
 

@@ -1,13 +1,13 @@
-package service
+package proxy
 
 import (
 	"passwall/internal/model"
 	"passwall/internal/repository"
-	"passwall/internal/service/proxy"
 )
 
 type ProxyService interface {
 	GetProxyByID(id uint) (*model.Proxy, error)
+	GetProxyNumBySubscriptionID(subsId uint) (int64, error)
 	GetAllProxies(filters map[string]interface{}) ([]*model.Proxy, error)
 	GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
 	CreateProxy(proxy *model.Proxy) error
@@ -28,6 +28,10 @@ func NewProxyService(proxyRepo repository.ProxyRepository) ProxyService {
 
 func (s *DefaultProxyService) GetProxyByID(id uint) (*model.Proxy, error) {
 	return s.proxyRepo.FindByID(id)
+}
+
+func (s *DefaultProxyService) GetProxyNumBySubscriptionID(subsId uint) (int64, error) {
+	return s.proxyRepo.CountBySubscriptionID(subsId)
 }
 
 func (s *DefaultProxyService) GetAllProxies(filters map[string]interface{}) ([]*model.Proxy, error) {
@@ -96,7 +100,7 @@ func (s *DefaultProxyService) GetTypes() ([]string, error) {
 	return types, err
 }
 func (s *DefaultProxyService) PinProxy(id uint, pin bool) error {
-	err := proxy.SafeDBOperation(func() error {
+	err := SafeDBOperation(func() error {
 		return s.proxyRepo.PinProxy(id, pin)
 	})
 	if err != nil {
