@@ -43,6 +43,7 @@ type CronJob struct {
 	TestFailed            bool   `yaml:"test_failed"`
 	TestSpeed             bool   `yaml:"test_speed"`
 	Concurrent            int    `yaml:"concurrent"`
+	AutoBan               bool   `yaml:"auto_ban"`
 }
 
 // LoadConfig 从文件加载配置

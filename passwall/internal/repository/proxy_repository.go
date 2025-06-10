@@ -34,19 +34,20 @@ type ProxyFilter struct {
 // ProxyRepository 代理服务器仓库接口
 type ProxyRepository interface {
 	FindByID(id uint) (*model.Proxy, error)
-	FindAll(filters map[string]interface{}) ([]*model.Proxy, error)
+	FindAll() ([]*model.Proxy, error)
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
 	FindByFilter(filter *ProxyFilter) ([]*model.Proxy, error)
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
 	FindByDomainAndPort(domain string, port int) (*model.Proxy, error)
+	FindPage(query PageQuery) (*PageResult, error)
 	Create(proxy *model.Proxy) error
 	BatchCreate(proxies []*model.Proxy) error
 	Update(proxy *model.Proxy) error
 	UpdateSpeedTestInfo(proxy *model.Proxy) error
 	UpdateProxyConfig(proxy *model.Proxy) error
+	UpdateProxyStatus(proxy *model.Proxy) error
 	PinProxy(id uint, pin bool) error
 	Delete(id uint) error
-	FindPage(query PageQuery) (*PageResult, error)
 	GetTypes(types *[]string) error
 	CountBySubscriptionID(subscriptionID uint) (int64, error)
 }
@@ -72,14 +73,12 @@ func (r *GormProxyRepository) FindByID(id uint) (*model.Proxy, error) {
 }
 
 // FindAll 查找所有代理服务器
-func (r *GormProxyRepository) FindAll(filters map[string]interface{}) ([]*model.Proxy, error) {
+func (r *GormProxyRepository) FindAll() ([]*model.Proxy, error) {
 	var proxies []*model.Proxy
 	query := r.db
 
 	// 应用过滤条件
-	if filters != nil {
-		query = query.Where(filters)
-	}
+	query = query.Where("status != ?", model.ProxyStatusBanned)
 
 	result := query.Find(&proxies)
 	if result.Error != nil {
@@ -98,6 +97,8 @@ func (r *GormProxyRepository) FindByFilter(filter *ProxyFilter) ([]*model.Proxy,
 		// 按状态过滤
 		if len(filter.Status) > 0 {
 			query = query.Where("status IN ?", filter.Status)
+		} else {
+			query = query.Where("status != ?", model.ProxyStatusBanned)
 		}
 
 		// 按类型过滤
@@ -184,6 +185,16 @@ func (r *GormProxyRepository) UpdateProxyConfig(proxy *model.Proxy) error {
 		}).Error
 }
 
+// UpdateProxyStatus 只更新代理服务器的状态
+func (r *GormProxyRepository) UpdateProxyStatus(proxy *model.Proxy) error {
+	return r.db.Model(proxy).
+		Select("status", "updated_at").
+		Updates(map[string]interface{}{
+			"status":     proxy.Status,
+			"updated_at": time.Now(),
+		}).Error
+}
+
 // Delete 删除代理服务器
 func (r *GormProxyRepository) Delete(id uint) error {
 	return r.db.Delete(&model.Proxy{}, id).Error
@@ -248,6 +259,9 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 			if key == "status" {
 				if statusArray, ok := value.([]int); ok && len(statusArray) > 0 {
 					db = db.Where("status IN ?", statusArray)
+					continue
+				} else {
+					db = db.Where("status != ?", model.ProxyStatusBanned)
 					continue
 				}
 			}

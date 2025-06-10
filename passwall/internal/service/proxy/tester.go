@@ -127,7 +127,7 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest) erro
 		}
 	} else {
 		// 如果既没有指定ID也没有指定筛选条件，则获取所有代理
-		proxies, err = t.proxyRepo.FindAll(nil)
+		proxies, err = t.proxyRepo.FindAll()
 		if err != nil {
 			return fmt.Errorf("获取所有代理失败: %w", err)
 		}

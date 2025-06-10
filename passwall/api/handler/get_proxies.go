@@ -96,7 +96,9 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 				}
 			}
 			successRate := 0.0
-			page := &repository.PageQuery{}
+			page := &repository.PageQuery{
+				PageSize: 5,
+			}
 			speedTestHistory, err := speedTestHistoryService.GetSpeedTestHistoryByProxyID(singleProxy.ID, page)
 			if err == nil {
 				successCount := 0

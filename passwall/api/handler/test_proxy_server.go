@@ -17,6 +17,7 @@ type TestProxyServerRequest struct {
 	TestFailed            bool `form:"test_failed" json:"test_failed"`
 	TestSpeed             bool `form:"test_speed" json:"test_speed"`
 	Concurrent            int  `form:"concurrent" json:"concurrent"`
+	AutoBan               bool `form:"auto_ban" json:"auto_ban"`
 }
 
 // TestProxyServer 测试代理服务器处理器
