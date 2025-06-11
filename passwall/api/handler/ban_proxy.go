@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/metacubex/mihomo/log"
 	"net/http"
@@ -16,7 +17,7 @@ type BanProxyReq struct {
 	TestTimes              int     `json:"test_times"`
 }
 
-func BanProxy(service proxy.ProxyService) gin.HandlerFunc {
+func BanProxy(ctx context.Context, service proxy.ProxyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req BanProxyReq
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,15 +36,12 @@ func BanProxy(service proxy.ProxyService) gin.HandlerFunc {
 			PingThreshold:          req.PingThreshold,
 			TestTimes:              req.TestTimes,
 		}
-		if err := service.BanProxy(serviceReq); err != nil {
-			log.Errorln("处理代理封禁请求失败：%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"result":      err.Error(),
-				"status_code": http.StatusInternalServerError,
-				"status_msg":  "Failed to process request",
-			})
-			return
-		}
+		go func() {
+			if err := service.BanProxy(ctx, serviceReq); err != nil {
+				log.Errorln("处理代理封禁请求失败：%v", err)
+			}
+		}()
+
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "success",
 			"status_code": http.StatusOK,

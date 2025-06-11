@@ -420,14 +420,14 @@ const NodesPage = () => {
           try {
             const data = await nodeApi.banProxy(banParams);
             if (data.status_code === 200) {
-              message.success(id ? '禁用成功' : '批量禁用成功');
+              message.success('任务提交成功');
               // 刷新节点列表
               fetchNodes(pagination.current, pagination.pageSize, sorter, filters);
             } else {
-              message.error((id ? '禁用' : '批量禁用') + '失败：' + data.status_msg);
+              message.error('任务提交失败：' + data.status_msg);
             }
           } catch (error) {
-            message.error((id ? '禁用' : '批量禁用') + '失败：' + error.message);
+            message.error('任务提交失败失败：' + error.message);
             console.error(error);
           }
         }
