@@ -1,7 +1,8 @@
 package scheduler
 
 import (
-	"log"
+	"github.com/enfein/mieru/v3/pkg/log"
+	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
 	"sync"
 	"time"
@@ -14,12 +15,13 @@ import (
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
-	cron        *cron.Cron
-	jobMutex    sync.Mutex
-	isRunning   bool
-	taskManager task.TaskManager
-	proxyTester service.ProxyTester
-	jobIDs      map[string]cron.EntryID // 存储任务ID，用于更新
+	cron         *cron.Cron
+	jobMutex     sync.Mutex
+	isRunning    bool
+	taskManager  task.TaskManager
+	proxyTester  service.ProxyTester
+	proxyService proxy.ProxyService
+	jobIDs       map[string]cron.EntryID // 存储任务ID，用于更新
 }
 
 // NewScheduler 创建调度器
@@ -32,9 +34,10 @@ func NewScheduler() *Scheduler {
 }
 
 // SetServices 设置服务
-func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester service.ProxyTester) {
+func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester service.ProxyTester, proxyService proxy.ProxyService) {
 	s.taskManager = taskManager
 	s.proxyTester = proxyTester
+	s.proxyService = proxyService
 }
 
 // Start 启动调度器

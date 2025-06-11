@@ -1,5 +1,12 @@
-import {EyeOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
-import {Button, Card, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
+import {
+  DeleteOutlined,
+  EyeOutlined,
+  PushpinFilled,
+  PushpinOutlined,
+  ReloadOutlined,
+  StopOutlined
+} from '@ant-design/icons';
+import {Button, Card, InputNumber, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
@@ -340,6 +347,97 @@ const NodesPage = () => {
     setModalVisible(true);
   };
 
+  const handleBanProxy = async (id = null) => {
+    try {
+      // 创建禁用参数对象
+      let banParams = {
+        success_rate_threshold: 0,
+        download_speed_threshold: 0,
+        upload_speed_threshold: 0,
+        ping_threshold: 0,
+        test_times: 5,
+      };
+
+      // 如果有ID，则添加到参数中
+      if (id) {
+        banParams.id = id;
+      }
+
+      // 弹出确认对话框
+      Modal.confirm({
+        title: '确认禁用', content: id ? ('禁用后节点将被永久禁用无法恢复，确认继续吗？') : (<div>
+          <p>禁用后节点将被永久禁用无法恢复，确认继续吗？</p>
+          <div style={{marginTop: '15px'}}>
+            <div style={{marginBottom: '10px'}}>
+              <span style={{display: 'inline-block', width: '180px'}}>成功率阈值：</span>
+              <InputNumber
+                min={0}
+                max={100}
+                defaultValue={0}
+                step={0.1}
+                precision={2}
+                onChange={(value) => banParams.success_rate_threshold = value}
+              />
+            </div>
+            <div style={{marginBottom: '10px'}}>
+              <span style={{display: 'inline-block', width: '180px'}}>下载速度阈值(B/s)：</span>
+              <InputNumber
+                min={0}
+                defaultValue={0}
+                precision={0}
+                onChange={(value) => banParams.download_speed_threshold = value}
+              />
+            </div>
+            <div style={{marginBottom: '10px'}}>
+              <span style={{display: 'inline-block', width: '180px'}}>上传速度阈值(B/s)：</span>
+              <InputNumber
+                min={0}
+                defaultValue={0}
+                precision={0}
+                onChange={(value) => banParams.upload_speed_threshold = value}
+              />
+            </div>
+            <div style={{marginBottom: '10px'}}>
+              <span style={{display: 'inline-block', width: '180px'}}>Ping阈值(ms)：</span>
+              <InputNumber
+                min={0}
+                defaultValue={0}
+                precision={0}
+                onChange={(value) => banParams.ping_threshold = value}
+              />
+            </div>
+            <div style={{marginBottom: '10px'}}>
+              <span style={{display: 'inline-block', width: '180px'}}>测试次数：</span>
+              <InputNumber
+                min={1}
+                defaultValue={5}
+                precision={0}
+                onChange={(value) => banParams.test_times = value}
+              />
+            </div>
+          </div>
+        </div>), okText: '确认', cancelText: '取消', width: id ? 400 : 500, onOk: async () => {
+          try {
+            const data = await nodeApi.banProxy(banParams);
+            if (data.status_code === 200) {
+              message.success(id ? '禁用成功' : '批量禁用成功');
+              // 刷新节点列表
+              fetchNodes(pagination.current, pagination.pageSize, sorter, filters);
+            } else {
+              message.error((id ? '禁用' : '批量禁用') + '失败：' + data.status_msg);
+            }
+          } catch (error) {
+            message.error((id ? '禁用' : '批量禁用') + '失败：' + error.message);
+            console.error(error);
+          }
+        }
+      });
+    } catch (error) {
+      message.error('打开对话框失败：' + error.message);
+      console.error(error);
+    }
+  };
+
   // 表格列配置
   const columns = [{
     title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1,
@@ -399,7 +497,7 @@ const NodesPage = () => {
     key: 'success_rate',
     align: 'right',
     render: (rate) => `${rate}%`,
-    width: 120,
+    width: 80,
   }, {
     title: '操作', key: 'action', width: 120, fixed: 'right', render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
@@ -421,6 +519,13 @@ const NodesPage = () => {
           type="text"
           icon={record.pinned ? <PushpinFilled/> : <PushpinOutlined/>}
           onClick={() => handlePinProxy(record.id, record.pinned)}
+        />
+      </Tooltip>
+      <Tooltip title="禁用">
+        <Button
+          type="text"
+          icon={<DeleteOutlined/>}
+          onClick={() => handleBanProxy(record.id)}
         />
       </Tooltip>
     </div>),
@@ -452,6 +557,14 @@ const NodesPage = () => {
                 </Button>
               </div>)}
           </div>
+          <Button
+            type="primary"
+            danger
+            onClick={() => handleBanProxy(null)}
+            style={{marginRight: 16}}
+          >
+            批量禁用节点
+          </Button>
           <Button
             type="primary"
             onClick={() => {

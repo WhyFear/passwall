@@ -33,6 +33,7 @@ const (
 	ProxyStatusOK          ProxyStatus = 1  // 正常
 	ProxyStatusFailed      ProxyStatus = 2  // 连接失败
 	ProxyStatusUnknowError ProxyStatus = 3  // 未知错误
+	ProxyStatusBanned      ProxyStatus = 4  // 被禁用
 )
 
 // Proxy 代理服务器模型
