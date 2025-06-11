@@ -3,12 +3,10 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
-	"time"
-
-	"github.com/metacubex/mihomo/log"
 )
 
 type BanProxyReq struct {
@@ -139,9 +137,6 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 	defer func() {
 		s.taskManager.FinishTask(task.TaskTypeBanProxy, finishMessage)
 	}()
-
-	// 睡五秒
-	time.Sleep(10 * time.Second)
 
 	if req.ID > 0 {
 		proxy, err := s.proxyRepo.FindByID(req.ID)
