@@ -32,6 +32,8 @@ type TaskManager interface {
 	// UpdateProgress 更新任务进度
 	UpdateProgress(taskType TaskType, completed int, errMsg string)
 
+	UpdateTotal(taskType TaskType, total int)
+
 	// FinishTask 完成任务
 	FinishTask(taskType TaskType, errMsg string)
 
@@ -129,6 +131,16 @@ func (m *defaultTaskManager) UpdateProgress(taskType TaskType, completed int, er
 		task.status.Progress = completed * 100 / task.status.Total
 	}
 	task.status.Error = errMsg
+}
+
+func (m *defaultTaskManager) UpdateTotal(taskType TaskType, total int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	task, exists := m.tasks[taskType]
+	if !exists || task.status.State != TaskStateRunning {
+		return
+	}
+	task.status.Total = total
 }
 
 // FinishTask 完成任务
