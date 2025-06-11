@@ -257,7 +257,7 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 		for key, value := range query.Filters {
 			// 特殊处理状态数组
 			if key == "status" {
-				if statusArray, ok := value.([]int); ok && len(statusArray) > 0 {
+				if statusArray, ok := value.([]string); ok && len(statusArray) > 0 {
 					db = db.Where("status IN ?", statusArray)
 					continue
 				} else {
@@ -274,6 +274,7 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 			db = db.Where(key, value)
 		}
 	}
+	db = db.Where("status != ?", model.ProxyStatusBanned)
 
 	// 计算总数
 	if err := db.Count(&total).Error; err != nil {

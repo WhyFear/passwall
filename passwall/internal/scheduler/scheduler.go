@@ -165,17 +165,6 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 	if err := s.proxyTester.TestProxies(request); err != nil {
 		log.Printf("Failed to execute job %s: %v", job.Name, err)
 	}
-
-	if job.AutoBan {
-		// TODO 加上任务管理
-		req := proxy.BanProxyReq{
-			SuccessRateThreshold: 0,
-			TestTimes:            5,
-		}
-		if err := s.proxyService.BanProxy(req); err != nil {
-			log.Errorf("Failed to ban proxy %s: %v", job.Name, err)
-		}
-	}
 }
 
 // GetStatus 获取调度器状态

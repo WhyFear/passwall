@@ -91,6 +91,7 @@ export const nodeApi = {
   getTypes: () => api.get('/get_types'),
   testProxy: (params) => api.post('/test_proxy_server', params),
   pinProxy: (id, pinned) => api.post('/pin_proxy', {id: id, pinned: pinned}),
+  banProxy: (params) => api.post(`/ban_proxy`, params),
 };
 
 // 任务相关API
