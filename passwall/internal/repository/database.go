@@ -47,11 +47,13 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 	// 对于SQLite，设置PRAGMA参数以提高并发性能
 	if dbConfig.Driver == "sqlite" {
 		// 设置WAL模式，提高并发性能
-		DB.Exec("PRAGMA journal_mode = WAL")
+		DB.Exec("PRAGMA journal_mode = WAL;")
 		// 设置busy_timeout，避免"database is locked"错误
-		DB.Exec("PRAGMA busy_timeout = 5000")
+		DB.Exec("PRAGMA busy_timeout = 5000;")
 		// 设置同步模式为NORMAL，提高性能
-		DB.Exec("PRAGMA synchronous = NORMAL")
+		DB.Exec("PRAGMA synchronous = NORMAL;")
+		// 设置缓存大小，减少磁盘I/O,20MB
+		DB.Exec("PRAGMA cache_size = -20000;")
 	}
 
 	// 自动迁移表结构
