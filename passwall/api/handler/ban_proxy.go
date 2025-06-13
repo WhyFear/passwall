@@ -10,7 +10,7 @@ import (
 
 type BanProxyReq struct {
 	ID                     uint    `json:"id"`
-	SuccessRateThreshold   float32 `json:"success_rate_threshold"`
+	SuccessRateThreshold   float64 `json:"success_rate_threshold"`
 	DownloadSpeedThreshold int     `json:"download_speed_threshold"`
 	UploadSpeedThreshold   int     `json:"upload_speed_threshold"`
 	PingThreshold          int     `json:"ping_threshold"`

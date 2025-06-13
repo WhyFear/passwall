@@ -369,13 +369,12 @@ const NodesPage = () => {
           <p>禁用后节点将被永久禁用无法恢复，确认继续吗？</p>
           <div style={{marginTop: '15px'}}>
             <div style={{marginBottom: '10px'}}>
-              <span style={{display: 'inline-block', width: '180px'}}>成功率阈值：</span>
+              <span style={{display: 'inline-block', width: '180px'}}>成功率阈值(%)：</span>
               <InputNumber
                 min={0}
                 max={100}
                 defaultValue={0}
-                step={0.1}
-                precision={2}
+                step={10}
                 onChange={(value) => banParams.success_rate_threshold = value}
               />
             </div>
