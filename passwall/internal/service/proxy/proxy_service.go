@@ -7,11 +7,12 @@ import (
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
+	"strconv"
 )
 
 type BanProxyReq struct {
 	ID                     uint
-	SuccessRateThreshold   float32 // 成功率阈值，默认为0
+	SuccessRateThreshold   float64 // 成功率阈值，默认为0
 	DownloadSpeedThreshold int     // 下载速度阈值，默认为0
 	UploadSpeedThreshold   int     // 上传速度阈值，默认为0
 	PingThreshold          int     // 延迟阈值，默认为0
@@ -148,7 +149,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		}
 		proxy.Status = model.ProxyStatusBanned
 		err = SafeDBOperation(func() error {
-			return s.proxyRepo.Update(proxy)
+			return s.proxyRepo.UpdateProxyStatus(proxy)
 		})
 		if err != nil {
 			errMsg := fmt.Sprintf("更新代理状态失败：%v", err)
@@ -178,9 +179,6 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 	s.taskManager.UpdateTotal(task.TaskTypeBanProxy, len(allProxies))
 	bannedCount := 0
 
-	// 更新任务总数
-	s.taskManager.UpdateProgress(task.TaskTypeBanProxy, 0, "")
-
 	// 遍历所有代理，执行测试并更新状态
 	for i, proxy := range allProxies {
 		// 检查任务是否被取消
@@ -209,27 +207,32 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		// 计算成功率
 		successCount := 0
 		for _, history := range speedTestHistory.Items {
-			if history.DownloadSpeed <= req.DownloadSpeedThreshold {
-				continue
+			satisfy := false
+			if history.DownloadSpeed > req.DownloadSpeedThreshold {
+				satisfy = true
 			}
-			if history.UploadSpeed <= req.UploadSpeedThreshold {
-				continue
+			if history.UploadSpeed > req.UploadSpeedThreshold {
+				satisfy = true
 			}
-			if history.Ping <= req.PingThreshold {
-				continue
+			if history.Ping > req.PingThreshold {
+				satisfy = true
 			}
-			successCount++
+			if satisfy {
+				successCount++
+			}
 		}
-		successRate := float32(successCount) / float32(req.TestTimes) * 100
+		successRate := float64(successCount) / float64(req.TestTimes) * 100
+		// 转换为两位小数
+		successRate, _ = strconv.ParseFloat(strconv.FormatFloat(successRate, 'f', 2, 64), 64)
 		if successRate <= req.SuccessRateThreshold {
-			log.Infoln(fmt.Sprintf("代理 %d 的成功率为 %.2f%%，低于阈值 %.2f%%，将被封禁", proxy.ID, successRate, req.SuccessRateThreshold))
+			log.Infoln("代理 %d 的成功数为 %v，成功率为 %.2f，低于阈值 %v，将被封禁", proxy.ID, successCount, successRate, req.SuccessRateThreshold)
 			bannedCount++
 			proxy.Status = model.ProxyStatusBanned
 			err = SafeDBOperation(func() error {
 				return s.proxyRepo.UpdateProxyStatus(proxy)
 			})
 			if err != nil {
-				log.Errorln(fmt.Sprintf("更新代理状态失败：%v", err))
+				log.Errorln("更新代理状态失败：%v", err)
 				continue
 			}
 		}
@@ -237,7 +240,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		// 更新进度
 		s.taskManager.UpdateProgress(task.TaskTypeBanProxy, i+1, "")
 	}
-	log.Infoln(fmt.Sprintf("处理完成，共封禁 %d 个代理,共计 %d 个代理", bannedCount, len(allProxies)))
+	log.Infoln("处理完成，共封禁 %d 个代理,共计 %d 个代理", bannedCount, len(allProxies))
 
 	return nil
 }
