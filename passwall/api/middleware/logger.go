@@ -35,8 +35,8 @@ func Logger() gin.HandlerFunc {
 		clientIP := c.ClientIP()
 
 		// 日志格式
-		log.Printf("[GIN] %v | %3d | %13v | %15s | %s | %s",
-			end.Format("2006/01/02 - 15:04:05"),
+		log.Printf("[GIN] %v | %3d | %5v | %15s | %s | %s",
+			end.Format("2006/01/02-15:04:05"),
 			statusCode,
 			latency,
 			clientIP,

@@ -8,9 +8,8 @@ import (
 type SubscriptionType string
 
 const (
-	SubscriptionTypeClash  SubscriptionType = "clash"
-	SubscriptionTypeV2ray  SubscriptionType = "v2ray"
-	SubscriptionTypeTrojan SubscriptionType = "trojan"
+	SubscriptionTypeClash    SubscriptionType = "clash"
+	SubscriptionTypeShareURL SubscriptionType = "share_url"
 )
 
 // SubscriptionStatus 订阅状态
