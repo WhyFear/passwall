@@ -554,8 +554,9 @@ const NodesPage = () => {
             type="circle"
             percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
             size="small"
+            style={{marginRight: 8}}
           />
-          <span>
+          <span style={{marginRight: 8}}>
             测速进行中: {taskStatus.Completed}/{taskStatus.Total}
           </span>
           <Button

@@ -50,8 +50,6 @@ type CronJob struct {
 func LoadConfig() (*Config, error) {
 	// 1. 尝试从环境变量获取配置文件路径
 	configPath := os.Getenv("CONFIG_PATH")
-
-	// 2. 如果环境变量未设置，尝试多个可能的路径
 	if configPath == "" {
 		configPath = "config.yaml"
 	}

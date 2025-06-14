@@ -36,7 +36,11 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 
 		var req SubscriptionReq
 		if err := c.ShouldBindQuery(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      err.Error(),
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Invalid request parameters",
+			})
 			return
 		}
 

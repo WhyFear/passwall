@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"log"
+	"github.com/metacubex/mihomo/log"
 	"net/http"
 	"runtime/debug"
 
@@ -14,7 +14,7 @@ func Recovery() gin.HandlerFunc {
 		defer func() {
 			if err := recover(); err != nil {
 				// 打印错误堆栈信息
-				log.Printf("panic: %v\n", err)
+				log.Errorln("panic: %v\n", err)
 				debug.PrintStack()
 
 				// 返回500响应
