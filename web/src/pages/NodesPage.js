@@ -1,5 +1,12 @@
-import {DeleteOutlined, EyeOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined} from '@ant-design/icons';
-import {Button, Card, InputNumber, message, Modal, Table, Tabs, Tag, Tooltip} from 'antd';
+import {
+  DeleteOutlined,
+  EyeOutlined,
+  PushpinFilled,
+  PushpinOutlined,
+  ReloadOutlined,
+  StopOutlined
+} from '@ant-design/icons';
+import {Button, Card, InputNumber, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
@@ -527,23 +534,46 @@ const NodesPage = () => {
     <Tabs
       activeKey={activeTab}
       onChange={setActiveTab}
-      tabBarExtraContent={<div style={{display: 'flex', gap: 8}}>
+      tabBarExtraContent={<div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+        {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+          <Progress
+            type="circle"
+            percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+            size="small"
+            style={{marginRight: 8}}
+          />
+          <span style={{marginRight: 8}}>
+              测速进行中: {taskStatus.Completed}/{taskStatus.Total}
+            </span>
+          <Button
+            type="primary"
+            danger
+            icon={<StopOutlined/>}
+            onClick={handleStopTask}
+            style={{margin: 0}}
+          >
+            停止任务
+          </Button>
+        </div>)}
         <Button
           type="primary"
           danger
           onClick={() => handleBanProxy(null)}
+          style={{margin: 0}}
         >
           批量禁用节点
         </Button>
         <Button
           type="primary"
           onClick={() => handleTestProxy(null)}
+          style={{margin: 0}}
         >
           按当前参数进行测速
         </Button>
         <Button
           type="primary"
           onClick={handleExportSubscriptionUrl}
+          style={{margin: 0}}
         >
           按当前参数导出订阅链接
         </Button>

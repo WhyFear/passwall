@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Button, Form, message, Modal, Progress, Table, Tabs, Tag} from 'antd';
+import {Button, Form, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import {EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
@@ -213,20 +213,24 @@ const SubscriptionPage = () => {
     }
   }, {
     title: '操作', key: 'action', width: 260, render: (_, record) => (<div>
-      <Button
-        type="text"
-        icon={<EyeOutlined/>}
-        onClick={() => handleViewSubscription(record)}
-      >
-        查看内容
-      </Button>
-      <Button
-        type="text"
-        icon={<ReloadOutlined/>}
-        onClick={() => handleReloadSubs(record.id)}
-      >
-        刷新订阅
-      </Button>
+      <Tooltip title="查看内容">
+        <Button
+          type="text"
+          icon={<EyeOutlined/>}
+          onClick={() => handleViewSubscription(record)}
+        >
+          查看内容
+        </Button>
+      </Tooltip>
+      <Tooltip title="刷新订阅">
+        <Button
+          type="text"
+          icon={<ReloadOutlined/>}
+          onClick={() => handleReloadSubs(record.id)}
+        >
+          刷新订阅
+        </Button>
+      </Tooltip>
     </div>),
   },];
 
@@ -234,53 +238,57 @@ const SubscriptionPage = () => {
     <Tabs
       activeKey={activeTab}
       onChange={setActiveTab}
-      tabBarExtraContent={<div style={{display: 'flex', gap: 8}}>
+      tabBarExtraContent={<div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+        {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+          <Progress
+            type="circle"
+            percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+            size="small"
+            style={{marginRight: 8}}
+          />
+          <span style={{marginRight: 8}}>
+              处理中: {taskStatus.Completed}/{taskStatus.Total}
+            </span>
+          <Button
+            type="primary"
+            danger
+            icon={<StopOutlined/>}
+            onClick={handleStopTask}
+            style={{margin: 0}}
+          >
+            停止任务
+          </Button>
+        </div>)}
         <Button
           type="primary"
           icon={<PlusOutlined/>}
           onClick={handleAddSubscription}
+          style={{margin: 0}}
         >
           新增
         </Button>
         <Button
           type="primary"
           onClick={() => handleReloadSubs(null)}
+          style={{margin: 0}}
         >
           重新获取所有订阅
         </Button>
       </div>}
     >
       <Tabs.TabPane tab="订阅链接" key="1">
-        <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
-          <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
-            {taskStatus && taskStatus.State === 0 && (
-              <div style={{display: 'flex', alignItems: 'center', marginRight: 16}}>
-                <Progress
-                  type="circle"
-                  percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
-                  size="small"
-                  style={{marginRight: 8}}
-                />
-                <span style={{marginRight: 8}}>
-                  处理中: {taskStatus.Completed}/{taskStatus.Total}
-                </span>
-                <Button
-                  type="primary"
-                  danger
-                  icon={<StopOutlined/>}
-                  onClick={handleStopTask}
-                >
-                  停止任务
-                </Button>
-              </div>)}
-          </div>
-        </div>
         <Table
           columns={columns}
           dataSource={subscriptions}
           rowKey="id"
           loading={loading}
-          pagination={{pageSize: 10}}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total) => `共 ${total} 条记录`,
+            pageSizeOptions: ['10', '20', '50', '100']
+          }}
         />
       </Tabs.TabPane>
     </Tabs>
