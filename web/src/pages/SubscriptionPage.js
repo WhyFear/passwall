@@ -151,11 +151,12 @@ const SubscriptionPage = () => {
     // 调用API获取订阅详情，包含content内容
     subscriptionApi.getSubscriptionDetail(record.id, true)
       .then(data => {
-        if (data && data.length > 0) {
+        if (data && data.total > 0) {
           // 使用返回的详细数据
-          setCurrentSubscription(data[0]);
-          form.setFieldsValue(data[0]);
+          setCurrentSubscription(data.items[0]);
+          form.setFieldsValue(data.items[0]);
         } else {
+          message.error('获取订阅详情失败:' + (data.status_msg || '未知错误'));
           // 如果没有返回数据，使用原始记录
           form.setFieldsValue(record);
         }
@@ -217,7 +218,7 @@ const SubscriptionPage = () => {
   const columns = [{
     title: '序号', key: 'index', width: 80, render: (_, __, index) => index + 1,
   }, {
-    title: '链接', dataIndex: 'url', key: 'url', width: 400, ellipsis: true, 
+    title: '链接', dataIndex: 'url', key: 'url', width: 400, ellipsis: true,
   }, {
     title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (status) => <StatusTag status={status}/>,
   }, {
