@@ -86,6 +86,7 @@ const NodesPage = () => {
   const [nodeTypes, setNodeTypes] = useState([]);
   const [taskStatus, setTaskStatus] = useState(null);
   const timerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
 
   // 获取所有节点
   const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
@@ -335,6 +336,14 @@ const NodesPage = () => {
     fetchNodeTypes();
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // 查看节点详情
   const handleViewNode = (node) => {
     setCurrentNode(node);
@@ -498,7 +507,11 @@ const NodesPage = () => {
     render: (rate) => `${rate}%`,
     width: 80,
   }, {
-    title: '操作', key: 'action', width: 120, fixed: 'right', render: (_, record) => (<div className="table-action">
+    title: '操作',
+    key: 'action',
+    width: 120,
+    fixed: isMobile ? undefined : 'right',
+    render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
         <Button
           type="text"
@@ -531,73 +544,73 @@ const NodesPage = () => {
   },];
 
   return (<div>
-    <Tabs activeKey={activeTab} onChange={setActiveTab}>
-      <items tab="所有节点" key="2">
-        <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
-          <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
-            {taskStatus && taskStatus.State === 0 && (
-              <div style={{display: 'flex', alignItems: 'center', marginRight: 16}}>
-                <Progress
-                  type="circle"
-                  percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
-                  size="small"
-                  style={{marginRight: 8}}
-                />
-                <span style={{marginRight: 8}}>
-                  测速进行中: {taskStatus.Completed}/{taskStatus.Total}
-                </span>
-                <Button
-                  type="primary"
-                  danger
-                  icon={<StopOutlined/>}
-                  onClick={handleStopTask}
-                >
-                  停止任务
-                </Button>
-              </div>)}
-          </div>
+    <Tabs
+      activeKey={activeTab}
+      onChange={setActiveTab}
+      tabBarExtraContent={<div className="tab-bar-extra"
+                               style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
+        {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+          <Progress
+            type="circle"
+            percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+            size="small"
+          />
+          <span>
+            测速进行中: {taskStatus.Completed}/{taskStatus.Total}
+          </span>
           <Button
             type="primary"
             danger
-            onClick={() => handleBanProxy(null)}
-            style={{marginRight: 16}}
+            icon={<StopOutlined/>}
+            onClick={handleStopTask}
+            style={{margin: 0}}
           >
-            批量禁用节点
+            停止任务
           </Button>
-          <Button
-            type="primary"
-            onClick={() => {
-              handleTestProxy(null)
+        </div>)}
+        <Button
+          type="primary"
+          danger
+          onClick={() => handleBanProxy(null)}
+          style={{margin: 0}}
+        >
+          批量禁用节点
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => handleTestProxy(null)}
+          style={{margin: 0}}
+        >
+          按当前参数进行测速
+        </Button>
+        <Button
+          type="primary"
+          onClick={handleExportSubscriptionUrl}
+          style={{margin: 0}}
+        >
+          按当前参数导出订阅链接
+        </Button>
+      </div>}
+    >
+      <Tabs.TabPane tab="所有节点" key="2">
+        <div style={{overflowX: 'auto'}}>
+          <Table
+            columns={columns}
+            dataSource={nodes}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              ...pagination,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条记录`,
+              pageSizeOptions: ['10', '20', '50', '100']
             }}
-            style={{marginRight: 16}}
-          >
-            按当前参数进行测速
-          </Button>
-          <Button
-            type="primary"
-            onClick={() => {
-              handleExportSubscriptionUrl()
-            }}
-          >
-            按当前参数导出订阅链接
-          </Button>
+            onChange={handleTableChange}
+            scroll={{x: 'max-content'}}
+          />
         </div>
-        <Table
-          columns={columns}
-          dataSource={nodes}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            ...pagination,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`,
-            pageSizeOptions: ['10', '20', '50', '100']
-          }}
-          onChange={handleTableChange}
-          scroll={{x: 1200}}
-        />
-      </items>
+      </Tabs.TabPane>
     </Tabs>
 
     {/* 节点详情弹窗，这两个弹窗写的跟shit一样 */}

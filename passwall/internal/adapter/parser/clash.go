@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"bytes"
 	"github.com/metacubex/mihomo/log"
 	"gopkg.in/yaml.v3"
 	"passwall/internal/model"
@@ -48,8 +47,5 @@ func (p *ClashParser) Parse(content []byte) ([]*model.Proxy, error) {
 // CanParse 判断是否可以解析Clash配置
 func (p *ClashParser) CanParse(content []byte) bool {
 	// 简单检查是否包含Clash配置的特征
-	return bytes.Contains(content, []byte("proxies:")) &&
-		(bytes.Contains(content, []byte("type: ss")) ||
-			bytes.Contains(content, []byte("type: vmess")) ||
-			bytes.Contains(content, []byte("type: trojan")))
+	panic("implement me")
 }

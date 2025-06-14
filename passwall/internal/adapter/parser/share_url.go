@@ -2,8 +2,6 @@ package parser
 
 import (
 	"github.com/metacubex/mihomo/log"
-	"strings"
-
 	"passwall/internal/model"
 
 	"github.com/metacubex/mihomo/common/convert"
@@ -46,14 +44,5 @@ func (p *ShareURLParser) Parse(content []byte) ([]*model.Proxy, error) {
 
 // CanParse 判断是否可以解析分享链接
 func (p *ShareURLParser) CanParse(content []byte) bool {
-	contentStr := string(content)
-
-	// 检查是否包含常见的代理协议前缀
-	return strings.Contains(contentStr, "vmess://") ||
-		strings.Contains(contentStr, "vless://") ||
-		strings.Contains(contentStr, "trojan://") ||
-		strings.Contains(contentStr, "ss://") ||
-		strings.Contains(contentStr, "ssr://") ||
-		strings.Contains(contentStr, "socks://") ||
-		strings.Contains(contentStr, "socks5://")
+	panic("implement me")
 }

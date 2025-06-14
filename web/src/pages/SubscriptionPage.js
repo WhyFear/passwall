@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Button, Form, message, Modal, Progress, Table, Tabs, Tag} from 'antd';
+import {Button, Form, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
 import {EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
@@ -37,6 +37,7 @@ const SubscriptionPage = () => {
   const [taskStatus, setTaskStatus] = useState(null);
   const timerRef = useRef(null);
   const [uploadType, setUploadType] = useState('url');
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
 
   // 获取订阅列表
   const fetchSubscriptions = async () => {
@@ -68,6 +69,13 @@ const SubscriptionPage = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 获取任务状态
   const fetchTaskStatusHandler = async () => {
@@ -212,76 +220,90 @@ const SubscriptionPage = () => {
       });
     }
   }, {
-    title: '操作', key: 'action', width: 260, render: (_, record) => (<div>
-      <Button
-        type="text"
-        icon={<EyeOutlined/>}
-        onClick={() => handleViewSubscription(record)}
-      >
-        查看内容
-      </Button>
-      <Button
-        type="text"
-        icon={<ReloadOutlined/>}
-        onClick={() => handleReloadSubs(record.id)}
-      >
-        刷新订阅
-      </Button>
+    title: '操作', key: 'action', width: 260,
+    fixed: isMobile ? undefined : 'right',
+    render: (_, record) => (<div>
+      <Tooltip title="查看内容">
+        <Button
+          type="text"
+          icon={<EyeOutlined/>}
+          onClick={() => handleViewSubscription(record)}
+        >
+          查看内容
+        </Button>
+      </Tooltip>
+      <Tooltip title="刷新订阅">
+        <Button
+          type="text"
+          icon={<ReloadOutlined/>}
+          onClick={() => handleReloadSubs(record.id)}
+        >
+          刷新订阅
+        </Button>
+      </Tooltip>
     </div>),
   },];
 
   return (<div>
-    <Tabs activeKey={activeTab} onChange={setActiveTab}>
-      <items tab="订阅链接" key="1">
-        <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
-          <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
-            {taskStatus && taskStatus.State === 0 && (
-              <div style={{display: 'flex', alignItems: 'center', marginRight: 16}}>
-                <Progress
-                  type="circle"
-                  percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
-                  size="small"
-                  style={{marginRight: 8}}
-                />
-                <span style={{marginRight: 8}}>
-                  处理中: {taskStatus.Completed}/{taskStatus.Total}
-                </span>
-                <Button
-                  type="primary"
-                  danger
-                  icon={<StopOutlined/>}
-                  onClick={handleStopTask}
-                >
-                  停止任务
-                </Button>
-              </div>)}
-          </div>
+    <Tabs
+      activeKey={activeTab}
+      onChange={setActiveTab}
+      tabBarExtraContent={<div className="tab-bar-extra"
+                               style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
+        {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+          <Progress
+            type="circle"
+            percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+            size="small"
+          />
+          <span>
+            处理中: {taskStatus.Completed}/{taskStatus.Total}
+          </span>
           <Button
             type="primary"
-            icon={<PlusOutlined/>}
-            onClick={handleAddSubscription}
-            style={{marginRight: 8}}
+            danger
+            icon={<StopOutlined/>}
+            onClick={handleStopTask}
+            style={{margin: 0}}
           >
-            新增
+            停止任务
           </Button>
-          <Button
-            type="primary"
-            onClick={() => {
-              handleReloadSubs(null)
+        </div>)}
+        <Button
+          type="primary"
+          icon={<PlusOutlined/>}
+          onClick={handleAddSubscription}
+          style={{margin: 0}}
+        >
+          新增
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => handleReloadSubs(null)}
+          style={{margin: 0}}
+        >
+          重新获取所有订阅
+        </Button>
+      </div>}
+    >
+      <Tabs.TabPane tab="订阅链接" key="1">
+        <div style={{overflowX: 'auto'}}>
+          <Table
+            columns={columns}
+            dataSource={subscriptions}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条记录`,
+              pageSizeOptions: ['10', '20', '50', '100']
             }}
-            style={{marginRight: 16}}
-          >
-            重新获取所有订阅
-          </Button>
+            scroll={{x: 'max-content'}}
+          />
         </div>
-        <Table
-          columns={columns}
-          dataSource={subscriptions}
-          rowKey="id"
-          loading={loading}
-          pagination={{pageSize: 10}}
-        />
-      </items>
+      </Tabs.TabPane>
     </Tabs>
 
     {/* 添加/查看订阅的弹窗 */}
