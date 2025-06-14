@@ -37,6 +37,7 @@ const SubscriptionPage = () => {
   const [taskStatus, setTaskStatus] = useState(null);
   const timerRef = useRef(null);
   const [uploadType, setUploadType] = useState('url');
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
 
   // 获取订阅列表
   const fetchSubscriptions = async () => {
@@ -68,6 +69,13 @@ const SubscriptionPage = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 获取任务状态
   const fetchTaskStatusHandler = async () => {
@@ -212,7 +220,9 @@ const SubscriptionPage = () => {
       });
     }
   }, {
-    title: '操作', key: 'action', width: 260, render: (_, record) => (<div>
+    title: '操作', key: 'action', width: 260,
+    fixed: isMobile ? undefined : 'right',
+    render: (_, record) => (<div>
       <Tooltip title="查看内容">
         <Button
           type="text"
@@ -238,17 +248,17 @@ const SubscriptionPage = () => {
     <Tabs
       activeKey={activeTab}
       onChange={setActiveTab}
-      tabBarExtraContent={<div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+      tabBarExtraContent={<div className="tab-bar-extra"
+                               style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
         {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
             percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
             size="small"
-            style={{marginRight: 8}}
           />
-          <span style={{marginRight: 8}}>
-              处理中: {taskStatus.Completed}/{taskStatus.Total}
-            </span>
+          <span>
+            处理中: {taskStatus.Completed}/{taskStatus.Total}
+          </span>
           <Button
             type="primary"
             danger
@@ -277,19 +287,22 @@ const SubscriptionPage = () => {
       </div>}
     >
       <Tabs.TabPane tab="订阅链接" key="1">
-        <Table
-          columns={columns}
-          dataSource={subscriptions}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`,
-            pageSizeOptions: ['10', '20', '50', '100']
-          }}
-        />
+        <div style={{overflowX: 'auto'}}>
+          <Table
+            columns={columns}
+            dataSource={subscriptions}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条记录`,
+              pageSizeOptions: ['10', '20', '50', '100']
+            }}
+            scroll={{x: 'max-content'}}
+          />
+        </div>
       </Tabs.TabPane>
     </Tabs>
 

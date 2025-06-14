@@ -86,6 +86,7 @@ const NodesPage = () => {
   const [nodeTypes, setNodeTypes] = useState([]);
   const [taskStatus, setTaskStatus] = useState(null);
   const timerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
 
   // 获取所有节点
   const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
@@ -335,6 +336,14 @@ const NodesPage = () => {
     fetchNodeTypes();
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // 查看节点详情
   const handleViewNode = (node) => {
     setCurrentNode(node);
@@ -498,7 +507,11 @@ const NodesPage = () => {
     render: (rate) => `${rate}%`,
     width: 80,
   }, {
-    title: '操作', key: 'action', width: 120, fixed: 'right', render: (_, record) => (<div className="table-action">
+    title: '操作',
+    key: 'action',
+    width: 120,
+    fixed: isMobile ? undefined : 'right',
+    render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
         <Button
           type="text"
@@ -534,17 +547,17 @@ const NodesPage = () => {
     <Tabs
       activeKey={activeTab}
       onChange={setActiveTab}
-      tabBarExtraContent={<div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+      tabBarExtraContent={<div className="tab-bar-extra"
+                               style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
         {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
             percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
             size="small"
-            style={{marginRight: 8}}
           />
-          <span style={{marginRight: 8}}>
-              测速进行中: {taskStatus.Completed}/{taskStatus.Total}
-            </span>
+          <span>
+            测速进行中: {taskStatus.Completed}/{taskStatus.Total}
+          </span>
           <Button
             type="primary"
             danger
@@ -580,21 +593,23 @@ const NodesPage = () => {
       </div>}
     >
       <Tabs.TabPane tab="所有节点" key="2">
-        <Table
-          columns={columns}
-          dataSource={nodes}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            ...pagination,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`,
-            pageSizeOptions: ['10', '20', '50', '100']
-          }}
-          onChange={handleTableChange}
-          scroll={{x: 1200}}
-        />
+        <div style={{overflowX: 'auto'}}>
+          <Table
+            columns={columns}
+            dataSource={nodes}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              ...pagination,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条记录`,
+              pageSizeOptions: ['10', '20', '50', '100']
+            }}
+            onChange={handleTableChange}
+            scroll={{x: 'max-content'}}
+          />
+        </div>
       </Tabs.TabPane>
     </Tabs>
 

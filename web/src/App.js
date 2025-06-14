@@ -14,6 +14,7 @@ function App() {
   const [tokenModalVisible, setTokenModalVisible] = useState(false);
   const location = useLocation();
   const [selectedKey, setSelectedKey] = useState('1');
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
 
   // 在组件挂载时检查Token
   useEffect(() => {
@@ -41,6 +42,14 @@ function App() {
       setSelectedKey('1');
     }
   }, [location]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 检查Token是否存在，如果不存在则显示弹窗
   const checkToken = () => {
@@ -78,72 +87,63 @@ function App() {
 
   // 下拉菜单项
   const dropdownItems = {
-    items: [
-      {
-        key: '1',
-        label: '设置Token',
-        icon: <SettingOutlined/>,
-        onClick: openTokenSettings,
-      },
-      {
-        key: '2',
-        label: '退出登录',
-        icon: <LogoutOutlined/>,
-        onClick: handleLogout,
-        danger: true,
-      },
-    ],
+    items: [{
+      key: '1', label: '设置Token', icon: <SettingOutlined/>, onClick: openTokenSettings,
+    }, {
+      key: '2', label: '退出登录', icon: <LogoutOutlined/>, onClick: handleLogout, danger: true,
+    },],
   };
 
-  return (
-    <Layout style={{minHeight: '100vh'}}>
-      <Header className="header">
-        <div className="header-content">
-          <div className="logo">PassWall</div>
-          <Dropdown menu={dropdownItems} placement="bottomRight">
-            <Button type="text" icon={<SettingOutlined/>} style={{color: 'white'}}/>
-          </Dropdown>
-        </div>
-      </Header>
-      <Layout>
-        <Sider width={200} className="site-layout-background">
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedKey]}
-            style={{height: '100%', borderRight: 0}}
-          >
-            <Menu.Item key="1" icon={<LinkOutlined/>}>
-              <Link to="/">订阅链接</Link>
-            </Menu.Item>
-            <Menu.Item key="2" icon={<NodeIndexOutlined/>}>
-              <Link to="/nodes">所有节点</Link>
-            </Menu.Item>
-          </Menu>
-        </Sider>
-        <Layout style={{padding: '0 24px 24px'}}>
-          <Content
-            className="site-layout-background"
-            style={{
-              padding: 24,
-              margin: 0,
-              minHeight: 280,
-            }}
-          >
-            <Routes>
-              <Route path="/" element={<SubscriptionPage/>}/>
-              <Route path="/nodes" element={<NodesPage/>}/>
-            </Routes>
-          </Content>
-        </Layout>
+  return (<Layout style={{minHeight: '100vh'}}>
+    <Header className="header">
+      <div className="header-content">
+        <div className="logo">PassWall</div>
+        <Dropdown menu={dropdownItems} placement="bottomRight">
+          <Button type="text" icon={<SettingOutlined/>} style={{color: 'white'}}/>
+        </Dropdown>
+      </div>
+    </Header>
+    <Layout style={{padding: isMobile ? 0 : '0 12px 12px'}}>
+      <Sider
+        width={150}
+        className="site-layout-background"
+        breakpoint="md"
+        collapsedWidth="0"
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={[selectedKey]}
+          style={{height: '100%', borderRight: 0}}
+        >
+          <Menu.Item key="1" icon={<LinkOutlined/>}>
+            <Link to="/">订阅链接</Link>
+          </Menu.Item>
+          <Menu.Item key="2" icon={<NodeIndexOutlined/>}>
+            <Link to="/nodes">所有节点</Link>
+          </Menu.Item>
+        </Menu>
+      </Sider>
+      <Layout style={{padding: 0}}>
+        <Content
+          className="site-layout-background"
+          style={{
+            padding: isMobile ? 0 : 24, margin: 0, minHeight: 280,
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<SubscriptionPage/>}/>
+            <Route path="/nodes" element={<NodesPage/>}/>
+          </Routes>
+        </Content>
       </Layout>
-
-      {/* Token输入弹窗 */}
-      <TokenModal
-        visible={tokenModalVisible}
-        onClose={handleTokenModalClose}
-      />
     </Layout>
-  );
+
+    {/* Token输入弹窗 */}
+    <TokenModal
+      visible={tokenModalVisible}
+      onClose={handleTokenModalClose}
+    />
+  </Layout>);
 }
 
 export default App; 
