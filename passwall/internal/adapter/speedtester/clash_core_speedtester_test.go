@@ -2,15 +2,9 @@ package speedtester
 
 import (
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"passwall/internal/model"
 	"testing"
 )
-
-// MockResult 是一个模拟的测速结果
-type MockResult struct {
-	mock.Mock
-}
 
 // TestNewClashCoreSpeedTester 测试ClashCoreSpeedTester的创建
 func TestNewClashCoreSpeedTester(t *testing.T) {
@@ -67,13 +61,11 @@ func TestCheckTesterSupport(t *testing.T) {
 	assert.True(t, checkTesterSupport(supportedProxy, tester), "VMess类型应该被支持")
 }
 
-// TestClashCoreSpeedTester_TestValidVMess 测试有效的VMess配置 - 使用实际网络连接
+// TestClashCoreSpeedTester_TestValidVMess 测试有效的配置 - 使用实际网络连接
 func TestClashCoreSpeedTester_TestValidVMess(t *testing.T) {
-	//t.Skip("此测试需要实际网络连接，默认跳过，需要测速时请取消注释")
+	t.Skip("此测试需要实际网络连接，默认跳过，需要测速时请取消注释")
 
 	tester := NewClashCoreSpeedTester()
-
-	// 创建一个有效的VMess配置
 	configString := ""
 
 	proxy := &model.Proxy{
