@@ -450,11 +450,11 @@ const NodesPage = () => {
   const columns = [{
     title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1,
   }, {
-    title: '订阅链接', dataIndex: 'subscription_url', key: 'subscription_url', ellipsis: true,
+    title: '订阅链接', dataIndex: 'subscription_url', key: 'subscription_url', width: 300, ellipsis: true,
   }, {
-    title: '名称', dataIndex: 'name', key: 'name', ellipsis: true,
+    title: '名称', dataIndex: 'name', key: 'name', width: 200, ellipsis: true,
   }, {
-    title: '节点', dataIndex: 'address', key: 'address',
+    title: '节点', dataIndex: 'address', key: 'address', width: 200,
   }, {
     title: '节点类型',
     dataIndex: 'type',
@@ -593,7 +593,7 @@ const NodesPage = () => {
       </div>}
     >
       <Tabs.TabPane tab="所有节点" key="2">
-        <div style={{overflowX: 'auto'}}>
+        <div style={{overflowX: 'auto', width: '100%'}}>
           <Table
             columns={columns}
             dataSource={nodes}
@@ -607,7 +607,8 @@ const NodesPage = () => {
               pageSizeOptions: ['10', '20', '50', '100']
             }}
             onChange={handleTableChange}
-            scroll={{x: 'max-content'}}
+            scroll={{x: 1500}}
+            style={{width: '100%'}}
           />
         </div>
       </Tabs.TabPane>

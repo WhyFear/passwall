@@ -60,7 +60,7 @@ api.interceptors.response.use((response) => {
 // 订阅相关API
 export const subscriptionApi = {
   // 获取所有订阅链接
-  getSubscriptions: () => api.get('/subscriptions'),
+  getSubscriptions: (params) => api.get('/subscriptions', params),
 
   // 获取订阅详情
   getSubscriptionDetail: (id, content = true) => api.get(`/subscriptions?id=${id}&content=${content}`),

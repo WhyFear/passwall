@@ -38,16 +38,31 @@ const SubscriptionPage = () => {
   const timerRef = useRef(null);
   const [uploadType, setUploadType] = useState('url');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
+  const [pagination, setPagination] = useState({
+    current: 1, pageSize: 10, total: 0,
+  });
 
   // 获取订阅列表
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptions = async (page = pagination.current, pageSize = pagination.pageSize) => {
     try {
       setLoading(true);
-      const data = await subscriptionApi.getSubscriptions();
-      setSubscriptions(Array.isArray(data) ? data : []);
+      // 构建请求参数
+      const params = {
+        page: page, pageSize: pageSize
+      };
+
+      const data = await subscriptionApi.getSubscriptions({params});
+      const items = Array.isArray(data.items) ? data.items : [];
+
+      setSubscriptions(items);
+      setPagination(prev => ({
+        ...prev, current: page, pageSize: pageSize, total: data.total || items.length,
+      }));
     } catch (error) {
-      message.error('获取订阅列表失败');
+      message.error(`获取订阅列表失败: ${error.message || '未知错误'}`);
       console.error(error);
+      // 重置到第一页
+      setPagination(prev => ({...prev, current: 1}));
     } finally {
       setLoading(false);
     }
@@ -185,7 +200,7 @@ const SubscriptionPage = () => {
 
       message.success('添加订阅成功');
       setModalVisible(false);
-      await fetchSubscriptions();
+      await fetchSubscriptions(pagination.current, pagination.pageSize);
     } catch (error) {
       if (error.errorFields) {
         message.error('请填写必填字段');
@@ -202,7 +217,7 @@ const SubscriptionPage = () => {
   const columns = [{
     title: '序号', key: 'index', width: 80, render: (_, __, index) => index + 1,
   }, {
-    title: '链接', dataIndex: 'url', key: 'url', ellipsis: true,
+    title: '链接', dataIndex: 'url', key: 'url', width: 400, ellipsis: true, 
   }, {
     title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (status) => <StatusTag status={status}/>,
   }, {
@@ -220,9 +235,7 @@ const SubscriptionPage = () => {
       });
     }
   }, {
-    title: '操作', key: 'action', width: 260,
-    fixed: isMobile ? undefined : 'right',
-    render: (_, record) => (<div>
+    title: '操作', key: 'action', width: 260, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
       <Tooltip title="查看内容">
         <Button
           type="text"
@@ -287,20 +300,25 @@ const SubscriptionPage = () => {
       </div>}
     >
       <Tabs.TabPane tab="订阅链接" key="1">
-        <div style={{overflowX: 'auto'}}>
+        <div style={{overflowX: 'auto', width: '100%'}}>
           <Table
             columns={columns}
             dataSource={subscriptions}
             rowKey="id"
             loading={loading}
             pagination={{
-              pageSize: 10,
+              ...pagination,
               showSizeChanger: true,
-              showQuickJumper: true,
+              showQuickJumper: false,
               showTotal: (total) => `共 ${total} 条记录`,
               pageSizeOptions: ['10', '20', '50', '100']
             }}
-            scroll={{x: 'max-content'}}
+            onChange={(newPagination) => {
+              const {current, pageSize} = newPagination;
+              fetchSubscriptions(current, pageSize);
+            }}
+            scroll={{x: 1500}}
+            style={{width: '100%'}}
           />
         </div>
       </Tabs.TabPane>

@@ -6,12 +6,18 @@ import (
 	"gorm.io/gorm"
 )
 
+type SubsPage struct {
+	Page     int
+	PageSize int
+}
+
 // SubscriptionRepository 订阅仓库接口
 type SubscriptionRepository interface {
 	FindByID(id uint) (*model.Subscription, error)
 	FindAll() ([]*model.Subscription, error)
 	FindByStatus(status model.SubscriptionStatus) ([]*model.Subscription, error)
 	FindByURL(url string) (*model.Subscription, error)
+	FindPage(page SubsPage) ([]*model.Subscription, int64, error)
 	Create(subscription *model.Subscription) error
 	Update(subscription *model.Subscription) error
 	Delete(id uint) error
@@ -65,6 +71,27 @@ func (r *GormSubscriptionRepository) FindByURL(url string) (*model.Subscription,
 		return nil, result.Error
 	}
 	return &subscription, nil
+}
+
+func (r *GormSubscriptionRepository) FindPage(page SubsPage) ([]*model.Subscription, int64, error) {
+	if page.Page <= 0 {
+		page.Page = 1
+	}
+	if page.PageSize <= 0 {
+		page.PageSize = 10
+	}
+
+	var subscriptions []*model.Subscription
+	query := r.db.Model(&model.Subscription{})
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	query = query.Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Order("updated_at desc")
+	if err := query.Find(&subscriptions).Error; err != nil {
+		return nil, 0, err
+	}
+	return subscriptions, total, nil
 }
 
 // Create 创建订阅

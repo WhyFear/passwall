@@ -48,14 +48,16 @@ type PaginatedResponse struct {
 // GetProxies 获取所有代理
 func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 解析请求参数
 		var req ProxyReq
 		if err := c.ShouldBindQuery(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Invalid request parameters",
+			})
 			return
 		}
 
-		// 设置默认值
 		if req.Page <= 0 {
 			req.Page = 1
 		}
@@ -75,7 +77,11 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 		// 获取所有代理
 		proxies, total, err := proxyService.GetProxiesByFilters(filters, req.SortField, req.SortOrder, req.Page, req.PageSize)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取代理列表失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusInternalServerError,
+				"status_msg":  "Failed to get proxies",
+			})
 			return
 		}
 

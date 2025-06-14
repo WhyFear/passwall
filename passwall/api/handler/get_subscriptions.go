@@ -11,8 +11,10 @@ import (
 )
 
 type SubscriptionReq struct {
-	ID      int  `form:"id"`
-	Content bool `form:"content"`
+	ID       int  `form:"id"`
+	Content  bool `form:"content"`
+	Page     int  `form:"page"`
+	PageSize int  `form:"pageSize"`
 }
 type SubscriptionResp struct {
 	ID        int       `json:"id"`
@@ -23,12 +25,15 @@ type SubscriptionResp struct {
 	ProxyNum  int64     `json:"proxy_num,omitempty"`
 	Content   string    `json:"content,omitempty"`
 }
+type SubsPageResp struct {
+	Total int64              `json:"total"`
+	Items []SubscriptionResp `json:"items"`
+}
 
 // GetSubscriptions 获取存储的订阅链接
 func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyService proxy.ProxyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
-		// 解析请求参数
 		var req SubscriptionReq
 		if err := c.ShouldBindQuery(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -37,21 +42,35 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 
 		// 根据入参是否有ID来判断是否需要获取内容，如果ID大于0，则获取内容，否则获取所有订阅
 		// 根据content参数来判断是否需要获取内容，如果content为true，则获取内容，否则获取所有订阅
-		var results []SubscriptionResp
+		var items []SubscriptionResp
 		var subscriptions []*model.Subscription
+		total := int64(1)
 		if req.ID > 0 {
 			subscription, err := subscriptionManager.GetSubscriptionByID(uint(req.ID))
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch subscription"})
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"result":      err.Error(),
+					"status_code": http.StatusInternalServerError,
+					"status_msg":  "Failed to fetch subscription",
+				})
 				return
 			}
 			subscriptions = append(subscriptions, subscription)
 		} else {
-			allSubscriptions, err := subscriptionManager.GetAllSubscriptions()
+			subsReq := proxy.SubsPage{
+				Page:     req.Page,
+				PageSize: req.PageSize,
+			}
+			allSubscriptions, subsTotal, err := subscriptionManager.GetSubscriptionsPage(subsReq)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch subscriptions"})
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"result":      err.Error(),
+					"status_code": http.StatusInternalServerError,
+					"status_msg":  "Failed to fetch subscriptions",
+				})
 				return
 			}
+			total = subsTotal
 			subscriptions = allSubscriptions
 		}
 		for _, subscription := range subscriptions {
@@ -72,8 +91,12 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 			if req.Content {
 				tempSubscription.Content = subscription.Content
 			}
-			results = append(results, tempSubscription)
+			items = append(items, tempSubscription)
 		}
-		c.JSON(http.StatusOK, results)
+
+		c.JSON(http.StatusOK, SubsPageResp{
+			Total: total,
+			Items: items,
+		})
 	}
 }
