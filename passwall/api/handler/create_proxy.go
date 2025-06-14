@@ -227,15 +227,17 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			return
 		}
 
-		// 保存解析出的代理服务器
-		for _, singleProxy := range proxies {
-			// 设置订阅ID
-			singleProxy.SubscriptionID = &subscription.ID
-			singleProxy.Status = model.ProxyStatusPending
-		}
-		// 保存代理服务器
-		if err := proxyService.BatchCreateProxies(proxies); err != nil {
-			log.Errorln("保存代理服务器失败:", err)
+		if len(proxies) > 0 {
+			// 保存解析出的代理服务器
+			for _, singleProxy := range proxies {
+				// 设置订阅ID
+				singleProxy.SubscriptionID = &subscription.ID
+				singleProxy.Status = model.ProxyStatusPending
+			}
+			// 保存代理服务器
+			if err := proxyService.BatchCreateProxies(proxies); err != nil {
+				log.Errorln("保存代理服务器失败:", err)
+			}
 		}
 
 		// 更新订阅状态为正常

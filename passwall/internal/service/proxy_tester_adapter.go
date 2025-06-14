@@ -113,7 +113,8 @@ func (a *ProxyTesterAdapter) TestProxies(request *TestProxyRequest) error {
 		}
 		testRequest.Concurrent = 1 // 速度测试使用单线程
 	} else {
-		return errors.New("invalid request: no test type specified")
+		log.Infoln("nothing to do")
+		return nil
 	}
 
 	// 执行测试
