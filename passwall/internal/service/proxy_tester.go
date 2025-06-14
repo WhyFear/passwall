@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/metacubex/mihomo/log"
 
 	"passwall/config"
 	"passwall/internal/adapter/parser"
@@ -81,7 +82,7 @@ func NewProxyTester(
 	}
 }
 
-// TestProxies 测试代理  已经没用了
+// TestProxies 测试代理
 func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 	if request == nil {
 		return errors.New("request cannot be nil")
@@ -89,12 +90,6 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 
 	// 创建上下文
 	ctx := context.Background()
-
-	// 加载配置
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return errors.New("load config failed: " + err.Error())
-	}
 
 	// 重新加载订阅配置
 	if request.ReloadSubscribeConfig {
@@ -104,39 +99,45 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 		}
 	}
 
-	// 测试代理
-	var proxiesFilter *proxy.ProxyFilter
-
 	// 设置并发数
 	concurrent := request.Concurrent
 	if concurrent <= 0 {
+		// 加载配置
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return errors.New("load config failed: " + err.Error())
+		}
 		concurrent = cfg.Concurrent
 	}
 
-	// 根据请求类型设置过滤条件
+	// 创建测试请求
+	testRequest := &proxy.TestRequest{
+		Concurrent: concurrent,
+	}
+
+	// 根据不同的测试类型设置过滤条件
 	if request.TestAll {
-		// 测试所有代理，不需要过滤
+		// 测试所有代理
+		testRequest.Filters = nil
 	} else if request.TestNew {
-		proxiesFilter = &proxy.ProxyFilter{
+		// 测试新代理
+		testRequest.Filters = &proxy.ProxyFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusPending},
 		}
 	} else if request.TestFailed {
-		proxiesFilter = &proxy.ProxyFilter{
+		// 测试失败的代理
+		testRequest.Filters = &proxy.ProxyFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusFailed},
 		}
 	} else if request.TestSpeed {
-		concurrent = 1
-		proxiesFilter = &proxy.ProxyFilter{
+		// 测试正常的代理
+		testRequest.Filters = &proxy.ProxyFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusOK},
 		}
+		testRequest.Concurrent = 1 // 速度测试使用单线程
 	} else {
-		return errors.New("invalid request: no test type specified")
-	}
-
-	// 调用代理测试器测试代理
-	testRequest := &proxy.TestRequest{
-		Filters:    proxiesFilter,
-		Concurrent: concurrent,
+		log.Infoln("nothing to do")
+		return nil
 	}
 
 	return s.proxyTester.TestProxies(ctx, testRequest)

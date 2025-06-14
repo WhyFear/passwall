@@ -30,7 +30,7 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 		// 解析请求参数
 		var req SubscribeReq
 		if err := c.ShouldBindQuery(&req); err != nil {
-			log.Errorln("解析请求参数失败:", err)
+			log.Errorln("解析请求参数失败: %v", err)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
@@ -75,7 +75,7 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 			var err error
 			proxies, _, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, 1, limit)
 			if err != nil {
-				log.Errorln("查询代理服务器失败:", err)
+				log.Errorln("查询代理服务器失败: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusInternalServerError,
@@ -101,7 +101,7 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 		// 获取订阅生成器
 		subscribeGenerator, err := generatorFactory.GetGenerator(subType)
 		if err != nil {
-			log.Errorln("不支持的订阅类型:", subType)
+			log.Errorln("不支持的订阅类型: %v", subType)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
