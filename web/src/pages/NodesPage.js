@@ -1,12 +1,5 @@
-import {
-  DeleteOutlined,
-  EyeOutlined,
-  PushpinFilled,
-  PushpinOutlined,
-  ReloadOutlined,
-  StopOutlined
-} from '@ant-design/icons';
-import {Button, Card, InputNumber, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
+import {DeleteOutlined, EyeOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined} from '@ant-design/icons';
+import {Button, Card, InputNumber, message, Modal, Table, Tabs, Tag, Tooltip} from 'antd';
 import React, {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
@@ -531,57 +524,32 @@ const NodesPage = () => {
   },];
 
   return (<div>
-    <Tabs activeKey={activeTab} onChange={setActiveTab}>
-      <items tab="所有节点" key="2">
-        <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
-          <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
-            {taskStatus && taskStatus.State === 0 && (
-              <div style={{display: 'flex', alignItems: 'center', marginRight: 16}}>
-                <Progress
-                  type="circle"
-                  percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
-                  size="small"
-                  style={{marginRight: 8}}
-                />
-                <span style={{marginRight: 8}}>
-                  测速进行中: {taskStatus.Completed}/{taskStatus.Total}
-                </span>
-                <Button
-                  type="primary"
-                  danger
-                  icon={<StopOutlined/>}
-                  onClick={handleStopTask}
-                >
-                  停止任务
-                </Button>
-              </div>)}
-          </div>
-          <Button
-            type="primary"
-            danger
-            onClick={() => handleBanProxy(null)}
-            style={{marginRight: 16}}
-          >
-            批量禁用节点
-          </Button>
-          <Button
-            type="primary"
-            onClick={() => {
-              handleTestProxy(null)
-            }}
-            style={{marginRight: 16}}
-          >
-            按当前参数进行测速
-          </Button>
-          <Button
-            type="primary"
-            onClick={() => {
-              handleExportSubscriptionUrl()
-            }}
-          >
-            按当前参数导出订阅链接
-          </Button>
-        </div>
+    <Tabs
+      activeKey={activeTab}
+      onChange={setActiveTab}
+      tabBarExtraContent={<div style={{display: 'flex', gap: 8}}>
+        <Button
+          type="primary"
+          danger
+          onClick={() => handleBanProxy(null)}
+        >
+          批量禁用节点
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => handleTestProxy(null)}
+        >
+          按当前参数进行测速
+        </Button>
+        <Button
+          type="primary"
+          onClick={handleExportSubscriptionUrl}
+        >
+          按当前参数导出订阅链接
+        </Button>
+      </div>}
+    >
+      <Tabs.TabPane tab="所有节点" key="2">
         <Table
           columns={columns}
           dataSource={nodes}
@@ -597,7 +565,7 @@ const NodesPage = () => {
           onChange={handleTableChange}
           scroll={{x: 1200}}
         />
-      </items>
+      </Tabs.TabPane>
     </Tabs>
 
     {/* 节点详情弹窗，这两个弹窗写的跟shit一样 */}

@@ -231,8 +231,26 @@ const SubscriptionPage = () => {
   },];
 
   return (<div>
-    <Tabs activeKey={activeTab} onChange={setActiveTab}>
-      <items tab="订阅链接" key="1">
+    <Tabs
+      activeKey={activeTab}
+      onChange={setActiveTab}
+      tabBarExtraContent={<div style={{display: 'flex', gap: 8}}>
+        <Button
+          type="primary"
+          icon={<PlusOutlined/>}
+          onClick={handleAddSubscription}
+        >
+          新增
+        </Button>
+        <Button
+          type="primary"
+          onClick={() => handleReloadSubs(null)}
+        >
+          重新获取所有订阅
+        </Button>
+      </div>}
+    >
+      <Tabs.TabPane tab="订阅链接" key="1">
         <div style={{marginBottom: 16, position: 'relative', display: 'flex', justifyContent: 'flex-end'}}>
           <div style={{display: 'flex', alignItems: 'center', marginRight: 'auto'}}>
             {taskStatus && taskStatus.State === 0 && (
@@ -256,23 +274,6 @@ const SubscriptionPage = () => {
                 </Button>
               </div>)}
           </div>
-          <Button
-            type="primary"
-            icon={<PlusOutlined/>}
-            onClick={handleAddSubscription}
-            style={{marginRight: 8}}
-          >
-            新增
-          </Button>
-          <Button
-            type="primary"
-            onClick={() => {
-              handleReloadSubs(null)
-            }}
-            style={{marginRight: 16}}
-          >
-            重新获取所有订阅
-          </Button>
         </div>
         <Table
           columns={columns}
@@ -281,7 +282,7 @@ const SubscriptionPage = () => {
           loading={loading}
           pagination={{pageSize: 10}}
         />
-      </items>
+      </Tabs.TabPane>
     </Tabs>
 
     {/* 添加/查看订阅的弹窗 */}
