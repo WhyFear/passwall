@@ -145,7 +145,6 @@ func (r *GormProxyRepository) Create(proxy *model.Proxy) error {
 
 // BatchCreate 批量创建代理服务器
 func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
-	// TODO ON DUPLICATE KEY UPDATE
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{},                            // 冲突检测字段（唯一索引）
 		DoUpdates: clause.AssignmentColumns([]string{"config"}), // 冲突时更新的字段

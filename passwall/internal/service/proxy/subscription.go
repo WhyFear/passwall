@@ -17,11 +17,16 @@ import (
 	"github.com/metacubex/mihomo/log"
 )
 
+type SubsPage struct {
+	Page     int
+	PageSize int
+}
+
 // SubscriptionManager 订阅管理服务
 type SubscriptionManager interface {
 	// 基本CRUD操作
 	GetSubscriptionByID(id uint) (*model.Subscription, error)
-	GetAllSubscriptions() ([]*model.Subscription, error)
+	GetSubscriptionsPage(page SubsPage) ([]*model.Subscription, int64, error)
 	GetSubscriptionByURL(url string) (*model.Subscription, error)
 	CreateSubscription(subscription *model.Subscription) error
 	UpdateSubscription(subscription *model.Subscription) error
@@ -64,8 +69,12 @@ func (s *subscriptionManagerImpl) GetSubscriptionByID(id uint) (*model.Subscript
 }
 
 // GetAllSubscriptions 获取所有订阅
-func (s *subscriptionManagerImpl) GetAllSubscriptions() ([]*model.Subscription, error) {
-	return s.subscriptionRepo.FindAll()
+func (s *subscriptionManagerImpl) GetSubscriptionsPage(page SubsPage) ([]*model.Subscription, int64, error) {
+	req := repository.SubsPage{
+		Page:     page.Page,
+		PageSize: page.PageSize,
+	}
+	return s.subscriptionRepo.FindPage(req)
 }
 
 // GetSubscriptionByURL 根据URL获取订阅

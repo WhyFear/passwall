@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -310,7 +311,7 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 	select {
 	case <-ctx.Done():
 		// 任务被取消
-		if ctx.Err() == context.Canceled {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			finishMessage = "任务被取消"
 		} else {
 			finishMessage = "任务超时或其他原因终止"

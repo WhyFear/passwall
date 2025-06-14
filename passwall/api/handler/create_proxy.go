@@ -27,7 +27,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Errorln("Failed to load config:", err)
+		log.Errorln("Failed to load config: %v", err)
 	}
 
 	return func(c *gin.Context) {
@@ -77,13 +77,13 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				// 如果配置了代理并启用，则使用配置的代理
 				if cfg != nil && cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
 					downloadOptions.ProxyURL = cfg.Proxy.URL
-					log.Infoln("Using proxy for download:", cfg.Proxy.URL)
+					log.Infoln("Using proxy for download: %v", cfg.Proxy.URL)
 				}
 
 				// 对于HTTP/HTTPS链接，下载内容
 				content, err = util.DownloadFromURL(req.URL, downloadOptions)
 				if err != nil {
-					log.Errorln("下载订阅内容失败:", err)
+					log.Errorln("下载订阅内容失败: %v", err)
 					c.JSON(http.StatusBadRequest, gin.H{
 						"result":      "fail",
 						"status_code": http.StatusBadRequest,
@@ -127,7 +127,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 
 			content, err = io.ReadAll(io.LimitReader(file, 10*1024*1024)) // 限制读取大小
 			if err != nil {
-				log.Errorln("读取上传文件失败:", err)
+				log.Errorln("读取上传文件失败: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusInternalServerError,
@@ -159,7 +159,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		// 获取解析器
 		p, err := parserFactory.GetParser(req.Type)
 		if err != nil {
-			log.Errorln("不支持的代理类型:", req.Type)
+			log.Errorln("不支持的代理类型: %v", req.Type)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
@@ -172,7 +172,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		existingSub, err := subscriptionManager.GetSubscriptionByURL(subscriptionURL)
 		if err == nil && existingSub != nil {
 			// URL已存在，返回现有订阅ID
-			log.Infoln("订阅配置已存在:", subscriptionURL)
+			log.Infoln("订阅配置已存在: %v", subscriptionURL)
 			c.JSON(http.StatusOK, gin.H{
 				"result":          "fail",
 				"status_code":     http.StatusOK,
@@ -193,7 +193,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		if err := subscriptionManager.CreateSubscription(subscription); err != nil {
 			// 检查是否是唯一键冲突错误
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-				log.Infoln("订阅配置已存在(创建时检测):", subscriptionURL)
+				log.Infoln("订阅配置已存在(创建时检测): %v", subscriptionURL)
 				c.JSON(http.StatusOK, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusOK,
@@ -203,7 +203,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			}
 
 			// 其他错误
-			log.Errorln("保存订阅配置失败:", err)
+			log.Errorln("保存订阅配置失败: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
@@ -215,7 +215,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		// 解析配置
 		proxies, err := p.Parse(content)
 		if err != nil {
-			log.Errorln("解析订阅配置失败:", err)
+			log.Errorln("解析订阅配置失败: %v", err.Error())
 			// 更新订阅状态为无法处理
 			subscription.Status = model.SubscriptionStatusInvalid
 			_ = subscriptionManager.UpdateSubscription(subscription)
@@ -227,22 +227,24 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			return
 		}
 
-		// 保存解析出的代理服务器
-		for _, singleProxy := range proxies {
-			// 设置订阅ID
-			singleProxy.SubscriptionID = &subscription.ID
-			singleProxy.Status = model.ProxyStatusPending
-		}
-		// 保存代理服务器
-		if err := proxyService.BatchCreateProxies(proxies); err != nil {
-			log.Errorln("保存代理服务器失败:", err)
+		if len(proxies) > 0 {
+			// 保存解析出的代理服务器
+			for _, singleProxy := range proxies {
+				// 设置订阅ID
+				singleProxy.SubscriptionID = &subscription.ID
+				singleProxy.Status = model.ProxyStatusPending
+			}
+			// 保存代理服务器
+			if err := proxyService.BatchCreateProxies(proxies); err != nil {
+				log.Errorln("保存代理服务器失败: %v", err)
+			}
 		}
 
 		// 更新订阅状态为正常
 		subscription.Status = model.SubscriptionStatusOK
 		err = subscriptionManager.UpdateSubscription(subscription)
 		if err != nil {
-			log.Errorln("更新订阅状态失败:", err)
+			log.Errorln("更新订阅状态失败: %v", err)
 		}
 
 		log.Infoln("成功保存 %d 个代理服务器", len(proxies))
@@ -254,7 +256,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				TestNew:    true,
 				Concurrent: cfg.Concurrent,
 			}); err != nil {
-				log.Errorln("测试代理失败:", err)
+				log.Errorln("测试代理失败: %v", err)
 			}
 		}()
 
