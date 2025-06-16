@@ -4,6 +4,7 @@ import {EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-desi
 import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import SubscriptionForm from '../components/SubscriptionForm';
+import {formatDate} from "../utils/timeUtils";
 
 const StatusTag = ({status}) => {
   let color = 'default';
@@ -220,21 +221,27 @@ const SubscriptionPage = () => {
   }, {
     title: '链接', dataIndex: 'url', key: 'url', width: 400, ellipsis: true,
   }, {
-    title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (status) => <StatusTag status={status}/>,
+    title: '上次拉取状态',
+    dataIndex: 'status',
+    key: 'status',
+    width: 120,
+    render: (status) => <StatusTag status={status}/>,
   }, {
-    title: '节点数量',
+    title: '生效节点数量',
     dataIndex: 'proxy_num',
     key: 'proxy_num',
     width: 120,
     render: (proxy_num) => (proxy_num) ? proxy_num : '-',
   }, {
-    title: '上次更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, render: (text) => {
-      if (!text) return '-';
-      const date = new Date(text);
-      return date.toLocaleString('zh-CN', {
-        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
-      });
-    }
+    title: '所有节点数量',
+    dataIndex: 'all_proxy_num',
+    key: 'all_proxy_num',
+    width: 120,
+    render: (all_proxy_num) => (all_proxy_num) ? all_proxy_num : '-',
+  }, {
+    title: '上次更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, render: (text) => formatDate(text),
+  }, {
+    title: '添加时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (text) => formatDate(text),
   }, {
     title: '操作', key: 'action', width: 260, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
       <Tooltip title="查看内容">

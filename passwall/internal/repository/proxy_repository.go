@@ -49,6 +49,7 @@ type ProxyRepository interface {
 	PinProxy(id uint, pin bool) error
 	Delete(id uint) error
 	GetTypes(types *[]string) error
+	CountValidBySubscriptionID(subscriptionID uint) (int64, error)
 	CountBySubscriptionID(subscriptionID uint) (int64, error)
 }
 
@@ -330,9 +331,18 @@ func (r *GormProxyRepository) PinProxy(id uint, pin bool) error {
 	return nil
 }
 
-func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64, error) {
+func (r *GormProxyRepository) CountValidBySubscriptionID(subscriptionID uint) (int64, error) {
 	var count int64
 	result := r.db.Model(&model.Proxy{}).Where("subscription_id = ? and status != ?", subscriptionID, model.ProxyStatusBanned).Count(&count)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return count, nil
+}
+
+func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64, error) {
+	var count int64
+	result := r.db.Model(&model.Proxy{}).Where("subscription_id = ?", subscriptionID).Count(&count)
 	if result.Error != nil {
 		return 0, result.Error
 	}

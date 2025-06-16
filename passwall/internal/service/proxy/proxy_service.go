@@ -21,7 +21,7 @@ type BanProxyReq struct {
 
 type ProxyService interface {
 	GetProxyByID(id uint) (*model.Proxy, error)
-	GetProxyNumBySubscriptionID(subsId uint) (int64, error)
+	GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool) (int64, error)
 	GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
 	CreateProxy(proxy *model.Proxy) error
 	BatchCreateProxies(proxies []*model.Proxy) error
@@ -50,7 +50,10 @@ func (s *DefaultProxyService) GetProxyByID(id uint) (*model.Proxy, error) {
 	return s.proxyRepo.FindByID(id)
 }
 
-func (s *DefaultProxyService) GetProxyNumBySubscriptionID(subsId uint) (int64, error) {
+func (s *DefaultProxyService) GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool) (int64, error) {
+	if ignoreBanned {
+		return s.proxyRepo.CountValidBySubscriptionID(subsId)
+	}
 	return s.proxyRepo.CountBySubscriptionID(subsId)
 }
 
