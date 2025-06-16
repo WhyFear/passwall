@@ -27,7 +27,7 @@ func (t *ClashCoreSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult,
 	}
 
 	// 检查是否支持此代理类型
-	supported := checkTesterSupport(proxy, t)
+	supported := t.checkTesterSupport(proxy)
 	if !supported {
 		return nil, errors.New("unsupported proxy type: " + string(proxy.Type))
 	}
@@ -75,7 +75,7 @@ func (t *ClashCoreSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult,
 	return nil, errors.New("测速失败：未获取到结果")
 }
 
-func checkTesterSupport(proxy *model.Proxy, t *ClashCoreSpeedTester) bool {
+func (t *ClashCoreSpeedTester) checkTesterSupport(proxy *model.Proxy) bool {
 	supported := false
 	for _, supportedType := range t.SupportedTypes() {
 		if proxy.Type == supportedType {
