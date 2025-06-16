@@ -40,8 +40,8 @@ func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester servic
 	s.proxyService = proxyService
 }
 
-// Start 启动调度器
-func (s *Scheduler) Start(cronJobs []config.CronJob) error {
+// Init 启动调度器
+func (s *Scheduler) Init(cronJobs []config.CronJob) error {
 	s.jobMutex.Lock()
 	defer s.jobMutex.Unlock()
 

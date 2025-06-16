@@ -21,7 +21,6 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 
 	// 添加中间件
 	router.Use(middleware.Cors())
-	router.Use(middleware.Logger())
 	router.Use(middleware.Recovery())
 
 	// 添加API路由
