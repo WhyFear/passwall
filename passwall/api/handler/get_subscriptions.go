@@ -17,13 +17,14 @@ type SubscriptionReq struct {
 	PageSize int  `form:"pageSize"`
 }
 type SubscriptionResp struct {
-	ID        int       `json:"id"`
-	Url       string    `json:"url"`
-	Status    int       `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	ProxyNum  int64     `json:"proxy_num,omitempty"`
-	Content   string    `json:"content,omitempty"`
+	ID          int       `json:"id"`
+	Url         string    `json:"url"`
+	Status      int       `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ProxyNum    int64     `json:"proxy_num,omitempty"`
+	AllProxyNum int64     `json:"all_proxy_num,omitempty"`
+	Content     string    `json:"content,omitempty"`
 }
 type SubsPageResp struct {
 	Total int64              `json:"total"`
@@ -79,18 +80,24 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 		}
 		for _, subscription := range subscriptions {
 			// 获取代理数量
-			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID)
+			validProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, true)
+			if err != nil {
+				log.Infoln("Failed to get proxy num:", err)
+				validProxyNum = 0
+			}
+			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false)
 			if err != nil {
 				log.Infoln("Failed to get proxy num:", err)
 				proxyNum = 0
 			}
 			tempSubscription := SubscriptionResp{
-				ID:        int(subscription.ID),
-				Url:       subscription.URL,
-				Status:    int(subscription.Status),
-				CreatedAt: subscription.CreatedAt,
-				UpdatedAt: subscription.UpdatedAt,
-				ProxyNum:  proxyNum,
+				ID:          int(subscription.ID),
+				Url:         subscription.URL,
+				Status:      int(subscription.Status),
+				CreatedAt:   subscription.CreatedAt,
+				UpdatedAt:   subscription.UpdatedAt,
+				ProxyNum:    validProxyNum,
+				AllProxyNum: proxyNum,
 			}
 			if req.Content {
 				tempSubscription.Content = subscription.Content

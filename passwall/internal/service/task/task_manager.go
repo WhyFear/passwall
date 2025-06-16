@@ -32,6 +32,7 @@ type TaskManager interface {
 	// UpdateProgress 更新任务进度
 	UpdateProgress(taskType TaskType, completed int, errMsg string)
 
+	// UpdateTotal 更新任务总数量
 	UpdateTotal(taskType TaskType, total int)
 
 	// FinishTask 完成任务
@@ -140,6 +141,10 @@ func (m *defaultTaskManager) UpdateTotal(taskType TaskType, total int) {
 	if !exists || task.status.State != TaskStateRunning {
 		return
 	}
+	if task.status.Completed >= total {
+		task.status.Total = task.status.Completed
+		return
+	}
 	task.status.Total = total
 }
 
@@ -192,12 +197,12 @@ func (m *defaultTaskManager) CancelTask(taskType TaskType, wait bool) (bool, boo
 		return true, false
 	}
 
-	// 等待任务完成，最多10秒
+	// 等待任务完成，最多20秒
 	timeout := false
 	select {
 	case <-doneChan:
 		// 任务已完成
-	case <-time.After(10 * time.Second):
+	case <-time.After(20 * time.Second):
 		// 等待超时
 		timeout = true
 		// 强制完成任务
