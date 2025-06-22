@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/metacubex/mihomo/log"
 
 	"passwall/config"
@@ -17,18 +16,17 @@ import (
 
 // TestProxyRequest 测试代理请求
 type TestProxyRequest struct {
-	ReloadSubscribeConfig bool // 是否重新加载订阅配置
-	TestAll               bool // 是否测试所有代理
-	TestNew               bool // 是否测试新代理
-	TestFailed            bool // 是否测试失败的代理
-	TestSpeed             bool // 是否单线程测试速度
-	Concurrent            int  // 并发数
+	TestAll    bool // 是否测试所有代理
+	TestNew    bool // 是否测试新代理
+	TestFailed bool // 是否测试失败的代理
+	TestSpeed  bool // 是否单线程测试速度
+	Concurrent int  // 并发数
 }
 
 // ProxyTester 代理测试服务接口
 type ProxyTester interface {
 	// TestProxies 测试代理
-	TestProxies(request *TestProxyRequest) error
+	TestProxies(request *TestProxyRequest, async bool) error
 }
 
 // proxyTesterImpl 代理测试服务实现
@@ -83,21 +81,13 @@ func NewProxyTester(
 }
 
 // TestProxies 测试代理
-func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
+func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest, async bool) error {
 	if request == nil {
 		return errors.New("request cannot be nil")
 	}
 
 	// 创建上下文
 	ctx := context.Background()
-
-	// 重新加载订阅配置
-	if request.ReloadSubscribeConfig {
-		// 调用订阅管理器刷新所有订阅
-		if err := s.subscriptionManager.RefreshAllSubscriptions(ctx); err != nil {
-			return fmt.Errorf("刷新订阅失败: %w", err)
-		}
-	}
 
 	// 设置并发数
 	concurrent := request.Concurrent
@@ -140,5 +130,5 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 		return nil
 	}
 
-	return s.proxyTester.TestProxies(ctx, testRequest)
+	return s.proxyTester.TestProxies(ctx, testRequest, async)
 }

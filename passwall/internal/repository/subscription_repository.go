@@ -20,6 +20,8 @@ type SubscriptionRepository interface {
 	FindPage(page SubsPage) ([]*model.Subscription, int64, error)
 	Create(subscription *model.Subscription) error
 	Update(subscription *model.Subscription) error
+	UpdateStatus(subscription *model.Subscription) error
+	UpdateStatusAndContent(subscription *model.Subscription) error
 	Delete(id uint) error
 }
 
@@ -102,6 +104,16 @@ func (r *GormSubscriptionRepository) Create(subscription *model.Subscription) er
 // Update 更新订阅
 func (r *GormSubscriptionRepository) Update(subscription *model.Subscription) error {
 	return r.db.Save(subscription).Error
+}
+
+// UpdateStatus 更新订阅状态
+func (r *GormSubscriptionRepository) UpdateStatus(subscription *model.Subscription) error {
+	return r.db.Model(subscription).Select("status").Updates(map[string]interface{}{"status": subscription.Status}).Error
+}
+
+// UpdateStatusAndContent 更新订阅状态和内容
+func (r *GormSubscriptionRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
+	return r.db.Model(subscription).Select("status", "content").Updates(map[string]interface{}{"status": subscription.Status, "content": subscription.Content}).Error
 }
 
 // Delete 删除订阅

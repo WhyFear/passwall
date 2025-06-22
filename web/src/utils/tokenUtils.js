@@ -25,7 +25,7 @@ export const hasToken = () => {
   return !!token;
 };
 
-// 验证Token格式是否有效（这里只是一个简单的示例，实际验证逻辑可能更复杂）
+// 验证Token格式是否有效
 export const isValidTokenFormat = (token) => {
   return token && typeof token === 'string' && token.trim().length > 0;
 }; 

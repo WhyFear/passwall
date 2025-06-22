@@ -29,12 +29,12 @@ type SubscriptionManager interface {
 	GetSubscriptionsPage(page SubsPage) ([]*model.Subscription, int64, error)
 	GetSubscriptionByURL(url string) (*model.Subscription, error)
 	CreateSubscription(subscription *model.Subscription) error
-	UpdateSubscription(subscription *model.Subscription) error
+	UpdateSubscriptionStatus(subscription *model.Subscription) error
 	DeleteSubscription(id uint) error
 
 	// 刷新操作
-	RefreshSubscription(ctx context.Context, subID uint) error
-	RefreshAllSubscriptions(ctx context.Context) error
+	RefreshSubscriptionAsync(ctx context.Context, subID uint) error
+	RefreshAllSubscriptions(ctx context.Context, async bool) error
 
 	// 解析和保存
 	ParseAndSaveProxies(ctx context.Context, subscription *model.Subscription, content []byte) error
@@ -89,10 +89,10 @@ func (s *subscriptionManagerImpl) CreateSubscription(subscription *model.Subscri
 	})
 }
 
-// UpdateSubscription 更新订阅
-func (s *subscriptionManagerImpl) UpdateSubscription(subscription *model.Subscription) error {
+// UpdateSubscriptionStatus 更新订阅
+func (s *subscriptionManagerImpl) UpdateSubscriptionStatus(subscription *model.Subscription) error {
 	return SafeDBOperation(func() error {
-		return s.subscriptionRepo.Update(subscription)
+		return s.subscriptionRepo.UpdateStatus(subscription)
 	})
 }
 
@@ -104,8 +104,8 @@ func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
 	})
 }
 
-// RefreshSubscription 刷新单个订阅
-func (s *subscriptionManagerImpl) RefreshSubscription(ctx context.Context, subID uint) error {
+// RefreshSubscriptionAsync 刷新单个订阅
+func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, subID uint) error {
 	// 获取订阅信息
 	subscription, err := s.subscriptionRepo.FindByID(subID)
 	if err != nil {
@@ -127,7 +127,7 @@ func (s *subscriptionManagerImpl) RefreshSubscription(ctx context.Context, subID
 	go func() {
 		defer s.taskManager.FinishTask(taskType, "")
 
-		err := s.refreshSubscriptionAsync(ctx, subscription)
+		err := s.refreshSubscription(ctx, subscription)
 		if err != nil {
 			log.Errorln("刷新订阅失败: %v", err)
 			s.taskManager.UpdateProgress(taskType, 1, err.Error())
@@ -139,8 +139,8 @@ func (s *subscriptionManagerImpl) RefreshSubscription(ctx context.Context, subID
 	return nil
 }
 
-// RefreshAllSubscriptions 刷新所有订阅
-func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context) error {
+// RefreshAllSubscriptions 异步刷新所有订阅
+func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, async bool) error {
 	// 如果已有任务在运行，返回错误
 	if s.taskManager.IsRunning(task.TaskTypeReloadSubs) {
 		return fmt.Errorf("已有其他任务正在运行")
@@ -164,13 +164,17 @@ func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context) e
 		return fmt.Errorf("启动任务失败")
 	}
 
-	go s.refreshAllSubscriptionsAsync(ctx, taskType, subscriptions)
+	if async {
+		go s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+	} else {
+		s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+	}
 
 	return nil
 }
 
-// refreshAllSubscriptionsAsync 异步刷新所有订阅
-func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription) {
+// refreshAllSubscriptions 刷新所有订阅
+func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription) {
 	// 用于跟踪任务是否已经完成的标志
 	var finished bool
 	var finishMessage string
@@ -212,12 +216,12 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Conte
 				cancelled = true
 				log.Infoln("任务已被取消，停止处理剩余订阅")
 			}
-			break
+			return // 退出循环
 		default:
 			// 继续执行
 		}
 
-		err := s.refreshSubscriptionAsync(ctx, subscription)
+		err := s.refreshSubscription(ctx, subscription)
 		if err != nil {
 			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
 			lastError = err
@@ -251,8 +255,8 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Conte
 	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 错误: %v", jobsTotal, jobsDone, lastError)
 }
 
-// refreshSubscriptionAsync 异步刷新单个订阅
-func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, subscription *model.Subscription) error {
+// refreshSubscription 刷新单个订阅
+func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subscription *model.Subscription) error {
 	log.Infoln("开始刷新订阅: %s", subscription.URL)
 	if subscription.URL == "" {
 		return fmt.Errorf("订阅为空")
@@ -285,7 +289,7 @@ func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, 
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusExpired
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("下载订阅内容失败: %w", err)
@@ -298,7 +302,7 @@ func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, 
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return err
@@ -317,7 +321,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("获取解析器失败: %w", err)
@@ -330,7 +334,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("解析订阅内容失败: %w", err)
@@ -342,7 +346,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("未从订阅中解析出任何代理")
@@ -368,7 +372,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 如果旧代理存在，则更新旧代理
 		if oldProxy != nil {
 			// 判断是否一致，不一致则更新
-			if oldProxy.Name == newProxy.Name && oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
+			if oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
 				continue
 			}
 			SafeDBOperation(func() error {
@@ -396,7 +400,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	subscription.Status = model.SubscriptionStatusOK
 	subscription.Content = string(content)
 	SafeDBOperation(func() error {
-		return s.subscriptionRepo.Update(subscription)
+		return s.subscriptionRepo.UpdateStatusAndContent(subscription)
 	})
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理", subscription.URL, len(newProxies))

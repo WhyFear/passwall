@@ -11,13 +11,12 @@ import (
 
 // TestProxyServerRequest 测试代理服务器请求
 type TestProxyServerRequest struct {
-	ReloadSubscribeConfig bool `form:"reload_subscribe_config" json:"reload_subscribe_config"`
-	TestAll               bool `form:"test_all" json:"test_all"`
-	TestNew               bool `form:"test_new" json:"test_new"`
-	TestFailed            bool `form:"test_failed" json:"test_failed"`
-	TestSpeed             bool `form:"test_speed" json:"test_speed"`
-	Concurrent            int  `form:"concurrent" json:"concurrent"`
-	AutoBan               bool `form:"auto_ban" json:"auto_ban"`
+	TestAll    bool `form:"test_all" json:"test_all"`
+	TestNew    bool `form:"test_new" json:"test_new"`
+	TestFailed bool `form:"test_failed" json:"test_failed"`
+	TestSpeed  bool `form:"test_speed" json:"test_speed"`
+	Concurrent int  `form:"concurrent" json:"concurrent"`
+	AutoBan    bool `form:"auto_ban" json:"auto_ban"`
 }
 
 // TestProxyServer 测试代理服务器处理器
@@ -52,16 +51,15 @@ func TestProxyServer(taskManager task.TaskManager, proxyTester service.ProxyTest
 
 		// 创建测试请求
 		testRequest := &service.TestProxyRequest{
-			ReloadSubscribeConfig: req.ReloadSubscribeConfig,
-			TestAll:               req.TestAll,
-			TestNew:               req.TestNew,
-			TestFailed:            req.TestFailed,
-			TestSpeed:             req.TestSpeed,
-			Concurrent:            req.Concurrent,
+			TestAll:    req.TestAll,
+			TestNew:    req.TestNew,
+			TestFailed: req.TestFailed,
+			TestSpeed:  req.TestSpeed,
+			Concurrent: req.Concurrent,
 		}
 
 		// 执行测试
-		if err := proxyTester.TestProxies(testRequest); err != nil {
+		if err := proxyTester.TestProxies(testRequest, true); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,

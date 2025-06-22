@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"passwall/internal/adapter/speedtester"
@@ -13,6 +13,7 @@ import (
 	"passwall/internal/service/task"
 
 	"github.com/metacubex/mihomo/log"
+	"golang.org/x/sync/errgroup"
 )
 
 // TestRequest 测试代理请求
@@ -31,10 +32,10 @@ type ProxyFilter struct {
 // Tester 代理测试服务接口
 type Tester interface {
 	// TestProxy 测试单个代理
-	TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
+	TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error)
 
 	// TestProxies 批量测试代理
-	TestProxies(ctx context.Context, request *TestRequest) error
+	TestProxies(ctx context.Context, request *TestRequest, async bool) error
 }
 
 // testerImpl 代理测试服务实现
@@ -61,14 +62,14 @@ func NewTester(
 }
 
 // TestProxy 测试单个代理
-func (t *testerImpl) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
+func (t *testerImpl) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error) {
 	if proxy == nil {
 		return nil, fmt.Errorf("代理对象不能为空")
 	}
 
 	// 获取速度测试器
 	tester, err := t.speedTesterFactory.GetSpeedTester(proxy.Type)
-	if err != nil {
+	if err != nil || tester == nil {
 		return nil, fmt.Errorf("获取测速器失败: %w", err)
 	}
 
@@ -88,7 +89,7 @@ func (t *testerImpl) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.
 }
 
 // TestProxies 批量测试代理
-func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest) error {
+func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, async bool) error {
 	if request == nil {
 		return fmt.Errorf("请求参数不能为空")
 	}
@@ -153,164 +154,64 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest) erro
 		concurrent = 5 // 默认并发数
 	}
 
-	// 异步执行测试
-	go t.runTests(ctx, taskType, proxies, concurrent)
+	if async {
+		go t.runTests(ctx, taskType, proxies, concurrent)
+	} else {
+		t.runTests(ctx, taskType, proxies, concurrent)
+	}
 
 	return nil
 }
 
-// runTests 异步执行测试
+// runTests 多线程执行测试
 func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxies []*model.Proxy, concurrent int) {
-	// 用于跟踪任务是否已经完成的标志
-	var finished bool
 	var finishMessage string
-	var finishMutex sync.Mutex
-
-	// 确保任务最终会被标记为完成，并处理可能的panic
 	defer func() {
-		finishMutex.Lock()
-		defer finishMutex.Unlock()
-
-		// 检查是否有panic发生
 		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("测试代理任务发生panic: %v", r)
-			log.Errorln(errMsg)
-			finishMessage = errMsg
+			finishMessage = fmt.Sprintf("测试代理任务发生panic: %v", r)
+			log.Errorln(finishMessage)
 		}
-
-		// 如果任务尚未标记为完成，则标记它
-		if !finished {
-			t.taskManager.FinishTask(taskType, finishMessage)
-			log.Infoln("测试任务执行完毕（通过defer）")
-		}
+		t.taskManager.FinishTask(taskType, finishMessage)
+		log.Infoln("测试任务执行完毕")
 	}()
 
-	// 创建工作池
-	wg := &sync.WaitGroup{}
-	semaphore := make(chan struct{}, concurrent)
-	completed := 0
-	var mu sync.Mutex
-
-	// 创建一个标志，用于标记是否已经处理了取消情况
-	cancelled := false
-	var cancelledMu sync.Mutex
+	// 使用限制并发的context
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(concurrent)
+	var completedCount int32
 
 	for _, proxy := range proxies {
-		// 检查上下文是否已取消
-		select {
-		case <-ctx.Done():
-			cancelledMu.Lock()
-			if !cancelled {
-				cancelled = true
-				log.Infoln("测试任务已被取消，停止处理剩余代理")
-			}
-			cancelledMu.Unlock()
-
-			// 不再添加新的goroutine
-			continue
-		default:
-			// 继续执行
+		if ctx.Err() != nil {
+			log.Infoln("测试任务已被取消，停止处理剩余代理")
+			break
 		}
 
-		wg.Add(1)
-
-		// 在添加到信号量通道前检查一次上下文是否被取消
-		select {
-		case <-ctx.Done():
-			wg.Done() // 立即减少计数，避免等待
-			continue
-		case semaphore <- struct{}{}:
-			// 成功获取信号量槽位，继续执行
-		}
-
-		go func(p *model.Proxy) {
+		p := proxy // 创建局部变量避免闭包问题
+		eg.Go(func() error {
 			defer func() {
-				if r := recover(); r != nil {
-					log.Errorln("测试代理过程中发生panic[代理ID:%d]: %v", p.ID, r)
-					p.Status = model.ProxyStatusUnknowError
-
-					// 使用安全的数据库操作函数
-					if err := SafeDBOperation(func() error {
-						return t.proxyRepo.UpdateSpeedTestInfo(p)
-					}); err != nil {
-						log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
-					}
-				}
-
-				<-semaphore
-				wg.Done()
-
-				mu.Lock()
-				completed++
-				t.taskManager.UpdateProgress(taskType, completed, "")
-				mu.Unlock()
+				completed := atomic.AddInt32(&completedCount, 1)
+				t.taskManager.UpdateProgress(taskType, int(completed), "")
 			}()
 
-			// 测试代理
-			result, err := t.TestProxy(ctx, p)
-			if err != nil {
-				log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
-				p.Status = model.ProxyStatusFailed
-
-				// 使用安全的数据库操作函数
-				if err := SafeDBOperation(func() error {
-					return t.proxyRepo.UpdateSpeedTestInfo(p)
-				}); err != nil {
-					log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
-				}
-				return
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
 
-			log.Infoln("测试代理[代理ID:%d 名称:%v]结果: Ping=%dms, 下载=%v, 上传=%v",
-				p.ID, p.Name, result.Ping, formatSpeed(result.DownloadSpeed), formatSpeed(result.UploadSpeed))
-
-			// 更新代理状态
-			p.Ping = result.Ping
-			p.DownloadSpeed = result.DownloadSpeed
-			p.UploadSpeed = result.UploadSpeed
-			p.Status = model.ProxyStatusOK
-			now := time.Now()
-			p.LatestTestTime = &now
-
-			if result.DownloadSpeed == 0 {
-				log.Debugln("测试代理[代理ID:%d 名称:%v]无速度", p.ID, p.Name)
-				p.Status = model.ProxyStatusFailed
-			}
-
-			// 使用安全的数据库操作函数进行批量操作
-			if err := SafeDBOperation(func() error {
-				// 保存测速历史记录
-				speedTestHistory := &model.SpeedTestHistory{
-					ProxyID:       p.ID,
-					Ping:          result.Ping,
-					DownloadSpeed: result.DownloadSpeed,
-					UploadSpeed:   result.UploadSpeed,
-					TestTime:      now,
-					CreatedAt:     now,
-				}
-				if err := t.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
-					log.Errorln("保存测速历史记录失败: %v", err)
-					return err
-				}
-
-				// 保存代理状态
-				return t.proxyRepo.UpdateSpeedTestInfo(p)
-			}); err != nil {
-				log.Errorln("更新代理数据失败[代理ID:%d]: %v", p.ID, err)
-			}
-		}(proxy)
+			t.testProxyAndUpdateDB(p)
+			return nil
+		})
 	}
 
-	// 等待所有测试完成或任务被取消
-	done := make(chan struct{})
+	// 等待所有任务完成或被取消
+	waitCh := make(chan struct{})
 	go func() {
-		wg.Wait()
-		close(done)
+		_ = eg.Wait()
+		close(waitCh)
 	}()
 
+	// 处理完成或取消情况
 	select {
 	case <-ctx.Done():
-		// 任务被取消
 		if errors.Is(ctx.Err(), context.Canceled) {
 			finishMessage = "任务被取消"
 		} else {
@@ -318,26 +219,86 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 		}
 		log.Infoln("任务已被取消，等待正在进行的测试完成")
 
-		// 设置超时，防止等待时间过长
 		select {
-		case <-done: // 等待所有goroutine结束
+		case <-waitCh:
 			log.Infoln("所有测试已停止")
 		case <-time.After(20 * time.Second):
 			log.Warnln("等待测试完成超时，强制结束任务")
 			finishMessage = "等待测试完成超时，强制结束任务"
 		}
-	case <-done:
-		// 所有测试正常完成
+	case <-waitCh:
 		log.Infoln("所有测试已完成")
 	}
+}
 
-	// 标记任务完成（正常流程）
-	finishMutex.Lock()
-	finished = true
-	t.taskManager.FinishTask(taskType, finishMessage)
-	finishMutex.Unlock()
+// testProxyAndUpdateDB 测试单个代理并更新数据库
+func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("测试代理过程中发生panic[代理ID:%d]: %v", p.ID, r)
+			p.Status = model.ProxyStatusUnknowError
 
-	log.Infoln("测试任务执行完毕")
+			// 使用安全的数据库操作函数
+			if err := SafeDBOperation(func() error {
+				return t.proxyRepo.UpdateSpeedTestInfo(p)
+			}); err != nil {
+				log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
+			}
+		}
+	}()
+
+	// 测试代理
+	testTime := time.Now()
+	result, err := t.TestProxy(p)
+	if err != nil {
+		log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
+		p.Status = model.ProxyStatusFailed
+
+		// 使用安全的数据库操作函数
+		if err := SafeDBOperation(func() error {
+			return t.proxyRepo.UpdateSpeedTestInfo(p)
+		}); err != nil {
+			log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
+		}
+		return
+	}
+
+	log.Infoln("测试代理[代理ID:%d 名称:%v]结果: Ping=%dms, 下载=%v, 上传=%v",
+		p.ID, p.Name, result.Ping, formatSpeed(result.DownloadSpeed), formatSpeed(result.UploadSpeed))
+
+	// 更新代理状态
+	p.Ping = result.Ping
+	p.DownloadSpeed = result.DownloadSpeed
+	p.UploadSpeed = result.UploadSpeed
+	p.Status = model.ProxyStatusOK
+	p.LatestTestTime = &testTime
+
+	if result.DownloadSpeed == 0 {
+		log.Debugln("测试代理[代理ID:%d 名称:%v]无速度", p.ID, p.Name)
+		p.Status = model.ProxyStatusFailed
+	}
+
+	// 使用安全的数据库操作函数进行批量操作
+	if err := SafeDBOperation(func() error {
+		// 保存测速历史记录
+		speedTestHistory := &model.SpeedTestHistory{
+			ProxyID:       p.ID,
+			Ping:          result.Ping,
+			DownloadSpeed: result.DownloadSpeed,
+			UploadSpeed:   result.UploadSpeed,
+			TestTime:      testTime,
+			CreatedAt:     time.Now(),
+		}
+		if err := t.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
+			log.Errorln("保存测速历史记录失败: %v", err)
+			return err
+		}
+
+		// 保存代理状态
+		return t.proxyRepo.UpdateSpeedTestInfo(p)
+	}); err != nil {
+		log.Errorln("更新代理数据失败[代理ID:%d]: %v", p.ID, err)
+	}
 }
 
 // formatSpeed 格式化速度

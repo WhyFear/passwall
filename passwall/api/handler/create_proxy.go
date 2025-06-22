@@ -218,7 +218,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			log.Errorln("解析订阅配置失败: %v", err.Error())
 			// 更新订阅状态为无法处理
 			subscription.Status = model.SubscriptionStatusInvalid
-			_ = subscriptionManager.UpdateSubscription(subscription)
+			_ = subscriptionManager.UpdateSubscriptionStatus(subscription)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
@@ -242,7 +242,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 
 		// 更新订阅状态为正常
 		subscription.Status = model.SubscriptionStatusOK
-		err = subscriptionManager.UpdateSubscription(subscription)
+		err = subscriptionManager.UpdateSubscriptionStatus(subscription)
 		if err != nil {
 			log.Errorln("更新订阅状态失败: %v", err)
 		}
@@ -255,7 +255,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			if err := proxyTester.TestProxies(&service.TestProxyRequest{
 				TestNew:    true,
 				Concurrent: cfg.Concurrent,
-			}); err != nil {
+			}, true); err != nil {
 				log.Errorln("测试代理失败: %v", err)
 			}
 		}()

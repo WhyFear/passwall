@@ -12,21 +12,35 @@ proxy:
   enabled: false  # 是否启用代理
   url: "socks5://127.0.0.1:7890"  # 代理地址，支持http和socks5
 
+# 多个定时任务同时运行的只能有一个，单个定时任务内子任务串行执行
 cron_jobs:
+  - name: "每6小时更新所有订阅并测速"
+    schedule: "0 0 */6 * * *"
+    reload_subscribe_config: true
+    test_proxy:
+      enable: true
+      # -1: 未测速，1: 正常，2: 失败，3: 未知错误。使用英文逗号分隔
+      # status: 1,2
+      concurrent: 30
+    auto_ban:
+      enable: true
+      success_rate_threshold: 0
+      download_speed_threshold: 0
+      upload_speed_threshold: 0
+      ping_threshold: 0
+      test_times: 5
+
   - name: "每6小时更新所有订阅"
     schedule: "0 0 */6 * * *"
     reload_subscribe_config: true
-    test_all: false
-    test_new: false
-    test_failed: false
-    test_speed: false
-    concurrent: 1
-
-  - name: "每6小时测试所有节点"
-    schedule: "0 10 */6 * * *"
-    reload_subscribe_config: false
-    test_all: true
-    test_new: false
-    test_failed: false
-    test_speed: false
-    concurrent: 30
+    test_proxy:
+      enable: false
+      # status: 1,2
+      concurrent: 30
+    auto_ban:
+      enable: false
+      success_rate_threshold: 0
+      download_speed_threshold: 0
+      upload_speed_threshold: 0
+      ping_threshold: 0
+      test_times: 5

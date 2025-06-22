@@ -105,7 +105,7 @@ function App() {
     </Header>
     <Layout style={{padding: isMobile ? 0 : '0 12px 12px'}}>
       <Sider
-        width={150}
+        width={130}
         className="site-layout-background"
         breakpoint="md"
         collapsedWidth="0"
@@ -127,7 +127,7 @@ function App() {
         <Content
           className="site-layout-background"
           style={{
-            padding: isMobile ? 0 : 24, margin: 0, minHeight: 280,
+            padding: isMobile ? 0 : 8, margin: 0,
           }}
         >
           <Routes>

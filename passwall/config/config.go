@@ -33,17 +33,28 @@ type Proxy struct {
 	URL     string `yaml:"url"`     // 代理URL，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080
 }
 
+type BanProxyConfig struct {
+	Enable                 bool    `yaml:"enable"`
+	SuccessRateThreshold   float64 `yaml:"success_rate_threshold"`
+	DownloadSpeedThreshold int     `yaml:"download_speed_threshold"`
+	UploadSpeedThreshold   int     `yaml:"upload_speed_threshold"`
+	PingThreshold          int     `yaml:"ping_threshold"`
+	TestTimes              int     `yaml:"test_times"`
+}
+
+type TestProxyConfig struct {
+	Enable     bool   `yaml:"enable"`
+	Status     string `yaml:"status"`
+	Concurrent int    `yaml:"concurrent"`
+}
+
 // CronJob 定时任务配置
 type CronJob struct {
-	Name                  string `yaml:"name"`
-	Schedule              string `yaml:"schedule"`
-	ReloadSubscribeConfig bool   `yaml:"reload_subscribe_config"`
-	TestAll               bool   `yaml:"test_all"`
-	TestNew               bool   `yaml:"test_new"`
-	TestFailed            bool   `yaml:"test_failed"`
-	TestSpeed             bool   `yaml:"test_speed"`
-	Concurrent            int    `yaml:"concurrent"`
-	AutoBan               bool   `yaml:"auto_ban"` // 没处理好，先不用这个参数
+	Name                  string          `yaml:"name"`
+	Schedule              string          `yaml:"schedule"`
+	ReloadSubscribeConfig bool            `yaml:"reload_subscribe_config"`
+	TestProxy             TestProxyConfig `yaml:"test_proxy"`
+	AutoBan               BanProxyConfig  `yaml:"auto_ban"`
 }
 
 // LoadConfig 从文件加载配置

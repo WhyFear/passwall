@@ -30,10 +30,10 @@ func ReloadSubscription(ctx context.Context, subscriptionManager proxy.Subscript
 		var err error
 		if req.ID > 0 {
 			// 刷新单个订阅
-			err = subscriptionManager.RefreshSubscription(ctx, req.ID)
+			err = subscriptionManager.RefreshSubscriptionAsync(ctx, req.ID)
 		} else {
 			// 刷新所有订阅
-			err = subscriptionManager.RefreshAllSubscriptions(ctx)
+			err = subscriptionManager.RefreshAllSubscriptions(ctx, true)
 		}
 
 		if err != nil {
