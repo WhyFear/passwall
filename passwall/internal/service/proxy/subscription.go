@@ -29,7 +29,7 @@ type SubscriptionManager interface {
 	GetSubscriptionsPage(page SubsPage) ([]*model.Subscription, int64, error)
 	GetSubscriptionByURL(url string) (*model.Subscription, error)
 	CreateSubscription(subscription *model.Subscription) error
-	UpdateSubscription(subscription *model.Subscription) error
+	UpdateSubscriptionStatus(subscription *model.Subscription) error
 	DeleteSubscription(id uint) error
 
 	// 刷新操作
@@ -89,10 +89,10 @@ func (s *subscriptionManagerImpl) CreateSubscription(subscription *model.Subscri
 	})
 }
 
-// UpdateSubscription 更新订阅
-func (s *subscriptionManagerImpl) UpdateSubscription(subscription *model.Subscription) error {
+// UpdateSubscriptionStatus 更新订阅
+func (s *subscriptionManagerImpl) UpdateSubscriptionStatus(subscription *model.Subscription) error {
 	return SafeDBOperation(func() error {
-		return s.subscriptionRepo.Update(subscription)
+		return s.subscriptionRepo.UpdateStatus(subscription)
 	})
 }
 
@@ -285,7 +285,7 @@ func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, 
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusExpired
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("下载订阅内容失败: %w", err)
@@ -298,7 +298,7 @@ func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, 
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return err
@@ -317,7 +317,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("获取解析器失败: %w", err)
@@ -330,7 +330,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("解析订阅内容失败: %w", err)
@@ -342,7 +342,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 使用安全的数据库操作函数
 		SafeDBOperation(func() error {
 			subscription.Status = model.SubscriptionStatusInvalid
-			return s.subscriptionRepo.Update(subscription)
+			return s.subscriptionRepo.UpdateStatus(subscription)
 		})
 
 		return fmt.Errorf("未从订阅中解析出任何代理")
@@ -368,7 +368,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 如果旧代理存在，则更新旧代理
 		if oldProxy != nil {
 			// 判断是否一致，不一致则更新
-			if oldProxy.Name == newProxy.Name && oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
+			if oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
 				continue
 			}
 			SafeDBOperation(func() error {
@@ -396,7 +396,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	subscription.Status = model.SubscriptionStatusOK
 	subscription.Content = string(content)
 	SafeDBOperation(func() error {
-		return s.subscriptionRepo.Update(subscription)
+		return s.subscriptionRepo.UpdateStatusAndContent(subscription)
 	})
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理", subscription.URL, len(newProxies))

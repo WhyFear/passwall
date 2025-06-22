@@ -372,10 +372,11 @@ const NodesPage = () => {
         banParams.id = id;
       }
 
+      const content = '除非节点配置有更新，否则节点将被永久禁用无法恢复，确认继续吗？';
       // 弹出确认对话框
       Modal.confirm({
-        title: '确认禁用', content: id ? ('禁用后节点将被永久禁用无法恢复，确认继续吗？') : (<div>
-          <p>禁用后节点将被永久禁用无法恢复，确认继续吗？</p>
+        title: '确认禁用', content: id ? (content) : (<div>
+          <p>{content}</p>
           <div style={{marginTop: '15px'}}>
             <div style={{marginBottom: '10px'}}>
               <span style={{display: 'inline-block', width: '180px'}}>成功率阈值(%)：</span>
