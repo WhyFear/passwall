@@ -12,6 +12,7 @@ proxy:
   enabled: false  # 是否启用代理
   url: "socks5://127.0.0.1:7890"  # 代理地址，支持http和socks5
 
+# 多个定时任务同时运行的只能有一个，单个定时任务内子任务串行执行
 cron_jobs:
   - name: "每6小时更新所有订阅"
     schedule: "0 0 */6 * * *"
