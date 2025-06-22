@@ -66,7 +66,7 @@ func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
 		}
 
 		// 测试代理
-		err := proxyTester.TestProxies(ctx, request)
+		err := proxyTester.TestProxies(ctx, request, true)
 		if err != nil {
 			if err.Error() == "已有其他任务正在运行" {
 				c.JSON(http.StatusOK, gin.H{

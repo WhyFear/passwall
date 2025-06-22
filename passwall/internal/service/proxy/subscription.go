@@ -216,7 +216,7 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 				cancelled = true
 				log.Infoln("任务已被取消，停止处理剩余订阅")
 			}
-			break
+			return // 退出循环
 		default:
 			// 继续执行
 		}

@@ -35,7 +35,7 @@ type Tester interface {
 	TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error)
 
 	// TestProxies 批量测试代理
-	TestProxies(ctx context.Context, request *TestRequest) error
+	TestProxies(ctx context.Context, request *TestRequest, async bool) error
 }
 
 // testerImpl 代理测试服务实现
@@ -89,7 +89,7 @@ func (t *testerImpl) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, erro
 }
 
 // TestProxies 批量测试代理
-func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest) error {
+func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, async bool) error {
 	if request == nil {
 		return fmt.Errorf("请求参数不能为空")
 	}
@@ -154,8 +154,11 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest) erro
 		concurrent = 5 // 默认并发数
 	}
 
-	// 异步执行测试
-	go t.runTests(ctx, taskType, proxies, concurrent)
+	if async {
+		go t.runTests(ctx, taskType, proxies, concurrent)
+	} else {
+		t.runTests(ctx, taskType, proxies, concurrent)
+	}
 
 	return nil
 }

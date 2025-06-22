@@ -253,10 +253,9 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		go func() {
 			log.Infoln("开始测试代理...")
 			if err := proxyTester.TestProxies(&service.TestProxyRequest{
-				ReloadSubscribeConfig: false, // 注意这里改成true的话需要查看是否是异步的
-				TestNew:               true,
-				Concurrent:            cfg.Concurrent,
-			}); err != nil {
+				TestNew:    true,
+				Concurrent: cfg.Concurrent,
+			}, true); err != nil {
 				log.Errorln("测试代理失败: %v", err)
 			}
 		}()

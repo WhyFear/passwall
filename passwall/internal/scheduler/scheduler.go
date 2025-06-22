@@ -3,26 +3,29 @@ package scheduler
 import (
 	"context"
 	"github.com/metacubex/mihomo/log"
+	"passwall/internal/model"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
 
 	"passwall/config"
-	"passwall/internal/service"
 )
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
-	cron        *cron.Cron
-	jobMutex    sync.Mutex
-	isRunning   bool
-	taskManager task.TaskManager
-	proxyTester service.ProxyTester
-	subsManager proxy.SubscriptionManager
-	jobIDs      map[string]cron.EntryID // 存储任务ID，用于更新
+	cron         *cron.Cron
+	jobMutex     sync.Mutex
+	isRunning    bool
+	taskManager  task.TaskManager
+	proxyTester  proxy.Tester
+	subsManager  proxy.SubscriptionManager
+	proxyService proxy.ProxyService
+	jobIDs       map[string]cron.EntryID // 存储任务ID，用于更新
 }
 
 // NewScheduler 创建调度器
@@ -35,10 +38,11 @@ func NewScheduler() *Scheduler {
 }
 
 // SetServices 设置服务
-func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester service.ProxyTester, subsManager proxy.SubscriptionManager) {
+func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester proxy.Tester, subsManager proxy.SubscriptionManager, proxyService proxy.ProxyService) {
 	s.taskManager = taskManager
 	s.proxyTester = proxyTester
 	s.subsManager = subsManager
+	s.proxyService = proxyService
 }
 
 // Init 启动调度器
@@ -102,7 +106,6 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) executeJob(job config.CronJob) {
 	log.Infoln("Executing job: %s", job.Name)
 
-	// 添加panic恢复机制
 	defer func() {
 		if r := recover(); r != nil {
 			log.Infoln("Job %s panic: %v", job.Name, r)
@@ -136,26 +139,60 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 	}
 
 	// 步骤 2: 执行节点测试
-	shouldTest := job.TestAll || job.TestNew || job.TestFailed || job.TestSpeed
-	if shouldTest {
-		// 创建测试请求，但禁用其中的订阅刷新功能，因为我们已经在上一步处理过了
-		request := &service.TestProxyRequest{
-			ReloadSubscribeConfig: false, // IMPORTANT: Already handled above
-			TestAll:               job.TestAll,
-			TestNew:               job.TestNew,
-			TestFailed:            job.TestFailed,
-			TestSpeed:             job.TestSpeed,
-			Concurrent:            job.Concurrent,
+	if job.TestProxy.Enable {
+		filter := &proxy.ProxyFilter{}
+		if job.TestProxy.Status != "" {
+			statusStrList := strings.Split(job.TestProxy.Status, ",")
+			statusList := make([]model.ProxyStatus, len(statusStrList))
+			for i, statusStr := range statusStrList {
+				status, err := strconv.Atoi(statusStr)
+				if err != nil {
+					log.Errorln("Job '%s': Failed to convert status string to int: %v", job.Name, err)
+					continue
+				}
+				statusList[i] = model.ProxyStatus(status)
+			}
+			if len(statusList) > 0 {
+				filter.Status = statusList
+			} else {
+				filter = nil
+			}
+		} else {
+			filter = nil
 		}
 
-		if err := s.proxyTester.TestProxies(request); err != nil {
+		concurrent := job.TestProxy.Concurrent
+		if concurrent == 0 {
+			concurrent = 5
+		}
+
+		testRequest := &proxy.TestRequest{
+			Filters:    filter,
+			Concurrent: concurrent,
+		}
+		if err := s.proxyTester.TestProxies(ctx, testRequest, false); err != nil {
 			log.Errorln("Job '%s': Failed to execute proxy testing: %v", job.Name, err)
 		}
-	} else {
-		log.Infoln("Job '%s': No proxy testing configured, skipping proxy test.", job.Name)
 	}
 
-	// 未来可以在这里添加其他步骤...
+	// 步骤3 禁用节点
+	if job.AutoBan.Enable {
+		testTimes := job.AutoBan.TestTimes
+		if testTimes == 0 {
+			testTimes = 5
+		}
+		serviceReq := proxy.BanProxyReq{
+			SuccessRateThreshold:   job.AutoBan.SuccessRateThreshold,
+			DownloadSpeedThreshold: job.AutoBan.DownloadSpeedThreshold,
+			UploadSpeedThreshold:   job.AutoBan.UploadSpeedThreshold,
+			PingThreshold:          job.AutoBan.PingThreshold,
+			TestTimes:              testTimes,
+		}
+		err := s.proxyService.BanProxy(ctx, serviceReq)
+		if err != nil {
+			log.Errorln("Job '%s': Failed to ban proxy: %v", job.Name, err)
+		}
+	}
 
 	log.Infoln("Job '%s' finished execution.", job.Name)
 }
