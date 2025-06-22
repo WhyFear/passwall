@@ -17,7 +17,7 @@ import (
 
 // TestProxyRequest 测试代理请求
 type TestProxyRequest struct {
-	ReloadSubscribeConfig bool // 是否重新加载订阅配置
+	ReloadSubscribeConfig bool // 是否重新加载订阅配置  todo 删除
 	TestAll               bool // 是否测试所有代理
 	TestNew               bool // 是否测试新代理
 	TestFailed            bool // 是否测试失败的代理
@@ -94,7 +94,7 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 	// 重新加载订阅配置
 	if request.ReloadSubscribeConfig {
 		// 调用订阅管理器刷新所有订阅
-		if err := s.subscriptionManager.RefreshAllSubscriptionsAsync(ctx); err != nil {
+		if err := s.subscriptionManager.RefreshAllSubscriptions(ctx, true); err != nil {
 			return fmt.Errorf("刷新订阅失败: %w", err)
 		}
 	}

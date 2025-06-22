@@ -34,7 +34,7 @@ func main() {
 
 	// 4. 初始化调度器
 	newScheduler := scheduler.NewScheduler()
-	newScheduler.SetServices(services.TaskManager, services.ProxyTester, services.ProxyService)
+	newScheduler.SetServices(services.TaskManager, services.ProxyTester, services.SubscriptionManager)
 	err = newScheduler.Init(cfg.CronJobs)
 	if err != nil {
 		log.Fatalf("Failed to start scheduler: %v", err)

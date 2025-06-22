@@ -33,7 +33,7 @@ func ReloadSubscription(ctx context.Context, subscriptionManager proxy.Subscript
 			err = subscriptionManager.RefreshSubscriptionAsync(ctx, req.ID)
 		} else {
 			// 刷新所有订阅
-			err = subscriptionManager.RefreshAllSubscriptionsAsync(ctx)
+			err = subscriptionManager.RefreshAllSubscriptions(ctx, true)
 		}
 
 		if err != nil {

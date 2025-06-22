@@ -1,7 +1,8 @@
 package scheduler
 
 import (
-	"github.com/enfein/mieru/v3/pkg/log"
+	"context"
+	"github.com/metacubex/mihomo/log"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
 	"sync"
@@ -15,13 +16,13 @@ import (
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
-	cron         *cron.Cron
-	jobMutex     sync.Mutex
-	isRunning    bool
-	taskManager  task.TaskManager
-	proxyTester  service.ProxyTester
-	proxyService proxy.ProxyService
-	jobIDs       map[string]cron.EntryID // 存储任务ID，用于更新
+	cron        *cron.Cron
+	jobMutex    sync.Mutex
+	isRunning   bool
+	taskManager task.TaskManager
+	proxyTester service.ProxyTester
+	subsManager proxy.SubscriptionManager
+	jobIDs      map[string]cron.EntryID // 存储任务ID，用于更新
 }
 
 // NewScheduler 创建调度器
@@ -34,10 +35,10 @@ func NewScheduler() *Scheduler {
 }
 
 // SetServices 设置服务
-func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester service.ProxyTester, proxyService proxy.ProxyService) {
+func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester service.ProxyTester, subsManager proxy.SubscriptionManager) {
 	s.taskManager = taskManager
 	s.proxyTester = proxyTester
-	s.proxyService = proxyService
+	s.subsManager = subsManager
 }
 
 // Init 启动调度器
@@ -58,7 +59,7 @@ func (s *Scheduler) Init(cronJobs []config.CronJob) error {
 	for _, job := range cronJobs {
 		// 检查任务配置是否有效
 		if job.Schedule == "" {
-			log.Printf("Job %s has invalid schedule, skipping", job.Name)
+			log.Infoln("Job %s has invalid schedule, skipping", job.Name)
 			continue
 		}
 
@@ -69,13 +70,13 @@ func (s *Scheduler) Init(cronJobs []config.CronJob) error {
 		})
 
 		if err != nil {
-			log.Printf("Failed to add job %s: %v", job.Name, err)
+			log.Infoln("Failed to add job %s: %v", job.Name, err)
 			continue
 		}
 
 		// 存储任务ID
 		s.jobIDs[job.Name] = entryID
-		log.Printf("Added job %s with schedule %s", job.Name, job.Schedule)
+		log.Infoln("Added job %s with schedule %s", job.Name, job.Schedule)
 	}
 
 	// 启动cron
@@ -93,53 +94,25 @@ func (s *Scheduler) Stop() {
 	if s.isRunning {
 		s.cron.Stop()
 		s.isRunning = false
-		log.Println("Scheduler stopped")
+		log.Infoln("Scheduler stopped")
 	}
-}
-
-// UpdateJob 更新单个任务
-func (s *Scheduler) UpdateJob(job config.CronJob) error {
-	s.jobMutex.Lock()
-	defer s.jobMutex.Unlock()
-
-	// 如果任务已存在，先移除
-	if id, exists := s.jobIDs[job.Name]; exists {
-		s.cron.Remove(id)
-		delete(s.jobIDs, job.Name)
-	}
-
-	// 添加新任务
-	jobConfig := job // 创建副本避免闭包问题
-	entryID, err := s.cron.AddFunc(jobConfig.Schedule, func() {
-		s.executeJob(jobConfig)
-	})
-
-	if err != nil {
-		log.Printf("Failed to update job %s: %v", job.Name, err)
-		return err
-	}
-
-	// 存储任务ID
-	s.jobIDs[job.Name] = entryID
-	log.Printf("Updated job %s with schedule %s", job.Name, job.Schedule)
-	return nil
 }
 
 // executeJob 执行定时任务
 func (s *Scheduler) executeJob(job config.CronJob) {
-	log.Printf("Executing job: %s", job.Name)
+	log.Infoln("Executing job: %s", job.Name)
 
 	// 添加panic恢复机制
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Job %s panic: %v", job.Name, r)
+			log.Infoln("Job %s panic: %v", job.Name, r)
 
 			// 检查是否有正在运行的任务，尝试标记完成
 			taskTypes := []task.TaskType{task.TaskTypeSpeedTest, task.TaskTypeReloadSubs}
 			for _, taskType := range taskTypes {
 				if s.taskManager.IsRunning(taskType) {
 					s.taskManager.FinishTask(taskType, "任务执行过程中发生严重错误")
-					log.Printf("Forced task %s to finish due to panic", taskType)
+					log.Infoln("Forced task %s to finish due to panic", taskType)
 				}
 			}
 		}
@@ -147,24 +120,44 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 
 	// 通过这个方法来控制多个定时任务只能同时运行一个
 	if s.taskManager.IsAnyRunning() {
-		log.Printf("Another task is running, skipping job: %s", job.Name)
+		log.Infoln("Another task is running, skipping job: %s", job.Name)
 		return
 	}
 
-	// 创建测试请求
-	request := &service.TestProxyRequest{
-		ReloadSubscribeConfig: job.ReloadSubscribeConfig,
-		TestAll:               job.TestAll,
-		TestNew:               job.TestNew,
-		TestFailed:            job.TestFailed,
-		TestSpeed:             job.TestSpeed,
-		Concurrent:            job.Concurrent,
+	ctx := context.Background()
+
+	// 步骤 1: 如果配置了刷新订阅，则串行执行
+	if job.ReloadSubscribeConfig {
+		if err := s.subsManager.RefreshAllSubscriptions(ctx, false); err != nil {
+			log.Infoln("Job '%s': Failed to refresh subscriptions, stopping job. Error: %v", job.Name, err)
+			return // 如果刷新失败，则终止当前任务
+		}
+		log.Infoln("Job '%s': Subscription refresh finished.", job.Name)
 	}
 
-	// 执行测试
-	if err := s.proxyTester.TestProxies(request); err != nil {
-		log.Printf("Failed to execute job %s: %v", job.Name, err)
+	// 步骤 2: 执行节点测试
+	shouldTest := job.TestAll || job.TestNew || job.TestFailed || job.TestSpeed
+	if shouldTest {
+		// 创建测试请求，但禁用其中的订阅刷新功能，因为我们已经在上一步处理过了
+		request := &service.TestProxyRequest{
+			ReloadSubscribeConfig: false, // IMPORTANT: Already handled above
+			TestAll:               job.TestAll,
+			TestNew:               job.TestNew,
+			TestFailed:            job.TestFailed,
+			TestSpeed:             job.TestSpeed,
+			Concurrent:            job.Concurrent,
+		}
+
+		if err := s.proxyTester.TestProxies(request); err != nil {
+			log.Errorln("Job '%s': Failed to execute proxy testing: %v", job.Name, err)
+		}
+	} else {
+		log.Infoln("Job '%s': No proxy testing configured, skipping proxy test.", job.Name)
 	}
+
+	// 未来可以在这里添加其他步骤...
+
+	log.Infoln("Job '%s' finished execution.", job.Name)
 }
 
 // GetStatus 获取调度器状态

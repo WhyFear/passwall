@@ -34,7 +34,7 @@ type SubscriptionManager interface {
 
 	// 刷新操作
 	RefreshSubscriptionAsync(ctx context.Context, subID uint) error
-	RefreshAllSubscriptionsAsync(ctx context.Context) error
+	RefreshAllSubscriptions(ctx context.Context, async bool) error
 
 	// 解析和保存
 	ParseAndSaveProxies(ctx context.Context, subscription *model.Subscription, content []byte) error
@@ -139,8 +139,8 @@ func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, 
 	return nil
 }
 
-// RefreshAllSubscriptionsAsync 异步刷新所有订阅
-func (s *subscriptionManagerImpl) RefreshAllSubscriptionsAsync(ctx context.Context) error {
+// RefreshAllSubscriptions 异步刷新所有订阅
+func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, async bool) error {
 	// 如果已有任务在运行，返回错误
 	if s.taskManager.IsRunning(task.TaskTypeReloadSubs) {
 		return fmt.Errorf("已有其他任务正在运行")
@@ -164,7 +164,11 @@ func (s *subscriptionManagerImpl) RefreshAllSubscriptionsAsync(ctx context.Conte
 		return fmt.Errorf("启动任务失败")
 	}
 
-	go s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+	if async {
+		go s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+	} else {
+		s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+	}
 
 	return nil
 }
