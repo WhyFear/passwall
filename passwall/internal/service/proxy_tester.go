@@ -94,7 +94,7 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest) error {
 	// 重新加载订阅配置
 	if request.ReloadSubscribeConfig {
 		// 调用订阅管理器刷新所有订阅
-		if err := s.subscriptionManager.RefreshAllSubscriptions(ctx); err != nil {
+		if err := s.subscriptionManager.RefreshAllSubscriptionsAsync(ctx); err != nil {
 			return fmt.Errorf("刷新订阅失败: %w", err)
 		}
 	}

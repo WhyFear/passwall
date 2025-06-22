@@ -33,8 +33,8 @@ type SubscriptionManager interface {
 	DeleteSubscription(id uint) error
 
 	// 刷新操作
-	RefreshSubscription(ctx context.Context, subID uint) error
-	RefreshAllSubscriptions(ctx context.Context) error
+	RefreshSubscriptionAsync(ctx context.Context, subID uint) error
+	RefreshAllSubscriptionsAsync(ctx context.Context) error
 
 	// 解析和保存
 	ParseAndSaveProxies(ctx context.Context, subscription *model.Subscription, content []byte) error
@@ -104,8 +104,8 @@ func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
 	})
 }
 
-// RefreshSubscription 刷新单个订阅
-func (s *subscriptionManagerImpl) RefreshSubscription(ctx context.Context, subID uint) error {
+// RefreshSubscriptionAsync 刷新单个订阅
+func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, subID uint) error {
 	// 获取订阅信息
 	subscription, err := s.subscriptionRepo.FindByID(subID)
 	if err != nil {
@@ -127,7 +127,7 @@ func (s *subscriptionManagerImpl) RefreshSubscription(ctx context.Context, subID
 	go func() {
 		defer s.taskManager.FinishTask(taskType, "")
 
-		err := s.refreshSubscriptionAsync(ctx, subscription)
+		err := s.refreshSubscription(ctx, subscription)
 		if err != nil {
 			log.Errorln("刷新订阅失败: %v", err)
 			s.taskManager.UpdateProgress(taskType, 1, err.Error())
@@ -139,8 +139,8 @@ func (s *subscriptionManagerImpl) RefreshSubscription(ctx context.Context, subID
 	return nil
 }
 
-// RefreshAllSubscriptions 刷新所有订阅
-func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context) error {
+// RefreshAllSubscriptionsAsync 异步刷新所有订阅
+func (s *subscriptionManagerImpl) RefreshAllSubscriptionsAsync(ctx context.Context) error {
 	// 如果已有任务在运行，返回错误
 	if s.taskManager.IsRunning(task.TaskTypeReloadSubs) {
 		return fmt.Errorf("已有其他任务正在运行")
@@ -164,13 +164,13 @@ func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context) e
 		return fmt.Errorf("启动任务失败")
 	}
 
-	go s.refreshAllSubscriptionsAsync(ctx, taskType, subscriptions)
+	go s.refreshAllSubscriptions(ctx, taskType, subscriptions)
 
 	return nil
 }
 
-// refreshAllSubscriptionsAsync 异步刷新所有订阅
-func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription) {
+// refreshAllSubscriptions 刷新所有订阅
+func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription) {
 	// 用于跟踪任务是否已经完成的标志
 	var finished bool
 	var finishMessage string
@@ -217,7 +217,7 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Conte
 			// 继续执行
 		}
 
-		err := s.refreshSubscriptionAsync(ctx, subscription)
+		err := s.refreshSubscription(ctx, subscription)
 		if err != nil {
 			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
 			lastError = err
@@ -251,8 +251,8 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptionsAsync(ctx context.Conte
 	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 错误: %v", jobsTotal, jobsDone, lastError)
 }
 
-// refreshSubscriptionAsync 异步刷新单个订阅
-func (s *subscriptionManagerImpl) refreshSubscriptionAsync(ctx context.Context, subscription *model.Subscription) error {
+// refreshSubscription 刷新单个订阅
+func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subscription *model.Subscription) error {
 	log.Infoln("开始刷新订阅: %s", subscription.URL)
 	if subscription.URL == "" {
 		return fmt.Errorf("订阅为空")

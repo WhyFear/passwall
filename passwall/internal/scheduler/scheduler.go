@@ -145,7 +145,7 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 		}
 	}()
 
-	// 检查是否有任务在运行
+	// 通过这个方法来控制多个定时任务只能同时运行一个
 	if s.taskManager.IsAnyRunning() {
 		log.Printf("Another task is running, skipping job: %s", job.Name)
 		return
