@@ -549,7 +549,7 @@ const NodesPage = () => {
       activeKey={activeTab}
       onChange={setActiveTab}
       tabBarExtraContent={<div className="tab-bar-extra"
-                               style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
+                               style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
         {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
