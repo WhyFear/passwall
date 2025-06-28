@@ -13,10 +13,11 @@ services:
     environment:
       - CONFIG_PATH=/app/config.yaml
       - TZ=Asia/Shanghai
-    depends_on:
-      - postgres
-
 #  若使用postgres，请取消注释
+#    depends_on:
+#      - postgres
+
+
 #  postgres:
 #    image: postgres:17-alpine
 #    container_name: passwall-postgres
