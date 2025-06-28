@@ -148,8 +148,8 @@ func (r *GormProxyRepository) Create(proxy *model.Proxy) error {
 // BatchCreate 批量创建代理服务器
 func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}}, // 指定冲突检测字段为domain和port (唯一索引idx_domain_port)
-		DoUpdates: clause.AssignmentColumns([]string{"config"}),      // 冲突时更新的字段
+		Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}},                                                       // 指定冲突检测字段为domain和port (唯一索引idx_domain_port)
+		DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}), // 冲突时更新的字段
 	}).Create(proxies).Error
 }
 
@@ -175,14 +175,15 @@ func (r *GormProxyRepository) UpdateSpeedTestInfo(proxy *model.Proxy) error {
 
 // UpdateProxyConfig 只更新代理服务器的基本配置信息
 func (r *GormProxyRepository) UpdateProxyConfig(proxy *model.Proxy) error {
-	// 只更新名称、类型和配置信息
 	return r.db.Model(proxy).
 		Select("name", "type", "config", "updated_at").
 		Updates(map[string]interface{}{
-			"name":       proxy.Name,
-			"type":       proxy.Type,
-			"config":     proxy.Config,
-			"updated_at": time.Now(),
+			"name":            proxy.Name,
+			"type":            proxy.Type,
+			"config":          proxy.Config,
+			"subscription_id": proxy.SubscriptionID,
+			"status":          proxy.Status,
+			"updated_at":      time.Now(),
 		}).Error
 }
 
