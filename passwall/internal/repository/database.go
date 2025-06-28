@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"passwall/config"
@@ -24,6 +25,8 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 	switch dbConfig.Driver {
 	case "sqlite":
 		dialector = sqlite.Open(dbConfig.DSN)
+	case "postgres":
+		dialector = postgres.Open(dbConfig.DSN)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", dbConfig.Driver)
 	}
