@@ -7,8 +7,9 @@ server:
 database:
   driver: "sqlite"
   dsn: "data/passwall.db"  # 将数据库文件存储在data目录下
-  # driver: "postgres"
-  # dsn: "host=localhost user=postgres password=yourpassword port=5432 dbname=passwall sslmode=disable TimeZone=Asia/Shanghai"
+  # 如果使用PostgreSQL
+  # driver: "postgres" 
+  # dsn: "host=postgres user=passwall password=passwall port=5432 dbname=passwall sslmode=disable TimeZone=Asia/Shanghai"
 
 proxy:
   enabled: false  # 是否启用代理

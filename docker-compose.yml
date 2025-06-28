@@ -13,3 +13,21 @@ services:
     environment:
       - CONFIG_PATH=/app/config.yaml
       - TZ=Asia/Shanghai
+    depends_on:
+      - postgres
+
+#  若使用postgres，请取消注释
+#  postgres:
+#    image: postgres:17-alpine
+#    container_name: passwall-postgres
+#    restart: unless-stopped
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - ./data:/var/lib/postgresql/data
+#      - ./pg-init:/docker-entrypoint-initdb.d
+#    environment:
+#      - POSTGRES_USER=passwall
+#      - POSTGRES_PASSWORD=passwall
+#      - POSTGRES_DB=passwall
+#      - TZ=Asia/Shanghai
