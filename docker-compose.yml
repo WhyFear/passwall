@@ -11,6 +11,7 @@ services:
       - ./config.yaml:/app/config.yaml
       - ./data:/app/data
     environment:
+      - PASSWALL_TOKEN=your_token_here
       - CONFIG_PATH=/app/config.yaml
       - TZ=Asia/Shanghai
 #  若使用postgres，请取消注释

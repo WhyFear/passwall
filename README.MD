@@ -59,7 +59,6 @@ PassWall 是一个功能强大的代理服务器管理工具，支持多种代�
 ## 配置文件说明
 
 ```yaml
-token: "your_token"  # API访问令牌
 concurrent: 30  # 全局默认并发数
 
 server:
@@ -128,6 +127,7 @@ services:
       - ./config.yaml:/app/config.yaml
       - ./data:/app/data
     environment:
+      - PASSWALL_TOKEN=your_token_here
       - CONFIG_PATH=/app/config.yaml
       - TZ=Asia/Shanghai
 ```
@@ -164,6 +164,9 @@ cp config.yaml.example config.yaml
 ```bash
 # 使用你喜欢的编辑器编辑配置文件
 vim config.yaml
+
+# 随后在环境变量中，写入token，不同系统操作不同，请自行搜索
+export PASSWALL_TOKEN=your_token_here
 ```
 
 4. 构建并运行后端

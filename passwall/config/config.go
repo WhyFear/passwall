@@ -77,6 +77,13 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	// 获取token
+	token := os.Getenv("PASSWALL_TOKEN")
+	if token == "" {
+		panic("PASSWALL_TOKEN is not set")
+	}
+	config.Token = token
+
 	// 5. 验证配置并设置默认值
 	if config.Concurrent == 0 {
 		config.Concurrent = 5

@@ -23,12 +23,8 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
-    // 确保config.params存在
-    if (!config.params) {
-      config.params = {};
-    }
-    // 将token添加到URL参数中
-    config.params['token'] = token;
+    // 把token添加到请求头中
+    config.headers.Authorization = `Bearer ${token}`;
   } else {
     // 如果没有token，可以在这里添加逻辑
     console.warn('请求未携带Token');

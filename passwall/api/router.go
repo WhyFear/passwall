@@ -29,6 +29,9 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	// 认证中间件
 	authMiddleware := middleware.Auth(cfg.Token)
 
+	// 公开API
+	apiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
+
 	// 需要认证的API
 	apiGroup.Use(authMiddleware)
 	{
@@ -37,7 +40,6 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
 		apiGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 
-		apiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
 		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 
 		// 添加任务状态API
