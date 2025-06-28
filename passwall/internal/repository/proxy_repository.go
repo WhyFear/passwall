@@ -2,9 +2,10 @@ package repository
 
 import (
 	"errors"
-	"github.com/enfein/mieru/v3/pkg/log"
 	"passwall/internal/model"
 	"time"
+
+	"github.com/enfein/mieru/v3/pkg/log"
 
 	"gorm.io/gorm/clause"
 
@@ -147,8 +148,8 @@ func (r *GormProxyRepository) Create(proxy *model.Proxy) error {
 // BatchCreate 批量创建代理服务器
 func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{},                            // 冲突检测字段（唯一索引）
-		DoUpdates: clause.AssignmentColumns([]string{"config"}), // 冲突时更新的字段
+		Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}}, // 指定冲突检测字段为domain和port (唯一索引idx_domain_port)
+		DoUpdates: clause.AssignmentColumns([]string{"config"}),      // 冲突时更新的字段
 	}).Create(proxies).Error
 }
 

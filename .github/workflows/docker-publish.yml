@@ -5,7 +5,7 @@ on:
     branches: [ "master" ]
     tags:
       - 'v*'
-      - 'test'
+      - 'test*'
   workflow_dispatch:
 
 jobs:

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"passwall/config"
@@ -24,6 +25,8 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 	switch dbConfig.Driver {
 	case "sqlite":
 		dialector = sqlite.Open(dbConfig.DSN)
+	case "postgres":
+		dialector = postgres.Open(dbConfig.DSN)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", dbConfig.Driver)
 	}
@@ -54,23 +57,20 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 		DB.Exec("PRAGMA synchronous = NORMAL;")
 		// 设置缓存大小，减少磁盘I/O,20MB
 		DB.Exec("PRAGMA cache_size = -20000;")
-	}
 
-	// 自动迁移表结构
-	err = DB.AutoMigrate(
-		&model.Proxy{},
-		&model.Subscription{},
-		&model.SpeedTestHistory{},
-	)
-	if err != nil {
-		return nil, err
+		// 使用GORM自动迁移表结构
+		err = DB.AutoMigrate(
+			&model.Proxy{},
+			&model.Subscription{},
+			&model.SpeedTestHistory{},
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if dbConfig.Driver == "postgres" {
+		log.Println("使用PostgreSQL数据库，表结构应通过初始化脚本创建")
 	}
 
 	log.Println("数据库初始化成功")
 	return DB, nil
-}
-
-// GetDB 获取数据库连接
-func GetDB() *gorm.DB {
-	return DB
 }
