@@ -1,0 +1,64 @@
+-- 订阅表
+CREATE TABLE IF NOT EXISTS subscriptions
+(
+    id         SERIAL PRIMARY KEY,
+    url        TEXT      NOT NULL,
+    content    TEXT      NOT NULL,
+    type       TEXT      NOT NULL,
+    status     INTEGER   NOT NULL DEFAULT -1,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- 创建唯一索引
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_url ON subscriptions (url);
+
+-- 代理服务器表
+CREATE TABLE IF NOT EXISTS proxies
+(
+    id               SERIAL PRIMARY KEY,
+    subscription_id  INTEGER,
+    name             TEXT      NOT NULL,
+    domain           TEXT      NOT NULL,
+    port             INTEGER   NOT NULL CHECK (port >= 0 AND port <= 65535),
+    type             TEXT      NOT NULL,
+    config           TEXT      NOT NULL,
+    ping             INTEGER            DEFAULT 0,
+    download_speed   INTEGER            DEFAULT 0,
+    upload_speed     INTEGER            DEFAULT 0,
+    status           INTEGER   NOT NULL DEFAULT -1,
+    pinned           BOOLEAN   NOT NULL DEFAULT FALSE,
+    latest_test_time TIMESTAMP,
+    created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+
+    -- 外键约束
+    CONSTRAINT fk_proxies_subscription FOREIGN KEY (subscription_id) REFERENCES subscriptions (id) ON DELETE SET NULL
+);
+
+-- 创建组合唯一索引
+CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_port ON proxies (domain, port);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_proxies_subscription_id ON proxies (subscription_id);
+CREATE INDEX IF NOT EXISTS idx_proxies_type ON proxies (type);
+CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies (status);
+CREATE INDEX IF NOT EXISTS idx_proxies_ping ON proxies (ping);
+CREATE INDEX IF NOT EXISTS idx_proxies_latest_test_time ON proxies (latest_test_time);
+CREATE INDEX IF NOT EXISTS idx_proxies_pinned ON proxies (pinned);
+CREATE INDEX IF NOT EXISTS idx_latest_time_status ON proxies (status, latest_test_time);
+
+-- 测速历史记录表
+CREATE TABLE IF NOT EXISTS speed_test_histories
+(
+    id             SERIAL PRIMARY KEY,
+    proxy_id       INTEGER   NOT NULL,
+    ping           INTEGER   NOT NULL DEFAULT 0,
+    download_speed INTEGER   NOT NULL DEFAULT 0,
+    upload_speed   INTEGER   NOT NULL DEFAULT 0,
+    test_time      TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at     TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_proxy_id ON speed_test_histories (proxy_id);

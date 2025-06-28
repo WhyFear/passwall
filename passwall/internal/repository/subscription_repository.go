@@ -2,6 +2,7 @@ package repository
 
 import (
 	"passwall/internal/model"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -96,13 +97,23 @@ func (r *GormSubscriptionRepository) FindPage(page SubsPage) ([]*model.Subscript
 	return subscriptions, total, nil
 }
 
+// sanitizeContent 处理内容，移除或替换空字节
+func sanitizeContent(content string) string {
+	// 替换所有空字节为空字符串
+	return strings.ReplaceAll(content, string([]byte{0x00}), "")
+}
+
 // Create 创建订阅
 func (r *GormSubscriptionRepository) Create(subscription *model.Subscription) error {
+	// 在保存前处理content内容
+	subscription.Content = sanitizeContent(subscription.Content)
 	return r.db.Create(subscription).Error
 }
 
 // Update 更新订阅
 func (r *GormSubscriptionRepository) Update(subscription *model.Subscription) error {
+	// 在保存前处理content内容
+	subscription.Content = sanitizeContent(subscription.Content)
 	return r.db.Save(subscription).Error
 }
 
@@ -113,7 +124,12 @@ func (r *GormSubscriptionRepository) UpdateStatus(subscription *model.Subscripti
 
 // UpdateStatusAndContent 更新订阅状态和内容
 func (r *GormSubscriptionRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
-	return r.db.Model(subscription).Select("status", "content").Updates(map[string]interface{}{"status": subscription.Status, "content": subscription.Content}).Error
+	// 在保存前处理content内容
+	subscription.Content = sanitizeContent(subscription.Content)
+	return r.db.Model(subscription).Select("status", "content").Updates(map[string]interface{}{
+		"status":  subscription.Status,
+		"content": subscription.Content,
+	}).Error
 }
 
 // Delete 删除订阅
