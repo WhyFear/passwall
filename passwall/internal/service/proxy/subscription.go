@@ -353,6 +353,10 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	}
 
 	// 保存代理
+	var toUpdate []*model.Proxy
+	var toCreate []*model.Proxy
+
+	// 分类处理代理
 	for _, newProxy := range newProxies {
 		// 检查上下文是否已取消
 		select {
@@ -375,25 +379,45 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 			if oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
 				continue
 			}
-			SafeDBOperation(func() error {
-				if err := s.proxyRepo.UpdateProxyConfig(oldProxy); err != nil {
-					log.Errorln("更新代理配置失败[%s]: %v", oldProxy.Name, err)
-					return err
-				}
-				return nil
-			})
+			// 更新旧代理的配置
+			oldProxy.Name = newProxy.Name
+			oldProxy.Type = newProxy.Type
+			oldProxy.Config = newProxy.Config
+			oldProxy.SubscriptionID = &subscription.ID
+			oldProxy.Status = model.ProxyStatusPending
+			toUpdate = append(toUpdate, oldProxy)
 		} else {
-			// 如果旧代理不存在，则创建新代理
+			// 如果旧代理不存在，则准备创建新代理
 			newProxy.SubscriptionID = &subscription.ID
 			newProxy.Status = model.ProxyStatusPending // 设置为待处理状态，等待后续测试
-			SafeDBOperation(func() error {
-				if err := s.proxyRepo.Create(newProxy); err != nil {
-					log.Errorln("保存代理失败[%s]: %v", newProxy.Name, err)
-					return err
-				}
-				return nil
-			})
+			toCreate = append(toCreate, newProxy)
 		}
+	}
+
+	// 批量更新已存在的代理
+	if len(toUpdate) > 0 {
+		SafeDBOperation(func() error {
+			for _, proxy := range toUpdate {
+				if err := s.proxyRepo.UpdateProxyConfig(proxy); err != nil {
+					log.Errorln("更新代理配置失败[%s]: %v", proxy.Name, err)
+					continue
+				}
+			}
+			log.Infoln("更新了 %d 个代理", len(toUpdate))
+			return nil
+		})
+	}
+
+	// 批量创建新代理
+	if len(toCreate) > 0 {
+		SafeDBOperation(func() error {
+			if err := s.proxyRepo.BatchCreate(toCreate); err != nil {
+				log.Errorln("批量创建代理失败: %v", err)
+				return err
+			}
+			log.Infoln("批量创建了 %d 个新代理", len(toCreate))
+			return nil
+		})
 	}
 
 	// 更新订阅状态

@@ -244,7 +244,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		subscription.Status = model.SubscriptionStatusOK
 		err = subscriptionManager.UpdateSubscriptionStatus(subscription)
 		if err != nil {
-			log.Errorln("更新订阅状态失败: %v", err)
+			log.Errorln("更新订阅[id=%v]状态失败: %v", subscription.ID, err)
 		}
 
 		log.Infoln("成功保存 %d 个代理服务器", len(proxies))
