@@ -2,10 +2,14 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/metacubex/mihomo/log"
 	"strings"
 	"sync"
+
+	"github.com/google/go-cmp/cmp"
 
 	"passwall/config"
 	"passwall/internal/adapter/parser"
@@ -13,8 +17,6 @@ import (
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 	"passwall/internal/util"
-
-	"github.com/metacubex/mihomo/log"
 )
 
 type SubsPage struct {
@@ -376,7 +378,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		// 如果旧代理存在，则更新旧代理
 		if oldProxy != nil {
 			// 判断是否一致，不一致则更新
-			if oldProxy.Type == newProxy.Type && oldProxy.Config == newProxy.Config {
+			if s.IsProxyConfigSame(oldProxy, newProxy) {
 				continue
 			}
 			// 更新旧代理的配置
@@ -429,4 +431,30 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理", subscription.URL, len(newProxies))
 	return nil
+}
+
+// IsProxyConfigSame 比较两个代理的Type和Config是否一致，排除name字段
+func (s *subscriptionManagerImpl) IsProxyConfigSame(oldProxy, newProxy *model.Proxy) bool {
+	if oldProxy.Type != newProxy.Type {
+		return false
+	}
+
+	if oldProxy.Config == newProxy.Config {
+		return true
+	}
+
+	var oldConfig map[string]interface{}
+	if err := json.Unmarshal([]byte(oldProxy.Config), &oldConfig); err != nil {
+		return false
+	}
+
+	var newConfig map[string]interface{}
+	if err := json.Unmarshal([]byte(newProxy.Config), &newConfig); err != nil {
+		return false
+	}
+
+	delete(oldConfig, "name")
+	delete(newConfig, "name")
+
+	return cmp.Equal(oldConfig, newConfig)
 }

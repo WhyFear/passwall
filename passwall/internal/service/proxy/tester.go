@@ -214,10 +214,10 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.Canceled) {
 			finishMessage = "任务被取消"
+			log.Infoln("任务已被取消，等待正在进行的测试完成")
 		} else {
 			finishMessage = "任务超时或其他原因终止"
 		}
-		log.Infoln("任务已被取消，等待正在进行的测试完成")
 
 		select {
 		case <-waitCh:
