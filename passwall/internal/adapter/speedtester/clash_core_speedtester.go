@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
 	"time"
 
@@ -58,17 +59,36 @@ func (t *ClashCoreSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult,
 		MinUploadSpeed:   0,
 		Concurrent:       5,
 	})
+
 	results := make([]*speedtester.Result, 0)
-	speedTester.TestProxies(allProxies, func(result *speedtester.Result) {
-		results = append(results, result)
-	})
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Errorln("panic in speed tester", r)
+			}
+		}()
+
+		speedTester.TestProxies(allProxies, func(result *speedtester.Result) {
+			results = append(results, result)
+		})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second * 300):
+		// 超时后直接返回错误
+		return nil, errors.New("测速操作超时")
+	}
 
 	// 返回测试结果
 	if len(results) > 0 {
 		return &model.SpeedTestResult{
 			Ping:          int(results[0].Latency.Milliseconds()),
-			DownloadSpeed: int(results[0].DownloadSpeed), // 转换为KB/s
-			UploadSpeed:   int(results[0].UploadSpeed),   // 转换为KB/s
+			DownloadSpeed: int(results[0].DownloadSpeed),
+			UploadSpeed:   int(results[0].UploadSpeed),
 		}, nil
 	}
 
@@ -105,5 +125,4 @@ func (t *ClashCoreSpeedTester) SupportedTypes() []model.ProxyType {
 		model.ProxyTypeAnyTLS,
 		model.ProxyTypeSsh,
 	}
-
 }
