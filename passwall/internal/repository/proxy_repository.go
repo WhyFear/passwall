@@ -2,10 +2,11 @@ package repository
 
 import (
 	"errors"
+	"fmt"
+	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
+	"strconv"
 	"time"
-
-	"github.com/enfein/mieru/v3/pkg/log"
 
 	"gorm.io/gorm/clause"
 
@@ -147,10 +148,24 @@ func (r *GormProxyRepository) Create(proxy *model.Proxy) error {
 
 // BatchCreate 批量创建代理服务器
 func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
+	// 先对传入的代理服务器列表进行去重，避免多次更新同一行的问题
+	uniqueProxies := make([]*model.Proxy, 0)
+	exist := make(map[string]bool)
+
+	for _, proxy := range proxies {
+		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port)
+		if !exist[key] {
+			exist[key] = true
+			uniqueProxies = append(uniqueProxies, proxy)
+		} else {
+			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d", proxy.Domain, proxy.Port))
+		}
+	}
+
 	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}},                                                       // 指定冲突检测字段为domain和port (唯一索引idx_domain_port)
-		DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}), // 冲突时更新的字段
-	}).Create(proxies).Error
+		Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}},
+		DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}),
+	}).Create(uniqueProxies).Error
 }
 
 // Update 更新代理服务器
@@ -327,7 +342,7 @@ func (r *GormProxyRepository) PinProxy(id uint, pin bool) error {
 	db := r.db.Model(&model.Proxy{})
 	result := db.Where("id =?", id).Update("pinned", pin)
 	if result.Error != nil {
-		log.Errorf("更新代理状态失败: %v", result.Error)
+		log.Errorln("更新代理状态失败: %v", result.Error)
 		return result.Error
 	}
 	return nil
