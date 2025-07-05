@@ -316,7 +316,7 @@ func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subsc
 // ParseAndSaveProxies 解析并保存代理
 func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subscription *model.Subscription, content []byte) error {
 	// 解析订阅内容
-	subParser, err := s.parserFactory.GetParser(string(subscription.Type))
+	subParser, err := s.parserFactory.GetParser(string(subscription.Type), nil)
 	if err != nil {
 		log.Errorln("获取解析器失败: %v", err)
 

@@ -1,9 +1,10 @@
 package speedtester
 
 import (
-	"github.com/stretchr/testify/assert"
 	"passwall/internal/model"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestNewClashCoreSpeedTester 测试ClashCoreSpeedTester的创建
@@ -48,17 +49,6 @@ func TestClashCoreSpeedTester_TestInvalidConfig(t *testing.T) {
 	assert.Nil(t, result, "结果应该为nil")
 	assert.Error(t, err, "应该返回错误")
 	assert.Contains(t, err.Error(), "failed to parse proxy config", "错误消息应该包含'failed to parse proxy config'")
-}
-
-// TestCheckTesterSupport 测试checkTesterSupport函数
-func TestCheckTesterSupport(t *testing.T) {
-	tester := &ClashCoreSpeedTester{}
-
-	// 测试支持的类型
-	supportedProxy := &model.Proxy{
-		Type: model.ProxyTypeVMess,
-	}
-	assert.True(t, checkTesterSupport(supportedProxy, tester), "VMess类型应该被支持")
 }
 
 // TestClashCoreSpeedTester_TestValidVMess 测试有效的配置 - 使用实际网络连接

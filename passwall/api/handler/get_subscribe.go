@@ -1,15 +1,25 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"passwall/internal/service/proxy"
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-	"github.com/metacubex/mihomo/log"
 	"passwall/internal/adapter/generator"
 	"passwall/internal/model"
+
+	"github.com/gin-gonic/gin"
+	"github.com/metacubex/mihomo/log"
+)
+
+const (
+	SubscribeTypeClash = "clash"
+
+	ErrNoProxiesFound = "没有找到符合条件的代理服务器"
+	ErrConfigUpdate   = "更新代理配置失败"
 )
 
 type SubscribeReq struct {
@@ -51,7 +61,7 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 			// 根据ID查询订阅
 			singleProxy, err := proxyService.GetProxyByID(uint(id))
 			if err != nil {
-				log.Infoln("没有找到符合条件的代理服务器")
+				log.Infoln(ErrNoProxiesFound)
 				c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
 				return
 			}
@@ -86,7 +96,7 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 
 			// 如果没有代理，返回空订阅
 			if len(proxies) == 0 {
-				log.Infoln("没有找到符合条件的代理服务器")
+				log.Infoln(ErrNoProxiesFound)
 				c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
 				return
 			}
@@ -95,6 +105,13 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 		if req.WithIndex {
 			for i, singleProxy := range proxies {
 				singleProxy.Name = "[" + strconv.Itoa(i+1) + "]-" + singleProxy.Name
+
+				if subType == SubscribeTypeClash {
+					if err := updateProxyConfigName(singleProxy); err != nil {
+						log.Errorln("%s: %v，id：%v", ErrConfigUpdate, err, singleProxy.ID)
+						continue
+					}
+				}
 			}
 		}
 
@@ -135,4 +152,31 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 		// 直接返回内容
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", content)
 	}
+}
+
+// updateProxyConfigName 更新代理配置中的name字段
+func updateProxyConfigName(proxy *model.Proxy) error {
+	if proxy.Config == "" {
+		return fmt.Errorf("代理配置为空")
+	}
+
+	var config map[string]interface{}
+
+	if err := json.Unmarshal([]byte(proxy.Config), &config); err != nil {
+		return fmt.Errorf("反序列化代理配置失败: %w", err)
+	}
+
+	if config == nil {
+		return fmt.Errorf("代理配置无效")
+	}
+
+	config["name"] = proxy.Name
+
+	jsonConfig, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("序列化代理配置失败: %w", err)
+	}
+
+	proxy.Config = string(jsonConfig)
+	return nil
 }

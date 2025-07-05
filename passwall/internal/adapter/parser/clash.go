@@ -46,6 +46,17 @@ func (p *ClashParser) Parse(content []byte) ([]*model.Proxy, error) {
 
 // CanParse 判断是否可以解析Clash配置
 func (p *ClashParser) CanParse(content []byte) bool {
+	if content == nil {
+		return false
+	}
 	// 简单检查是否包含Clash配置的特征
-	panic("implement me")
+	rawCfg := &RawConfig{}
+	if err := yaml.Unmarshal(content, rawCfg); err != nil {
+		return false
+	}
+	return rawCfg.Proxies != nil
+}
+
+func (p *ClashParser) GetType() model.SubscriptionType {
+	return model.SubscriptionTypeClash
 }
