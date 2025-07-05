@@ -2,6 +2,7 @@ package handler
 
 import (
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -103,7 +104,12 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				})
 				return
 			}
-			defer file.Close()
+			defer func(file multipart.File) {
+				err := file.Close()
+				if err != nil {
+					log.Errorln("关闭上传文件失败: %v", err)
+				}
+			}(file)
 
 			// 检查文件大小
 			if fileHeader.Size == 0 {
@@ -157,7 +163,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		}
 
 		// 获取解析器
-		p, err := parserFactory.GetParser(req.Type)
+		p, err := parserFactory.GetParser(req.Type, content)
 		if err != nil {
 			log.Errorln("不支持的代理类型: %v", req.Type)
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -185,7 +191,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		subscription := &model.Subscription{
 			URL:     subscriptionURL,
 			Content: string(content), // 保存原始内容
-			Type:    model.SubscriptionType(req.Type),
+			Type:    p.GetType(),
 			Status:  model.SubscriptionStatusPending,
 		}
 

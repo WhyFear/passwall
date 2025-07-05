@@ -17,6 +17,8 @@ type Parser interface {
 	Parse(content []byte) ([]*model.Proxy, error)
 	// CanParse 判断是否可以解析指定内容
 	CanParse(content []byte) bool
+	// GetType 获取解析器名称
+	GetType() model.SubscriptionType
 }
 
 // ParserFactory 解析器工厂
@@ -24,7 +26,7 @@ type ParserFactory interface {
 	// RegisterParser 注册解析器
 	RegisterParser(typeName string, parser Parser)
 	// GetParser 获取解析器
-	GetParser(typeName string) (Parser, error)
+	GetParser(typeName string, content []byte) (Parser, error)
 }
 
 // DefaultParserFactory 默认解析器工厂实现
@@ -45,12 +47,17 @@ func (f *DefaultParserFactory) RegisterParser(typeName string, parser Parser) {
 }
 
 // GetParser 获取解析器
-func (f *DefaultParserFactory) GetParser(typeName string) (Parser, error) {
-	parser, exists := f.parsers[typeName]
-	if !exists {
-		return nil, fmt.Errorf("parser not found for type: %s", typeName)
+func (f *DefaultParserFactory) GetParser(typeName string, content []byte) (Parser, error) {
+	switch typeName {
+	case "auto":
+		return f.AutoDetectParser(content)
+	default:
+		parser, exists := f.parsers[typeName]
+		if !exists {
+			return nil, fmt.Errorf("parser not found for type: %s", typeName)
+		}
+		return parser, nil
 	}
-	return parser, nil
 }
 
 // AutoDetectParser 自动检测内容类型并返回合适的解析器
@@ -86,16 +93,24 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 		return nil, fmt.Errorf("不支持的端口类型: %T", proxy["port"])
 	}
 
+	if err := util.ValidateByType(singleProxy.Type, proxy); err != nil {
+		log.Errorln("校验代理配置失败: %v，domain=%v, port=%v", err, singleProxy.Domain, singleProxy.Port)
+		return nil, fmt.Errorf("校验代理配置失败: %v", err)
+	}
+
+	// fixme 特化处理一下:[ proxy 'h2-opts.path' expected type 'string', got unconvertible type '[]interface {}'" ]
+	if proxy["h2-opts"] != nil {
+		h2opts := proxy["h2-opts"].(map[string]any)
+		if h2opts["path"] != nil && len(h2opts["path"].([]string)) == 1 && h2opts["path"].([]string)[0] != "" {
+			h2opts["path"] = h2opts["path"].([]string)[0]
+		}
+	}
+
 	// 整个proxy是一个map，需要转换成json格式
 	jsonData, err := json.Marshal(proxy)
 	if err != nil {
 		err = fmt.Errorf("marshal proxy error: %v", err)
 		return nil, err
-	}
-	// 验证代理配置是否包含必要的字段
-	if err = util.ValidateByType(singleProxy.Type, proxy); err != nil {
-		log.Errorln("校验代理配置失败: %v，domain=%v, port=%v", err, singleProxy.Domain, singleProxy.Port)
-		return nil, fmt.Errorf("校验代理配置失败: %v", err)
 	}
 
 	singleProxy.Config = string(jsonData)

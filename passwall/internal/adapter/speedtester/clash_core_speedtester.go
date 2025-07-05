@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
 	"time"
+
+	"github.com/metacubex/mihomo/log"
 
 	"github.com/faceair/clash-speedtest/speedtester"
 
@@ -67,7 +68,7 @@ func (t *ClashCoreSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult,
 		defer close(done)
 		defer func() {
 			if r := recover(); r != nil {
-				log.Errorln("panic in speed tester", r)
+				log.Errorln("panic in speed tester: %v", r)
 			}
 		}()
 

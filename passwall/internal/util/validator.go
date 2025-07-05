@@ -9,17 +9,10 @@ import (
 
 // ValidationRule 表示一个验证规则
 type ValidationRule struct {
-	Key       string      // 需要验证的键
-	Required  bool        // 是否必填，默认为false
-	Condition *Condition  // 条件，如果不为nil，则只有在条件满足时才验证
-	Value     interface{} // 期望的值，如果为nil，则只验证键是否存在
-}
-
-// Condition 表示一个条件
-type Condition struct {
-	Key   string      // 条件键
-	Value interface{} // 条件值，如果为nil，则只检查键是否存在
-	Op    string      // 操作符: "=", "!=", "exists", "!exists"
+	Key       string          // 需要验证的键
+	Op        string          // 是否必填，默认为false
+	Condition *ValidationRule // 条件，如果不为nil，则只有在条件满足时才验证
+	Value     interface{}     // 期望的值，如果为nil，则只验证键是否存在
 }
 
 // GetProxyValidationRules 根据代理类型获取验证规则
@@ -27,9 +20,13 @@ func GetProxyValidationRules(proxyType model.ProxyType) []ValidationRule {
 	// 定义各种代理类型的验证规则
 	rules := map[model.ProxyType][]ValidationRule{
 		model.ProxyTypeVLess: {
-			{Key: "uuid", Required: true},
-			{Key: "client-fingerprint", Required: true, Condition: &Condition{Key: "reality-opts", Op: "exists"}},
-			{Key: "reality-opts.public-key", Required: true, Condition: &Condition{Key: "reality-opts", Op: "exists"}},
+			{Key: "uuid", Op: "exists"},
+			{Key: "client-fingerprint", Op: "exists", Condition: &ValidationRule{Key: "reality-opts", Op: "exists"}},
+			{Key: "reality-opts.public-key", Op: "exists", Condition: &ValidationRule{Key: "reality-opts", Op: "exists"}},
+		},
+		model.ProxyTypeSS: {
+			{Key: "cipher", Op: "!in", Value: []string{"ss"}},
+			{Key: "password", Op: "exists"},
 		},
 	}
 	// 如果没有找到对应的规则，返回空切片
@@ -57,26 +54,9 @@ func ValidateProxyConfig(proxy map[string]any, rules []ValidationRule) error {
 		}
 
 		// 检查键是否存在且不为空
-		if rule.Required {
-			value, exists := GetNestedValue(proxy, rule.Key)
-			if !exists || !IsNotEmpty(value) {
-				if rule.Condition != nil {
-					return fmt.Errorf("当 %s %s 时，字段不满足条件: %s",
-						rule.Condition.Key, describeCondition(rule.Condition), rule.Key)
-				} else {
-					return fmt.Errorf("缺少必填字段: %s", rule.Key)
-				}
-			}
-
-			// 如果指定了期望值，检查值是否匹配
-			if rule.Value != nil && !valueEquals(value, rule.Value) {
-				if rule.Condition != nil {
-					return fmt.Errorf("当 %s %s 时，字段 %s 的值必须为 %v",
-						rule.Condition.Key, describeCondition(rule.Condition), rule.Key, rule.Value)
-				} else {
-					return fmt.Errorf("字段 %s 的值必须为 %v", rule.Key, rule.Value)
-				}
-			}
+		if !checkCondition(proxy, &rule) {
+			return fmt.Errorf("当 %s %s 时，字段不满足条件: %s",
+				rule.Key, describeOp(&rule), rule.Key)
 		}
 	}
 
@@ -84,7 +64,7 @@ func ValidateProxyConfig(proxy map[string]any, rules []ValidationRule) error {
 }
 
 // checkCondition 检查条件是否满足
-func checkCondition(data map[string]any, condition *Condition) bool {
+func checkCondition(data map[string]any, condition *ValidationRule) bool {
 	value, exists := GetNestedValue(data, condition.Key)
 
 	switch condition.Op {
@@ -96,23 +76,31 @@ func checkCondition(data map[string]any, condition *Condition) bool {
 		return exists && valueEquals(value, condition.Value)
 	case "!=":
 		return !exists || !valueEquals(value, condition.Value)
+	case "in":
+		return exists && valueIn(value, condition.Value)
+	case "!in":
+		return !exists || !valueIn(value, condition.Value)
 	default:
 		// 默认为存在性检查
 		return exists && IsNotEmpty(value)
 	}
 }
 
-// describeCondition 描述条件
-func describeCondition(condition *Condition) string {
+// describeOp 描述条件
+func describeOp(condition *ValidationRule) string {
 	switch condition.Op {
 	case "exists":
-		return "存在"
+		return "应该存在"
 	case "!exists":
-		return "不存在"
+		return "应该不存在"
 	case "=":
 		return fmt.Sprintf("= %v", condition.Value)
 	case "!=":
 		return fmt.Sprintf("!= %v", condition.Value)
+	case "in":
+		return fmt.Sprintf("应在 %v 中", condition.Value)
+	case "!in":
+		return fmt.Sprintf("不应在 %v 中", condition.Value)
 	default:
 		return "存在"
 	}
@@ -208,4 +196,36 @@ func IsNotEmpty(value any) bool {
 	default:
 		return true // 默认认为非空
 	}
+}
+
+func valueIn(value any, expectValue any) bool {
+	// 只支持value为单个值，expectValue为列表或,分割的字符串
+	switch v1 := expectValue.(type) {
+	case []any:
+		for _, v := range v1 {
+			if value == v {
+				return true
+			}
+		}
+	case []string:
+		for _, v := range v1 {
+			if value == v {
+				return true
+			}
+		}
+	case []int:
+		for _, v := range v1 {
+			if value == v {
+				return true
+			}
+		}
+	case string:
+		values := strings.Split(v1, ",")
+		for _, v := range values {
+			if value == v {
+				return true
+			}
+		}
+	}
+	return false
 }

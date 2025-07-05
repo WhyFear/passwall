@@ -2,16 +2,11 @@ package parser
 
 import (
 	"github.com/metacubex/mihomo/log"
+	"gopkg.in/yaml.v3"
 	"passwall/internal/model"
 
 	"github.com/metacubex/mihomo/common/convert"
 )
-
-// 文件可能是base64编码的链接，也可能是未base64编码的链接
-// 解码后的数据示例：
-//trojan://2847f31d-c9ac-41cf-b4f5-39a4505a7765@hk1.72adf0e1-194c-5db0-87d4-ed99f25f0d61.6df03129.the-best-airport.com:443?allowInsecure=1&peer=new.download.the-best-airport.com&sni=new.download.the-best-airport.com&type=tcp#%F0%9F%87%AD%F0%9F%87%B0%E9%A6%99%E6%B8%AF%2001%20%7C%20%E4%B8%93%E7%BA%BF
-//vless://745e818d-38d1-46d6-8dfd-9b0e1d66ad1a@iij.pakro.top:8887?encryption=none&flow=xtls-rprx-vision&security=reality&sni=icloud.cdn-apple.com&fp=chrome&pbk=S-g0oP36DShii1uPOnZDSEhp_wQghX6h68PgMivOmD4&allowInsecure=1&type=tcp&headerType=none#mine日本iij
-//根据前缀判断类型并解析出单个服务器
 
 // ShareURLParser 分享链接解析器
 type ShareURLParser struct{}
@@ -27,8 +22,6 @@ func (p *ShareURLParser) Parse(content []byte) ([]*model.Proxy, error) {
 	if err != nil {
 		return nil, err
 	}
-	//	fmt.Println(proxies)
-	// 解析出单个服务器
 	proxyList := make([]*model.Proxy, 0, len(proxies))
 	for _, proxy := range proxies {
 		// 转换成proxy格式
@@ -44,5 +37,18 @@ func (p *ShareURLParser) Parse(content []byte) ([]*model.Proxy, error) {
 
 // CanParse 判断是否可以解析分享链接
 func (p *ShareURLParser) CanParse(content []byte) bool {
-	panic("implement me")
+	// mihomo的判断是如果不能yaml解析，就认为是share_url
+	if content == nil {
+		return false
+	}
+	rawCfg := &RawConfig{}
+	if err := yaml.Unmarshal(content, rawCfg); err != nil {
+		return true
+	}
+	return false
+}
+
+// GetName 获取解析器名称
+func (p *ShareURLParser) GetType() model.SubscriptionType {
+	return model.SubscriptionTypeShareURL
 }

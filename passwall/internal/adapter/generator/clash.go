@@ -1,7 +1,8 @@
 package generator
 
 import (
-	"errors"
+	"fmt"
+	"strings"
 
 	"passwall/internal/model"
 )
@@ -52,8 +53,15 @@ type ClashProxyGroup struct {
 
 // Generate 生成Clash配置
 func (g *ClashGenerator) Generate(proxies []*model.Proxy) ([]byte, error) {
-	// clash先不实现，返回错误
-	return nil, errors.New("clash not implemented")
+	// proxies:
+	//   - {name: '香港 特别节点', type: anytls, server: 150.241.240.235, port: 10000 ...}
+	proxiesYaml := make([]string, 0, len(proxies))
+	proxiesYaml = append(proxiesYaml, "proxies:")
+	for _, proxy := range proxies {
+		proxiesYaml = append(proxiesYaml, fmt.Sprintf(`  - %s`, proxy.Config))
+	}
+
+	return []byte(strings.Join(proxiesYaml, "\n")), nil
 }
 
 // Format 返回生成的配置格式

@@ -27,7 +27,10 @@ const SubscriptionForm = ({
       <Select
         style={{width: '100%'}}
         placeholder="请选择订阅类型"
-        options={[{value: 'clash', label: 'Clash'}, {value: 'share_url', label: '分享链接'},]}
+        options={[{value: 'auto', label: '自动识别'}, {value: 'clash', label: 'Clash'}, {
+          value: 'share_url',
+          label: '分享链接'
+        },]}
       />
     </Form.Item>
 
