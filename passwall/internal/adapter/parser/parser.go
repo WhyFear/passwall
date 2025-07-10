@@ -105,6 +105,16 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 			h2opts["path"] = h2opts["path"].([]string)[0]
 		}
 	}
+	// fixme 特化处理hysteria的up和down在mihomo里不能为0的问题
+	if singleProxy.Type == model.ProxyTypeHysteria {
+		speed := 100 * 1024 * 1024
+		if proxy["up"] != nil && proxy["up"].(string) == "" {
+			proxy["up"] = strconv.Itoa(speed)
+		}
+		if proxy["down"] != nil && proxy["down"].(string) == "" {
+			proxy["down"] = strconv.Itoa(speed)
+		}
+	}
 
 	// 整个proxy是一个map，需要转换成json格式
 	jsonData, err := json.Marshal(proxy)

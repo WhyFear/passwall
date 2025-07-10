@@ -10,6 +10,7 @@ import (
 func TestClashParser_Parse(t *testing.T) {
 	contentList := []string{
 		"{name: name, server: 127.0.0.1, port: 444, type: trojan, password: password, sni: www.baidu.com, skip-cert-verify: true}",
+		"alpn:\n      - h3\n    auth_str: baidu.com\n    down: ''\n    name: test\n    obfs: ''\n    port: 46938\n    protocol: ''\n    server: 127.0.0.1\n    skip-cert-verify: true\n    sni: apple.com\n    type: hysteria\n    up: ''\n    auth-str: baidu.com\n    delay: 2031",
 	}
 	proxiesYaml := make([]string, 0, len(contentList))
 	proxiesYaml = append(proxiesYaml, "proxies:")
