@@ -101,8 +101,18 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 	// fixme 特化处理一下:[ proxy 'h2-opts.path' expected type 'string', got unconvertible type '[]interface {}'" ]
 	if proxy["h2-opts"] != nil {
 		h2opts := proxy["h2-opts"].(map[string]any)
-		if h2opts["path"] != nil && len(h2opts["path"].([]string)) == 1 && h2opts["path"].([]string)[0] != "" {
-			h2opts["path"] = h2opts["path"].([]string)[0]
+		// 处理path字段，支持[]string和string两种类型
+		if h2opts["path"] != nil {
+			switch pathValue := h2opts["path"].(type) {
+			case string:
+				// 已经是字符串类型，无需处理
+			case []string:
+				if len(pathValue) > 0 && pathValue[0] != "" {
+					h2opts["path"] = pathValue[0]
+				}
+			default:
+				log.Errorln("不支持的h2-opts.path类型: %T", h2opts["path"])
+			}
 		}
 	}
 	// fixme 特化处理hysteria的up和down在mihomo里不能为0的问题
