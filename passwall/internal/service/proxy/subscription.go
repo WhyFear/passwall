@@ -395,6 +395,17 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 			toCreate = append(toCreate, newProxy)
 		}
 	}
+	// 批量创建新代理
+	if len(toCreate) > 0 {
+		SafeDBOperation(func() error {
+			if err := s.proxyRepo.BatchCreate(toCreate); err != nil {
+				log.Errorln("批量创建代理失败: %v", err)
+				return err
+			}
+			log.Infoln("批量创建了 %d 个新代理", len(toCreate))
+			return nil
+		})
+	}
 
 	// 批量更新已存在的代理
 	if len(toUpdate) > 0 {
@@ -406,18 +417,6 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 				}
 			}
 			log.Infoln("更新了 %d 个代理", len(toUpdate))
-			return nil
-		})
-	}
-
-	// 批量创建新代理
-	if len(toCreate) > 0 {
-		SafeDBOperation(func() error {
-			if err := s.proxyRepo.BatchCreate(toCreate); err != nil {
-				log.Errorln("批量创建代理失败: %v", err)
-				return err
-			}
-			log.Infoln("批量创建了 %d 个新代理", len(toCreate))
 			return nil
 		})
 	}
