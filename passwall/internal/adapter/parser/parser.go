@@ -118,11 +118,41 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 	// fixme 特化处理hysteria的up和down在mihomo里不能为0的问题
 	if singleProxy.Type == model.ProxyTypeHysteria {
 		speed := 100 * 1024 * 1024
-		if proxy["up"] != nil && proxy["up"].(string) == "" {
-			proxy["up"] = strconv.Itoa(speed)
+		if proxy["up"] != nil {
+			switch proxy["up"].(type) {
+			case int:
+				if proxy["up"].(int) == 0 {
+					proxy["up"] = speed
+				}
+			case int64:
+				if proxy["up"].(int64) == 0 {
+					proxy["up"] = speed
+				}
+			case string:
+				if proxy["up"].(string) == "" {
+					proxy["up"] = strconv.Itoa(speed)
+				}
+			default:
+				log.Errorln("不支持的hysteria.up类型: %T", proxy["up"])
+			}
 		}
-		if proxy["down"] != nil && proxy["down"].(string) == "" {
-			proxy["down"] = strconv.Itoa(speed)
+		if proxy["down"] != nil {
+			switch proxy["down"].(type) {
+			case int:
+				if proxy["down"].(int) == 0 {
+					proxy["down"] = speed
+				}
+			case int64:
+				if proxy["down"].(int64) == 0 {
+					proxy["down"] = speed
+				}
+			case string:
+				if proxy["down"].(string) == "" {
+					proxy["down"] = strconv.Itoa(speed)
+				}
+			default:
+				log.Errorln("不支持的hysteria.up类型: %T", proxy["up"])
+			}
 		}
 	}
 
