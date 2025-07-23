@@ -19,7 +19,7 @@ type DownloadOptions struct {
 // DefaultDownloadOptions 默认下载选项
 var DefaultDownloadOptions = DownloadOptions{
 	Timeout:     10 * time.Second, // 10秒超时
-	MaxFileSize: 10 * 1024 * 1024, // 10MB最大大小
+	MaxFileSize: 50 * 1024 * 1024, // 10MB最大大小
 	ProxyURL:    "",               // 默认不使用代理
 }
 
