@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/metacubex/mihomo/log"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -354,12 +355,26 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		return fmt.Errorf("未从订阅中解析出任何代理")
 	}
 
+	// 去重
+	uniqueProxies := make([]*model.Proxy, 0)
+	exist := make(map[string]bool)
+
+	for _, proxy := range newProxies {
+		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port)
+		if !exist[key] {
+			exist[key] = true
+			uniqueProxies = append(uniqueProxies, proxy)
+		} else {
+			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d", proxy.Domain, proxy.Port))
+		}
+	}
+
 	// 保存代理
 	var toUpdate []*model.Proxy
 	var toCreate []*model.Proxy
 
 	// 分类处理代理
-	for _, newProxy := range newProxies {
+	for _, newProxy := range uniqueProxies {
 		// 检查上下文是否已取消
 		select {
 		case <-ctx.Done():
@@ -428,7 +443,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		return s.subscriptionRepo.UpdateStatusAndContent(subscription)
 	})
 
-	log.Infoln("订阅[%s]刷新成功，解析出%d个代理", subscription.URL, len(newProxies))
+	log.Infoln("订阅[%s]刷新成功，解析出%d个代理，去重后%d个", subscription.URL, len(newProxies), len(uniqueProxies))
 	return nil
 }
 
