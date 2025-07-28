@@ -8,12 +8,13 @@ import (
 
 // Config 应用程序配置
 type Config struct {
-	Token      string    `yaml:"token"`
-	Concurrent int       `yaml:"concurrent"`
-	Server     Server    `yaml:"server"`
-	Database   Database  `yaml:"database"`
-	Proxy      Proxy     `yaml:"proxy"`
-	CronJobs   []CronJob `yaml:"cron_jobs"`
+	Token      string         `yaml:"token"`
+	Concurrent int            `yaml:"concurrent"`
+	Server     Server         `yaml:"server"`
+	Database   Database       `yaml:"database"`
+	Proxy      Proxy          `yaml:"proxy"`
+	ClashAPI   ClashAPIConfig `yaml:"clash_api"`
+	CronJobs   []CronJob      `yaml:"cron_jobs"`
 }
 
 // Server 服务器配置
@@ -31,6 +32,12 @@ type Database struct {
 type Proxy struct {
 	Enabled bool   `yaml:"enabled"` // 是否启用代理
 	URL     string `yaml:"url"`     // 代理URL，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080
+}
+
+type ClashAPIConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
+	Secret  string `yaml:"secret"`
 }
 
 type BanProxyConfig struct {

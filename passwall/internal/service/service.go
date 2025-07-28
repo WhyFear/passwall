@@ -3,6 +3,7 @@ package service
 import (
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
+	"passwall/internal/service/traffic"
 
 	"gorm.io/gorm"
 
@@ -23,6 +24,7 @@ type Services struct {
 	ParserFactory           parser.ParserFactory
 	GeneratorFactory        generator.GeneratorFactory
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
+	StatisticsService       traffic.StatisticsService
 }
 
 // NewServices 初始化所有服务

@@ -42,6 +42,7 @@ type ProxyRepository interface {
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
 	FindByDomainAndPort(domain string, port int) (*model.Proxy, error)
 	FindPage(query PageQuery) (*PageResult, error)
+	FindByName(name string) (*model.Proxy, error)
 	Create(proxy *model.Proxy) error
 	BatchCreate(proxies []*model.Proxy) error
 	Update(proxy *model.Proxy) error
@@ -137,6 +138,85 @@ func (r *GormProxyRepository) FindByDomainAndPort(domain string, port int) (*mod
 		} else {
 			return nil, result.Error // 其他错误
 		}
+	}
+	return &proxy, nil
+}
+
+// FindPage 分页查询代理服务器
+func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
+	var proxies []*model.Proxy
+	var total int64
+
+	// 构建查询条件
+	db := r.db.Model(&model.Proxy{})
+
+	// 应用过滤条件
+	if query.Filters != nil {
+		for key, value := range query.Filters {
+			// 特殊处理状态数组
+			if key == "status" {
+				if statusArray, ok := value.([]string); ok && len(statusArray) > 0 {
+					db = db.Where("status IN ?", statusArray)
+					continue
+				} else {
+					db = db.Where("status != ?", model.ProxyStatusBanned)
+					continue
+				}
+			}
+			if key == "type" {
+				if typeArray, ok := value.([]string); ok && len(typeArray) > 0 {
+					db = db.Where("type IN ?", typeArray)
+					continue
+				}
+			}
+			db = db.Where(key, value)
+		}
+	}
+	db = db.Where("status != ?", model.ProxyStatusBanned)
+
+	// 计算总数
+	if err := db.Count(&total).Error; err != nil {
+		return nil, err
+	}
+
+	// 设置默认值
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+
+	if query.PageSize <= 0 {
+		query.PageSize = 10
+	}
+
+	// 设置排序
+	if query.OrderBy != "" {
+		db = db.Order(query.OrderBy)
+	} else {
+		db = db.Order("updated_at DESC")
+	}
+
+	// 执行分页查询
+	if err := db.Offset((query.Page - 1) * query.PageSize).
+		Limit(query.PageSize).
+		Find(&proxies).Error; err != nil {
+		return nil, err
+	}
+
+	return &PageResult{
+		Total: total,
+		Items: proxies,
+	}, nil
+}
+
+// FindByName 根据名称查询代理服务器
+func (r *GormProxyRepository) FindByName(name string) (*model.Proxy, error) {
+	var proxy model.Proxy
+	result := r.db.Where("name = ?", name).Order("download_speed DESC").First(&proxy)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
 	}
 	return &proxy, nil
 }
@@ -259,72 +339,6 @@ func (r *GormProxyRepository) SaveSpeedTestResult(proxyID uint, result *model.Sp
 		}
 		return tx.Create(history).Error
 	})
-}
-
-// FindPage 分页查询代理服务器
-func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
-	var proxies []*model.Proxy
-	var total int64
-
-	// 构建查询条件
-	db := r.db.Model(&model.Proxy{})
-
-	// 应用过滤条件
-	if query.Filters != nil {
-		for key, value := range query.Filters {
-			// 特殊处理状态数组
-			if key == "status" {
-				if statusArray, ok := value.([]string); ok && len(statusArray) > 0 {
-					db = db.Where("status IN ?", statusArray)
-					continue
-				} else {
-					db = db.Where("status != ?", model.ProxyStatusBanned)
-					continue
-				}
-			}
-			if key == "type" {
-				if typeArray, ok := value.([]string); ok && len(typeArray) > 0 {
-					db = db.Where("type IN ?", typeArray)
-					continue
-				}
-			}
-			db = db.Where(key, value)
-		}
-	}
-	db = db.Where("status != ?", model.ProxyStatusBanned)
-
-	// 计算总数
-	if err := db.Count(&total).Error; err != nil {
-		return nil, err
-	}
-
-	// 设置默认值
-	if query.Page <= 0 {
-		query.Page = 1
-	}
-
-	if query.PageSize <= 0 {
-		query.PageSize = 10
-	}
-
-	// 设置排序
-	if query.OrderBy != "" {
-		db = db.Order(query.OrderBy)
-	} else {
-		db = db.Order("updated_at DESC")
-	}
-
-	// 执行分页查询
-	if err := db.Offset((query.Page - 1) * query.PageSize).
-		Limit(query.PageSize).
-		Find(&proxies).Error; err != nil {
-		return nil, err
-	}
-
-	return &PageResult{
-		Total: total,
-		Items: proxies,
-	}, nil
 }
 
 // GetTypes 获取所有代理类型

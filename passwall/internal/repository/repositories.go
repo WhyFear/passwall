@@ -9,6 +9,7 @@ type Repositories struct {
 	Proxy            ProxyRepository
 	Subscription     SubscriptionRepository
 	SpeedTestHistory SpeedTestHistoryRepository
+	Traffic          TrafficRepository
 }
 
 // NewRepositories 创建所有仓库的集合
@@ -17,5 +18,6 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		Proxy:            NewProxyRepository(db),
 		Subscription:     NewSubscriptionRepository(db),
 		SpeedTestHistory: NewSpeedTestHistoryRepository(db),
+		Traffic:          NewTrafficRepository(db),
 	}
 }
