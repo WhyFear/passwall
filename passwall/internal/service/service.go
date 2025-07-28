@@ -1,6 +1,7 @@
 package service
 
 import (
+	"passwall/config"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
 	"passwall/internal/service/traffic"
@@ -24,11 +25,11 @@ type Services struct {
 	ParserFactory           parser.ParserFactory
 	GeneratorFactory        generator.GeneratorFactory
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
-	StatisticsService       traffic.StatisticsService
+	StatisticsService       *traffic.StatisticsService
 }
 
 // NewServices 初始化所有服务
-func NewServices(db *gorm.DB) *Services {
+func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 	// 创建仓库集合
 	repos := repository.NewRepositories(db)
 
@@ -62,6 +63,8 @@ func NewServices(db *gorm.DB) *Services {
 	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager)
 	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
 
+	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret, proxyService, repos.Traffic)
+
 	return &Services{
 		SubscriptionManager:     subscriptionManager,
 		ProxyService:            proxyService,
@@ -72,5 +75,6 @@ func NewServices(db *gorm.DB) *Services {
 		TaskManager:             taskManager,
 		ParserFactory:           parserFactory,
 		GeneratorFactory:        generatorFactory,
+		StatisticsService:       &statisticsService,
 	}
 }

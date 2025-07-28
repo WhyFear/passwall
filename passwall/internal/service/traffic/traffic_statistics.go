@@ -122,7 +122,7 @@ func (s *StatisticsService) connectWithRetry() error {
 			interval = s.maxRetryInterval
 		}
 
-		log.Infoln("WebSocket connection failed, retrying in %v (attempt %d/%d)",
+		log.Errorln("WebSocket connection failed, retrying in %v (attempt %d/%d)",
 			interval, retryCount, s.maxRetries)
 		time.Sleep(interval)
 	}
@@ -163,7 +163,7 @@ func (s *StatisticsService) readMessages() {
 	for {
 		_, message, err := s.conn.ReadMessage()
 		if err != nil {
-			log.Infoln("WebSocket read error: %v", err)
+			log.Errorln("WebSocket read error: %v", err)
 
 			// 连接断开时自动重连
 			go func() {
@@ -175,7 +175,7 @@ func (s *StatisticsService) readMessages() {
 
 		var traffic Connections
 		if err := json.Unmarshal(message, &traffic); err != nil {
-			log.Infoln("Failed to unmarshal traffic data: %v", err)
+			log.Errorln("Failed to unmarshal traffic data: %v", err)
 			continue
 		}
 		log.Debugln("traffic: %v", traffic)
@@ -336,7 +336,7 @@ func (s *StatisticsService) startPeriodicProcessing() {
 					}
 				}()
 
-				log.Infoln("执行定时流量统计处理...")
+				log.Debugln("执行定时流量统计处理...")
 				s.processCloseConns()
 			}()
 		case <-s.done:

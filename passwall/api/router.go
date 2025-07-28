@@ -70,7 +70,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 
 		// 获取代理信息
-		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, &services.StatisticsService))
+		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService))
 		// 获取代理历史测速记录
 		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(services.SpeedTestHistoryService))
 		// 生成代理分享链接
