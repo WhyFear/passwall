@@ -72,6 +72,11 @@ proxy:
   enabled: false  # 是否启用代理(仅在更新订阅时生效)
   url: "socks5://127.0.0.1:7890"  # 代理地址
 
+clash_api: # 支持Clash API，可获取节点消耗流量
+  enabled: false
+  url: "ws://127.0.0.1:9090"
+  secret: ""
+
 # 多个定时任务同时运行的只能有一个，单个定时任务内子任务串行执行
 cron_jobs: # 定时任务配置
   - name: "每6小时更新所有订阅"  # 任务名称
