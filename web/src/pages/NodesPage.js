@@ -65,6 +65,22 @@ const formatSpeed = (bytesPerSecond) => {
   return `${speed.toFixed(2)}${units[unit]}`;
 };
 
+// 格式化流量的函数
+const formatTraffic = (bytes) => {
+  if (!bytes) return '-';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unit = 0;
+  let traffic = bytes;
+
+  while (traffic >= 1024 && unit < units.length - 1) {
+    traffic /= 1024;
+    unit++;
+  }
+
+  return `${traffic.toFixed(2)}${units[unit]}`;
+};
+
 const NodesPage = () => {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -639,6 +655,8 @@ const NodesPage = () => {
           <InfoItem label="节点创建时间" value={formatDate(currentNode.created_at)}/>
           <InfoItem label="最近测试时间" value={formatDate(currentNode.latest_test_time)}/>
           <InfoItem label="分享链接" value={currentNode.share_url} isMultiLine={true}/>
+          <InfoItem label="总计下载流量" value={formatTraffic(currentNode.download_total)}/>
+          <InfoItem label="总计上传流量" value={formatTraffic(currentNode.upload_total)}/>
         </Card>
 
         <Card title="历史记录">

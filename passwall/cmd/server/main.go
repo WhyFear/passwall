@@ -33,7 +33,7 @@ func main() {
 	// 3. 初始化服务
 	services := service.NewServices(db)
 	if cfg.ClashAPI.Enabled {
-		services.StatisticsService = traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret)
+		services.StatisticsService = traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret, services.ProxyService, repository.NewTrafficRepository(db))
 		_ = services.StatisticsService.Start()
 	}
 

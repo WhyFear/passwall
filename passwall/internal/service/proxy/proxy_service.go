@@ -23,6 +23,7 @@ type ProxyService interface {
 	GetProxyByID(id uint) (*model.Proxy, error)
 	GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool) (int64, error)
 	GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
+	GetProxyByName(name string) (*model.Proxy, error)
 	CreateProxy(proxy *model.Proxy) error
 	BatchCreateProxies(proxies []*model.Proxy) error
 	GetTypes() ([]string, error)
@@ -95,6 +96,10 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}
 		return nil, 0, err
 	}
 	return queryResult.Items, queryResult.Total, err
+}
+
+func (s *DefaultProxyService) GetProxyByName(name string) (*model.Proxy, error) {
+	return s.proxyRepo.FindByName(name)
 }
 
 func (s *DefaultProxyService) CreateProxy(proxy *model.Proxy) error {

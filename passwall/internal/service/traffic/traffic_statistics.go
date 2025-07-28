@@ -3,7 +3,12 @@ package traffic
 import (
 	"encoding/json"
 	"net/url"
+	"passwall/internal/model"
+	"passwall/internal/repository"
+	"passwall/internal/service/proxy"
+	"regexp"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,13 +55,18 @@ type StatisticsService struct {
 
 	ticker *time.Ticker
 	done   chan struct{}
+
+	proxyService proxy.ProxyService
+	trafficRepo  repository.TrafficRepository
 }
 
 // NewTrafficStatisticsService creates a new traffic statistics service
-func NewTrafficStatisticsService(wsURL string, secret string) StatisticsService {
+func NewTrafficStatisticsService(wsURL string, secret string, proxyService proxy.ProxyService, trafficRepo repository.TrafficRepository) StatisticsService {
 	return StatisticsService{
 		wsURL:             wsURL,
 		secret:            secret,
+		proxyService:      proxyService,
+		trafficRepo:       trafficRepo,
 		historyConns:      sync.Map{},
 		closeConns:        sync.Map{},
 		baseRetryInterval: 5 * time.Second,
@@ -121,7 +131,7 @@ func (s *StatisticsService) connectWithRetry() error {
 // Stop stops the service
 func (s *StatisticsService) Stop() {
 	if s.conn != nil {
-		s.conn.Close()
+		_ = s.conn.Close()
 	}
 
 	if s.ticker != nil {
@@ -130,6 +140,14 @@ func (s *StatisticsService) Stop() {
 	if s.done != nil {
 		<-s.done
 	}
+}
+
+func (s *StatisticsService) GetTrafficStatistics(proxyId uint) (*model.TrafficStatistics, error) {
+	traffic, err := s.trafficRepo.FindByProxyID(proxyId)
+	if err != nil {
+		return nil, err
+	}
+	return traffic, nil
 }
 
 // readMessages reads and processes WebSocket messages
@@ -223,14 +241,84 @@ func (s *StatisticsService) processCloseConns() {
 		}
 		return true
 	})
-	// todo 查找库里对应的节点，更新流量
-	if len(nodeTrafficMap) > 0 {
-		log.Infoln("处理完成，节点流量统计: %v", nodeTrafficMap)
-		// todo 落库
+	if len(nodeTrafficMap) == 0 {
+		log.Infoln("当前无节点流量数据")
+		return
 	}
+	// 处理节点名称并查找对应的代理
+	for _, node := range nodeTrafficMap {
+		nodeProxy, err := s.proxyService.GetProxyByName(node.NodeName)
+		if err != nil {
+			log.Errorln("获取节点信息失败，节点名称: %s, 错误: %v", node.NodeName, err)
+			continue
+		}
+		if nodeProxy == nil && strings.HasPrefix(node.NodeName, "[") {
+			cleanName := s.cleanNodeName(node.NodeName)
+			nodeProxy, err = s.proxyService.GetProxyByName(cleanName)
+			if err != nil {
+				log.Errorln("获取节点信息失败，节点名称: %s, 错误: %v", cleanName, err)
+				continue
+			}
+		}
+		if nodeProxy != nil {
+			// 判断traffic里是否有这个节点数据，如果有，则更新，否则新增
+			log.Infoln("找到节点: %s, 本次上传流量: %d, 下载流量: %d", node.NodeName, node.Upload, node.Download)
+			trafficStatistics, err := s.trafficRepo.FindByProxyID(nodeProxy.ID)
+			if err != nil {
+				log.Errorln("获取节点流量失败，节点名称: %s, 错误: %v", node.NodeName, err)
+				continue
+			}
+			if trafficStatistics == nil {
+				trafficStatistics = &model.TrafficStatistics{
+					ProxyID:       nodeProxy.ID,
+					UploadTotal:   node.Upload,
+					DownloadTotal: node.Download,
+				}
+				err := proxy.SafeDBOperation(func() error {
+					return s.trafficRepo.Create(trafficStatistics)
+				})
+				if err != nil {
+					log.Errorln("创建节点流量失败，节点信息: %v, 错误: %v", node, err)
+					continue
+				}
+				log.Infoln("创建节点流量成功，节点信息: %v", trafficStatistics)
+			} else {
+				trafficStatistics.UploadTotal += node.Upload
+				trafficStatistics.DownloadTotal += node.Download
+				err := proxy.SafeDBOperation(func() error {
+					return s.trafficRepo.UpdateTrafficByProxyID(trafficStatistics)
+				})
+				if err != nil {
+					log.Errorln("更新节点流量失败，节点信息: %v, 错误: %v", trafficStatistics, err)
+					continue
+				}
+				log.Infoln("更新节点流量成功，节点信息: %v", trafficStatistics)
+			}
+		} else {
+			log.Infoln("未找到节点: %s", node.NodeName)
+		}
+	}
+	log.Infoln("处理完成，处理了 %v 个节点流量数据", len(nodeTrafficMap))
 
 	// 处理完成后清空closeConns，避免重复统计
 	s.closeConns = sync.Map{}
+}
+
+// cleanNodeName 清理节点名称，移除前面的序号前缀如"[1]-"
+func (s *StatisticsService) cleanNodeName(nodeName string) string {
+	// 匹配模式: [数字]- (严格匹配，不考虑空格)
+	// 例如: "[1]-节点名" -> "节点名"
+	// "[1] - 节点名" -> "[1] - 节点名" (不匹配)
+	// "[节点]自带[]" -> "[节点]自带[]" (保持不变)
+
+	re := regexp.MustCompile(`^\[\d+\]-(.+)$`)
+	matches := re.FindStringSubmatch(nodeName)
+	if len(matches) == 2 {
+		return strings.TrimSpace(matches[1])
+	}
+
+	// 不匹配则返回原名称
+	return nodeName
 }
 
 // startPeriodicProcessing 启动定时处理任务

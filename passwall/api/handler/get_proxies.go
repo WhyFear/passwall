@@ -6,6 +6,7 @@ import (
 	"passwall/internal/repository"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
+	"passwall/internal/service/traffic"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,8 @@ type ProxyResp struct {
 	ShareUrl        string    `json:"share_url"`
 	CreatedAt       time.Time `json:"created_at"`
 	SuccessRate     float64   `json:"success_rate"`
+	DownloadTotal   int64     `json:"download_total"`
+	UploadTotal     int64     `json:"upload_total"`
 }
 
 // PaginatedResponse 分页响应
@@ -46,7 +49,7 @@ type PaginatedResponse struct {
 }
 
 // GetProxies 获取所有代理
-func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService) gin.HandlerFunc {
+func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService, statisticsService *traffic.StatisticsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ProxyReq
 		if err := c.ShouldBindQuery(&req); err != nil {
@@ -89,6 +92,7 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 
 		result := make([]ProxyResp, 0, len(proxies))
 		for _, singleProxy := range proxies {
+			// 获取订阅链接
 			subscriptionUrl := "未知"
 			if singleProxy.SubscriptionID != nil {
 				if url, ok := subscriptionUrls[*singleProxy.SubscriptionID]; ok {
@@ -101,6 +105,7 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 					}
 				}
 			}
+			// 获取节点测试成功率
 			successRate := 0.0
 			page := &repository.PageQuery{
 				PageSize: 5,
@@ -124,6 +129,11 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 			} else {
 				log.Infoln("获取代理 %s 的测速历史记录失败: %v", singleProxy.Name, err)
 			}
+			// 获取节点消耗流量
+			proxyTrafficStatistics, err := statisticsService.GetTrafficStatistics(singleProxy.ID)
+			if err != nil {
+				log.Infoln("获取代理 %s 的消耗流量失败: %v", singleProxy.ID, err)
+			}
 
 			tempProxy := ProxyResp{
 				ID:              int(singleProxy.ID),
@@ -141,6 +151,10 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 			}
 			if singleProxy.LatestTestTime != nil {
 				tempProxy.LatestTestTime = *singleProxy.LatestTestTime
+			}
+			if proxyTrafficStatistics != nil {
+				tempProxy.DownloadTotal = proxyTrafficStatistics.DownloadTotal
+				tempProxy.UploadTotal = proxyTrafficStatistics.UploadTotal
 			}
 			result = append(result, tempProxy)
 		}
