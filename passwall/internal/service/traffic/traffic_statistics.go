@@ -3,6 +3,7 @@ package traffic
 import (
 	"encoding/json"
 	"net/url"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -15,7 +16,7 @@ type Connections struct {
 	Connections   []Connection `json:"connections"`
 	DownloadTotal int64        `json:"downloadTotal"`
 	UploadTotal   int64        `json:"uploadTotal"`
-	Memory        int64        `json:"memory"`
+	//Memory        int64        `json:"memory"`
 }
 
 type Connection struct {
@@ -127,7 +128,7 @@ func (s *StatisticsService) Stop() {
 		s.ticker.Stop()
 	}
 	if s.done != nil {
-		close(s.done)
+		<-s.done
 	}
 }
 
@@ -201,7 +202,11 @@ func (s *StatisticsService) processTrafficData(traffic Connections) {
 func (s *StatisticsService) processCloseConns() {
 	var nodeTrafficMap = make(map[string]*NodeTraffic)
 	s.closeConns.Range(func(id, conn any) bool {
-		connection, _ := conn.(*Connection)
+		connection, ok := conn.(Connection) // 注意去掉指针类型
+		if !ok {
+			log.Errorln("类型断言失败，预期类型 Connection，实际值: %v", conn)
+			return true
+		}
 		for _, chain := range connection.Chains {
 			nodeTraffic, exists := nodeTrafficMap[chain]
 			if !exists {
@@ -220,25 +225,34 @@ func (s *StatisticsService) processCloseConns() {
 	})
 	// todo 查找库里对应的节点，更新流量
 	if len(nodeTrafficMap) > 0 {
-		log.Debugln("处理完成，节点流量统计: %v", nodeTrafficMap)
+		log.Infoln("处理完成，节点流量统计: %v", nodeTrafficMap)
 		// todo 落库
 	}
 
 	// 处理完成后清空closeConns，避免重复统计
-	s.closeConns.Range(func(id, conn any) bool {
-		s.closeConns.Delete(id)
-		return true
-	})
+	s.closeConns = sync.Map{}
 }
 
 // startPeriodicProcessing 启动定时处理任务
 func (s *StatisticsService) startPeriodicProcessing() {
+	defer close(s.done) // 添加关闭通知
+
 	for {
 		select {
 		case <-s.ticker.C:
-			log.Debugln("执行定时流量统计处理...")
-			s.processCloseConns()
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Errorln("处理流量统计时发生panic: %v", r)
+						log.Errorln("堆栈信息: %s", debug.Stack())
+					}
+				}()
+
+				log.Infoln("执行定时流量统计处理...")
+				s.processCloseConns()
+			}()
 		case <-s.done:
+			s.ticker.Stop()
 			return
 		}
 	}
