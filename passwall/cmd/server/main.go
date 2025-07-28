@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"passwall/internal/service/traffic"
 	"syscall"
 
 	"passwall/api"
@@ -31,6 +32,10 @@ func main() {
 
 	// 3. 初始化服务
 	services := service.NewServices(db)
+	if cfg.ClashAPI.Enabled {
+		services.StatisticsService = traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret)
+		_ = services.StatisticsService.Start()
+	}
 
 	// 4. 初始化调度器
 	newScheduler := scheduler.NewScheduler()
