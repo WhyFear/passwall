@@ -39,21 +39,13 @@ CREATE TABLE IF NOT EXISTS proxies
 -- 创建组合唯一索引
 CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_port ON proxies (domain, port);
 
--- 创建索引
-CREATE INDEX IF NOT EXISTS idx_proxies_subscription_id ON proxies (subscription_id);
-CREATE INDEX IF NOT EXISTS idx_proxies_type ON proxies (type);
+-- 核心索引（基于前端查询模式的最小化索引）
 CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies (status);
-CREATE INDEX IF NOT EXISTS idx_proxies_ping ON proxies (ping);
-CREATE INDEX IF NOT EXISTS idx_proxies_download_speed ON proxies (download_speed);
-CREATE INDEX IF NOT EXISTS idx_proxies_upload_speed ON proxies (upload_speed);
-CREATE INDEX IF NOT EXISTS idx_proxies_latest_test_time ON proxies (latest_test_time);
-CREATE INDEX IF NOT EXISTS idx_proxies_pinned ON proxies (pinned);
-CREATE INDEX IF NOT EXISTS idx_proxies_name ON proxies (name);
-CREATE INDEX IF NOT EXISTS idx_latest_time_status ON proxies (status, latest_test_time);
-CREATE INDEX IF NOT EXISTS idx_proxies_status_type ON proxies (status, type);
-CREATE INDEX IF NOT EXISTS idx_proxies_type_status ON proxies (type, status);
-CREATE INDEX IF NOT EXISTS idx_proxies_speed_composite ON proxies (download_speed DESC, upload_speed DESC);
-CREATE INDEX IF NOT EXISTS idx_proxies_status_speed ON proxies (status, download_speed DESC, upload_speed DESC);
+CREATE INDEX IF NOT EXISTS idx_proxies_type ON proxies (type);
+
+-- 关键复合索引（覆盖90%前端查询场景）
+CREATE INDEX IF NOT EXISTS idx_status_download ON proxies (status, download_speed DESC);
+CREATE INDEX IF NOT EXISTS idx_status_ping ON proxies (status, ping DESC);
 
 -- 测速历史记录表
 CREATE TABLE IF NOT EXISTS speed_test_histories

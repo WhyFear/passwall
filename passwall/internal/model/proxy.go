@@ -39,18 +39,18 @@ const (
 // Proxy 代理服务器模型
 type Proxy struct {
 	ID             uint        `json:"id" gorm:"primaryKey;autoIncrement"`
-	SubscriptionID *uint       `json:"subscription_id" gorm:"index:idx_proxies_subscription_id"`
+	SubscriptionID *uint       `json:"subscription_id"`
 	Name           string      `json:"name"`
 	Domain         string      `json:"domain" gorm:"uniqueIndex:idx_domain_port"`
 	Port           int         `json:"port" gorm:"uniqueIndex:idx_domain_port"`
-	Type           ProxyType   `json:"type" gorm:"index:idx_proxies_type;index:idx_filter_sort"`
-	Config         string      `json:"config"`                                                                       // JSON格式存储
-	Ping           int         `json:"ping" gorm:"index:idx_proxies_ping;index:idx_filter_sort"`                     // 延迟(ms)
-	DownloadSpeed  int         `json:"download_speed" gorm:"index:idx_proxies_download_speed;index:idx_filter_sort"` // 下载速度(KB/s)
-	UploadSpeed    int         `json:"upload_speed" gorm:"index:idx_proxies_upload_speed;index:idx_filter_sort"`     // 上传速度(KB/s)
-	Status         ProxyStatus `json:"status" gorm:"index:idx_proxies_status;index:idx_filter_sort;index:idx_latest_time_status"`
-	Pinned         bool        `json:"pinned" gorm:"index:idx_proxies_pinned;default:false"` // 是否置顶
-	LatestTestTime *time.Time  `json:"latest_test_time" gorm:"index:idx_proxies_latest_test_time;index:idx_filter_sort;index:idx_latest_time_status"`
+	Type           ProxyType   `json:"type" gorm:"index:idx_proxies_type"`
+	Config         string      `json:"config"`         // JSON格式存储
+	Ping           int         `json:"ping"`           // 延迟(ms)
+	DownloadSpeed  int         `json:"download_speed"` // 下载速度(KB/s)
+	UploadSpeed    int         `json:"upload_speed"`   // 上传速度(KB/s)
+	Status         ProxyStatus `json:"status" gorm:"index:idx_proxies_status"`
+	Pinned         bool        `json:"pinned"` // 是否置顶
+	LatestTestTime *time.Time  `json:"latest_test_time"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
 }
