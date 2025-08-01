@@ -45,11 +45,12 @@ type ProxyRepository interface {
 	FindByName(name string) (*model.Proxy, error)
 	Create(proxy *model.Proxy) error
 	BatchCreate(proxies []*model.Proxy) error
+	BatchUpdateProxyStatus(proxyIDs []uint, status model.ProxyStatus) error
+	BatchUpdateProxyConfig(proxies []*model.Proxy) error
 	Update(proxy *model.Proxy) error
 	UpdateSpeedTestInfo(proxy *model.Proxy) error
 	UpdateProxyConfig(proxy *model.Proxy) error
 	UpdateProxyStatus(proxy *model.Proxy) error
-	BatchUpdateProxyStatus(proxyIDs []uint, status model.ProxyStatus) error
 	PinProxy(id uint, pin bool) error
 	Delete(id uint) error
 	GetTypes(types *[]string) error
@@ -203,6 +204,10 @@ func (r *GormProxyRepository) Create(proxy *model.Proxy) error {
 
 // BatchCreate 批量创建代理服务器
 func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
+	if len(proxies) == 0 {
+		return nil
+	}
+
 	uniqueProxies := make([]*model.Proxy, 0)
 	exist := make(map[string]bool)
 	for _, proxy := range proxies {
@@ -214,10 +219,26 @@ func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d", proxy.Domain, proxy.Port))
 		}
 	}
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}),
-	}).Create(uniqueProxies).Error
+
+	// 分批处理，避免PostgreSQL 65535参数限制
+	// 每个代理大约需要8-10个参数，安全批次大小设为500
+	batchSize := 500
+	for i := 0; i < len(uniqueProxies); i += batchSize {
+		end := i + batchSize
+		if end > len(uniqueProxies) {
+			end = len(uniqueProxies)
+		}
+
+		batch := uniqueProxies[i:end]
+		if err := r.db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}),
+		}).Create(batch).Error; err != nil {
+			return fmt.Errorf("批量创建代理批次 %d-%d 失败: %w", i, end, err)
+		}
+	}
+
+	return nil
 }
 
 // Update 更新代理服务器
@@ -349,4 +370,31 @@ func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64,
 		Where("subscription_id = ?", subscriptionID).
 		Count(&count).Error
 	return count, err
+}
+
+// BatchUpdateProxyConfig 在事务中批量更新代理服务器配置
+func (r *GormProxyRepository) BatchUpdateProxyConfig(proxies []*model.Proxy) error {
+	if len(proxies) == 0 {
+		return nil
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 使用批量更新减少数据库IO
+		for _, proxy := range proxies {
+			if err := tx.Model(proxy).
+				Select("name", "type", "config", "subscription_id", "status", "updated_at").
+				Updates(map[string]interface{}{
+					"name":            proxy.Name,
+					"type":            proxy.Type,
+					"config":          proxy.Config,
+					"subscription_id": proxy.SubscriptionID,
+					"status":          proxy.Status,
+					"updated_at":      time.Now(),
+				}).Error; err != nil {
+				log.Errorln(fmt.Sprintf("事务中更新代理 %d 配置失败: %v", proxy.ID, err))
+				continue
+			}
+		}
+		return nil
+	})
 }

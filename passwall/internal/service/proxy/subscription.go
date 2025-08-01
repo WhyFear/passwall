@@ -406,13 +406,11 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 
 	// 批量更新已存在的代理
 	if len(toUpdate) > 0 {
-		for _, proxy := range toUpdate {
-			if err := s.proxyRepo.UpdateProxyConfig(proxy); err != nil {
-				log.Errorln("更新代理配置失败[%s]: %v", proxy.Name, err)
-				continue
-			}
+		if err := s.proxyRepo.BatchUpdateProxyConfig(toUpdate); err != nil {
+			log.Errorln("批量更新代理配置失败: %v", err)
+			return err
 		}
-		log.Infoln("更新了 %d 个代理", len(toUpdate))
+		log.Infoln("批量更新了 %d 个代理", len(toUpdate))
 	}
 
 	// 更新订阅状态
