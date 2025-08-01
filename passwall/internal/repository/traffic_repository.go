@@ -67,9 +67,9 @@ func (r *GormTrafficRepository) FindLatestByProxyID(proxyID uint) (*model.Traffi
 // FindAll 查找所有流量统计记录
 func (r *GormTrafficRepository) FindAll() ([]*model.TrafficStatistics, error) {
 	var traffics []*model.TrafficStatistics
-	result := r.db.Find(&traffics)
-	if result.Error != nil {
-		return nil, result.Error
+	err := r.db.Find(&traffics).Error
+	if err != nil {
+		return nil, err
 	}
 	return traffics, nil
 }

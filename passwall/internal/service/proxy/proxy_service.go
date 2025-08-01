@@ -124,13 +124,7 @@ func (s *DefaultProxyService) GetTypes() ([]string, error) {
 	return types, err
 }
 func (s *DefaultProxyService) PinProxy(id uint, pin bool) error {
-	err := SafeDBOperation(func() error {
-		return s.proxyRepo.PinProxy(id, pin)
-	})
-	if err != nil {
-		return err
-	}
-	return nil
+	return s.proxyRepo.PinProxy(id, pin)
 }
 
 func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) error {
@@ -156,9 +150,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 			return err
 		}
 		proxy.Status = model.ProxyStatusBanned
-		err = SafeDBOperation(func() error {
-			return s.proxyRepo.UpdateProxyStatus(proxy)
-		})
+		err = s.proxyRepo.UpdateProxyStatus(proxy)
 		if err != nil {
 			errMsg := fmt.Sprintf("更新代理状态失败：%v", err)
 			log.Errorln(errMsg)
@@ -185,15 +177,16 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 
 	log.Infoln(fmt.Sprintf("找到 %d 个代理", len(allProxies)))
 	s.taskManager.UpdateTotal(task.TaskTypeBanProxy, len(allProxies))
-	bannedCount := 0
+	// 收集需要封禁的代理ID
+	proxiesToBan := make([]uint, 0)
 
-	// 遍历所有代理，执行测试并更新状态
+	// 遍历所有代理，收集需要封禁的代理
 	for i, proxy := range allProxies {
 		// 检查任务是否被取消
 		select {
 		case <-taskCtx.Done():
 			log.Warnln("批量封禁代理任务被取消")
-			finishMessage = fmt.Sprintf("任务被取消，共封禁 %d 个代理", bannedCount)
+			finishMessage = fmt.Sprintf("任务被取消，共封禁 %d 个代理", len(proxiesToBan))
 			return nil
 		default:
 		}
@@ -234,21 +227,22 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		successRate, _ = strconv.ParseFloat(strconv.FormatFloat(successRate, 'f', 2, 64), 64)
 		if successRate <= req.SuccessRateThreshold {
 			log.Infoln("代理 %d 的成功数为 %v，成功率为 %.2f，低于阈值 %v，将被封禁", proxy.ID, successCount, successRate, req.SuccessRateThreshold)
-			bannedCount++
-			proxy.Status = model.ProxyStatusBanned
-			err = SafeDBOperation(func() error {
-				return s.proxyRepo.UpdateProxyStatus(proxy)
-			})
-			if err != nil {
-				log.Errorln("更新代理状态失败：%v", err)
-				continue
-			}
+			proxiesToBan = append(proxiesToBan, proxy.ID)
 		}
 
 		// 更新进度
 		s.taskManager.UpdateProgress(task.TaskTypeBanProxy, i+1, "")
 	}
-	log.Infoln("处理完成，共封禁 %d 个代理,共计 %d 个代理", bannedCount, len(allProxies))
+
+	// 批量更新需要封禁的代理状态
+	if len(proxiesToBan) > 0 {
+		if err := s.proxyRepo.BatchUpdateProxyStatus(proxiesToBan, model.ProxyStatusBanned); err != nil {
+			log.Errorln("批量更新代理状态失败：%v", err)
+		} else {
+			log.Infoln("批量封禁了 %d 个代理", len(proxiesToBan))
+		}
+	}
+	log.Infoln("处理完成，共封禁 %d 个代理,共计 %d 个代理", len(proxiesToBan), len(allProxies))
 
 	return nil
 }

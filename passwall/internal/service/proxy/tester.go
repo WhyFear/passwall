@@ -238,10 +238,7 @@ func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
 			log.Errorln("测试代理过程中发生panic[代理ID:%d]: %v", p.ID, r)
 			p.Status = model.ProxyStatusUnknowError
 
-			// 使用安全的数据库操作函数
-			if err := SafeDBOperation(func() error {
-				return t.proxyRepo.UpdateSpeedTestInfo(p)
-			}); err != nil {
+			if err := t.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 				log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 			}
 		}
@@ -254,10 +251,7 @@ func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
 		log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
 		p.Status = model.ProxyStatusFailed
 
-		// 使用安全的数据库操作函数
-		if err := SafeDBOperation(func() error {
-			return t.proxyRepo.UpdateSpeedTestInfo(p)
-		}); err != nil {
+		if err := t.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 			log.Errorln("更新代理状态失败[代理ID:%d]: %v", p.ID, err)
 		}
 		return
@@ -278,25 +272,18 @@ func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
 		p.Status = model.ProxyStatusFailed
 	}
 
-	// 使用安全的数据库操作函数进行批量操作
-	if err := SafeDBOperation(func() error {
-		// 保存测速历史记录
-		speedTestHistory := &model.SpeedTestHistory{
-			ProxyID:       p.ID,
-			Ping:          result.Ping,
-			DownloadSpeed: result.DownloadSpeed,
-			UploadSpeed:   result.UploadSpeed,
-			TestTime:      testTime,
-			CreatedAt:     time.Now(),
-		}
-		if err := t.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
-			log.Errorln("保存测速历史记录失败: %v", err)
-			return err
-		}
-
-		// 保存代理状态
-		return t.proxyRepo.UpdateSpeedTestInfo(p)
-	}); err != nil {
+	// 保存测速历史记录
+	speedTestHistory := &model.SpeedTestHistory{
+		ProxyID:       p.ID,
+		Ping:          result.Ping,
+		DownloadSpeed: result.DownloadSpeed,
+		UploadSpeed:   result.UploadSpeed,
+		TestTime:      testTime,
+		CreatedAt:     time.Now(),
+	}
+	if err := t.speedTestHistoryRepo.Create(speedTestHistory); err != nil {
+		log.Errorln("保存测速历史记录失败: %v", err)
+	} else if err := t.proxyRepo.UpdateSpeedTestInfo(p); err != nil {
 		log.Errorln("更新代理数据失败[代理ID:%d]: %v", p.ID, err)
 	}
 }
