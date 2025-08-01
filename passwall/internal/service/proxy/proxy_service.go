@@ -124,13 +124,7 @@ func (s *DefaultProxyService) GetTypes() ([]string, error) {
 	return types, err
 }
 func (s *DefaultProxyService) PinProxy(id uint, pin bool) error {
-	err := SafeDBOperation(func() error {
-		return s.proxyRepo.PinProxy(id, pin)
-	})
-	if err != nil {
-		return err
-	}
-	return nil
+	return s.proxyRepo.PinProxy(id, pin)
 }
 
 func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) error {
@@ -156,9 +150,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 			return err
 		}
 		proxy.Status = model.ProxyStatusBanned
-		err = SafeDBOperation(func() error {
-			return s.proxyRepo.UpdateProxyStatus(proxy)
-		})
+		err = s.proxyRepo.UpdateProxyStatus(proxy)
 		if err != nil {
 			errMsg := fmt.Sprintf("更新代理状态失败：%v", err)
 			log.Errorln(errMsg)
@@ -236,9 +228,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 			log.Infoln("代理 %d 的成功数为 %v，成功率为 %.2f，低于阈值 %v，将被封禁", proxy.ID, successCount, successRate, req.SuccessRateThreshold)
 			bannedCount++
 			proxy.Status = model.ProxyStatusBanned
-			err = SafeDBOperation(func() error {
-				return s.proxyRepo.UpdateProxyStatus(proxy)
-			})
+			err = s.proxyRepo.UpdateProxyStatus(proxy)
 			if err != nil {
 				log.Errorln("更新代理状态失败：%v", err)
 				continue

@@ -274,9 +274,7 @@ func (s *StatisticsService) processCloseConns() {
 					UploadTotal:   node.Upload,
 					DownloadTotal: node.Download,
 				}
-				err := proxy.SafeDBOperation(func() error {
-					return s.trafficRepo.Create(trafficStatistics)
-				})
+				err := s.trafficRepo.Create(trafficStatistics)
 				if err != nil {
 					log.Errorln("创建节点流量失败，节点信息: %v, 错误: %v", node, err)
 					continue
@@ -285,9 +283,7 @@ func (s *StatisticsService) processCloseConns() {
 			} else {
 				trafficStatistics.UploadTotal += node.Upload
 				trafficStatistics.DownloadTotal += node.Download
-				err := proxy.SafeDBOperation(func() error {
-					return s.trafficRepo.UpdateTrafficByProxyID(trafficStatistics)
-				})
+				err := s.trafficRepo.UpdateTrafficByProxyID(trafficStatistics)
 				if err != nil {
 					log.Errorln("更新节点流量失败，节点信息: %v, 错误: %v", trafficStatistics, err)
 					continue
