@@ -49,6 +49,7 @@ type ProxyRepository interface {
 	UpdateSpeedTestInfo(proxy *model.Proxy) error
 	UpdateProxyConfig(proxy *model.Proxy) error
 	UpdateProxyStatus(proxy *model.Proxy) error
+	BatchUpdateProxyStatus(proxyIDs []uint, status model.ProxyStatus) error
 	PinProxy(id uint, pin bool) error
 	Delete(id uint) error
 	GetTypes(types *[]string) error
@@ -258,6 +259,20 @@ func (r *GormProxyRepository) UpdateProxyStatus(proxy *model.Proxy) error {
 		Select("status", "updated_at").
 		Updates(map[string]interface{}{
 			"status":     proxy.Status,
+			"updated_at": time.Now(),
+		}).Error
+}
+
+// BatchUpdateProxyStatus 批量更新代理服务器的状态
+func (r *GormProxyRepository) BatchUpdateProxyStatus(proxyIDs []uint, status model.ProxyStatus) error {
+	if len(proxyIDs) == 0 {
+		return nil
+	}
+
+	return r.db.Model(&model.Proxy{}).
+		Where("id IN ?", proxyIDs).
+		Updates(map[string]interface{}{
+			"status":     status,
 			"updated_at": time.Now(),
 		}).Error
 }
