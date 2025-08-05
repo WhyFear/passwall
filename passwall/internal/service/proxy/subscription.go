@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/metacubex/mihomo/log"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/metacubex/mihomo/log"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -345,12 +346,12 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	exist := make(map[string]bool)
 
 	for _, proxy := range newProxies {
-		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port)
+		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port) + ":" + proxy.Password
 		if !exist[key] {
 			exist[key] = true
 			uniqueProxies = append(uniqueProxies, proxy)
 		} else {
-			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d", proxy.Domain, proxy.Port))
+			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password))
 		}
 	}
 
@@ -369,7 +370,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 		}
 
 		// 检查是否已存在相同的代理
-		oldProxy, err := s.proxyRepo.FindByDomainAndPort(newProxy.Domain, newProxy.Port)
+		oldProxy, err := s.proxyRepo.FindByDomainPortPassword(newProxy.Domain, newProxy.Port, newProxy.Password)
 		if err != nil {
 			log.Errorln("查找旧代理失败: %v", err)
 			continue
