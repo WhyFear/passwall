@@ -3,10 +3,11 @@ package repository
 import (
 	"errors"
 	"fmt"
-	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
 	"strconv"
 	"time"
+
+	"github.com/metacubex/mihomo/log"
 
 	"gorm.io/gorm/clause"
 
@@ -40,7 +41,7 @@ type ProxyRepository interface {
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
 	FindByFilter(filter *ProxyFilter) ([]*model.Proxy, error)
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
-	FindByDomainAndPort(domain string, port int) (*model.Proxy, error)
+	FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error)
 	FindPage(query PageQuery) (*PageResult, error)
 	FindByName(name string) (*model.Proxy, error)
 	Create(proxy *model.Proxy) error
@@ -122,9 +123,9 @@ func (r *GormProxyRepository) FindByStatus(status model.ProxyStatus) ([]*model.P
 	return proxies, nil
 }
 
-func (r *GormProxyRepository) FindByDomainAndPort(domain string, port int) (*model.Proxy, error) {
+func (r *GormProxyRepository) FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error) {
 	var proxy model.Proxy
-	result := r.db.Where("domain = ? AND port = ?", domain, port).First(&proxy)
+	result := r.db.Where("domain = ? AND port = ? AND password = ?", domain, port, password).First(&proxy)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -211,12 +212,12 @@ func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 	uniqueProxies := make([]*model.Proxy, 0)
 	exist := make(map[string]bool)
 	for _, proxy := range proxies {
-		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port)
+		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port) + ":" + proxy.Password
 		if !exist[key] {
 			exist[key] = true
 			uniqueProxies = append(uniqueProxies, proxy)
 		} else {
-			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d", proxy.Domain, proxy.Port))
+			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password))
 		}
 	}
 
@@ -231,7 +232,7 @@ func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 
 		batch := uniqueProxies[i:end]
 		if err := r.db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}},
+			Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}, {Name: "password"}},
 			DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}),
 		}).Create(batch).Error; err != nil {
 			return fmt.Errorf("批量创建代理批次 %d-%d 失败: %w", i, end, err)

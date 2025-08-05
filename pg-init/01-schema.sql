@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS proxies
     name             TEXT      NOT NULL,
     domain           TEXT      NOT NULL,
     port             INTEGER   NOT NULL CHECK (port >= 0 AND port <= 65535),
+    password VARCHAR(255),
     type             TEXT      NOT NULL,
     config           TEXT      NOT NULL,
     ping             INTEGER            DEFAULT 0,
@@ -37,7 +38,7 @@ CREATE TABLE IF NOT EXISTS proxies
 );
 
 -- 创建组合唯一索引
-CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_port ON proxies (domain, port);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_port_password ON proxies (domain, port, password);
 
 -- 核心索引（基于前端查询模式的最小化索引）
 CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies (status);
