@@ -41,8 +41,9 @@ type Proxy struct {
 	ID             uint        `json:"id" gorm:"primaryKey;autoIncrement"`
 	SubscriptionID *uint       `json:"subscription_id"`
 	Name           string      `json:"name"`
-	Domain         string      `json:"domain" gorm:"uniqueIndex:idx_domain_port"`
-	Port           int         `json:"port" gorm:"uniqueIndex:idx_domain_port"`
+	Domain         string      `json:"domain" gorm:"uniqueIndex:idx_domain_port_password"`
+	Port           int         `json:"port" gorm:"uniqueIndex:idx_domain_port_password"`
+	Password       string      `json:"password" gorm:"uniqueIndex:idx_domain_port_password"` // 新增的password字段
 	Type           ProxyType   `json:"type" gorm:"index:idx_proxies_type"`
 	Config         string      `json:"config"`         // JSON格式存储
 	Ping           int         `json:"ping"`           // 延迟(ms)

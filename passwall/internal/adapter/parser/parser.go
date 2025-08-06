@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/metacubex/mihomo/log"
-	"passwall/internal/util"
 	"strconv"
 
+	"github.com/metacubex/mihomo/log"
+
 	"passwall/internal/model"
+	"passwall/internal/util"
 )
 
 // Parser 解析器接口
@@ -155,6 +156,9 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 			}
 		}
 	}
+
+	// 提取密码字段用于唯一键区分
+	singleProxy.Password = util.GetPasswordFromConfig(singleProxy.Type, proxy)
 
 	// 整个proxy是一个map，需要转换成json格式
 	jsonData, err := json.Marshal(proxy)

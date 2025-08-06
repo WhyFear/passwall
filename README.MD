@@ -17,7 +17,7 @@ PassWall 是一个功能强大的代理服务器管理工具，支持多种代�
 ### 1. 多协议支持
 
 - VMess、VLess、SS、SSR、Trojan、Socks5等多种协议
-- Hysteria、Tuic、WireGuard等新型协议
+- Hysteria、Tuic等新型协议
 
 ### 2. 订阅管理
 
@@ -65,8 +65,8 @@ server:
   address: "0.0.0.0:8080"  # 服务器监听地址
 
 database:
-  driver: "sqlite"  # 数据库类型
-  dsn: "passwall.db"  # 数据库连接字符串
+  driver: "postgres"
+  dsn: "host=localhost user=passwall password=passwall port=5432 dbname=passwall sslmode=disable TimeZone=Asia/Shanghai"  # 按实际情况调整
 
 proxy:
   enabled: false  # 是否启用代理(仅在更新订阅时生效)
@@ -98,10 +98,10 @@ cron_jobs: # 定时任务配置
     concurrent: 30
 ```
 
-### 使用预构建镜像
+### 使用docker
 
 ```bash
-# 拉取最新镜像
+# 拉取最新镜像，postgres请自己部署
 docker pull pakro888/passwall:latest
 
 # 运行容器
@@ -134,6 +134,25 @@ services:
     environment:
       - PASSWALL_TOKEN=your_token_here
       - CONFIG_PATH=/app/config.yaml
+      - TZ=Asia/Shanghai
+    # 若使用postgres，请取消注释
+    depends_on:
+      - postgres
+
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: passwall-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./pg-init:/docker-entrypoint-initdb.d
+    environment:
+      - POSTGRES_USER=passwall
+      - POSTGRES_PASSWORD=passwall
+      - POSTGRES_DB=passwall
       - TZ=Asia/Shanghai
 ```
 
