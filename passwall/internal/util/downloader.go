@@ -69,7 +69,7 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 	resp, err := client.Do(req)
 	if err != nil {
 		// 检查是否是超时错误
-		if ctx.Err() == context.DeadlineExceeded {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, errors.New("request timed out after " + options.Timeout.String())
 		}
 		return nil, err

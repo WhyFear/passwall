@@ -284,7 +284,7 @@ func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subsc
 	if err != nil {
 		log.Errorln("下载订阅内容失败: %v", err)
 
-		subscription.Status = model.SubscriptionStatusExpired
+		subscription.Status = model.SubscriptionStatusInvalid
 		if err := s.subscriptionRepo.UpdateStatus(subscription); err != nil {
 			log.Errorln("更新订阅状态失败: %v", err)
 		}
