@@ -479,6 +479,7 @@ const NodesPage = () => {
     width: 120,
     ellipsis: true,
     sorter: true,
+    filterMode: 'tree',
     filters: nodeTypes.length > 0 ? nodeTypes : [{text: 'vmess', value: 'vmess'}, {text: 'vless', value: 'vless'}],
     filterMultiple: true,
   }, {
