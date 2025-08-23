@@ -26,6 +26,7 @@ type Services struct {
 	GeneratorFactory        generator.GeneratorFactory
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
 	StatisticsService       *traffic.StatisticsService
+	IPQualityService        *IPQualityService
 }
 
 // NewServices 初始化所有服务
@@ -52,7 +53,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 
 	// 创建服务
 	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.Proxy, parserFactory, taskManager)
-	proxyService := proxy.NewProxyService(repos.Proxy, repos.SpeedTestHistory, taskManager)
+	proxyService := proxy.NewProxyService(repos.Proxy, repos.SpeedTestHistory, taskManager, repos.Traffic)
 	speedTestHistoryService := NewSpeedTestHistoryService(repos.SpeedTestHistory)
 
 	// 创建代理测试服务
