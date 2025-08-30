@@ -9,9 +9,11 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/glebarez/sqlite v1.11.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/jarcoal/httpmock v1.4.1
 	github.com/metacubex/mihomo v1.19.10
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.10.0
+	github.com/tidwall/gjson v1.18.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.25.10
 )
@@ -22,9 +24,9 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.6.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/oschwald/geoip2-golang v1.13.0 // indirect
-	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 )
 
 require (

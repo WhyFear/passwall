@@ -13,11 +13,8 @@ import (
 
 // DetectIPQualityRequest 检测IP质量请求
 type DetectIPQualityRequest struct {
-	IP                     string `json:"ip" binding:"required"`
-	EnableGeolocation      *bool  `json:"enable_geolocation,omitempty"`
-	EnableRiskAssessment   *bool  `json:"enable_risk_assessment,omitempty"`
-	EnableServiceDetection *bool  `json:"enable_service_detection,omitempty"`
-	Timeout                *int   `json:"timeout,omitempty"` // 超时时间（秒）
+	IP      string `json:"ip" binding:"required"`
+	ProxyID uint   `json:"proxy_id" binding:"required"`
 }
 
 // BatchDetectIPQualityRequest 批量检测IP质量请求
@@ -52,7 +49,7 @@ func DetectIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc
 	return func(c *gin.Context) {
 		var req DetectIPQualityRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
 				"status_msg":  "请求参数无效",
@@ -62,16 +59,11 @@ func DetectIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc
 
 		// 创建上下文
 		ctx := c.Request.Context()
-		if req.Timeout != nil && *req.Timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, time.Duration(*req.Timeout)*time.Second)
-			defer cancel()
-		}
 
 		// 执行IP质量检测
 		result, err := ipQualityService.DetectIPQuality(ctx, req.IP)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
 				"status_msg":  "IP质量检测失败",
@@ -88,7 +80,7 @@ func GetIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.Param("ip")
 		if ip == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
 				"status_msg":  "缺少IP地址参数",
@@ -111,7 +103,7 @@ func GetIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc {
 		// 执行IP质量检测
 		result, err := ipQualityService.DetectIPQuality(ctx, ip)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
 				"status_msg":  "IP质量检测失败",

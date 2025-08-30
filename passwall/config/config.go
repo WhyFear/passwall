@@ -62,6 +62,15 @@ type CronJob struct {
 	ReloadSubscribeConfig bool            `yaml:"reload_subscribe_config"`
 	TestProxy             TestProxyConfig `yaml:"test_proxy"`
 	AutoBan               BanProxyConfig  `yaml:"auto_ban"`
+	Webhook               WebhookConfig   `yaml:"webhook"`
+}
+
+type WebhookConfig struct {
+	Name   string `yaml:"name"`
+	Method string `yaml:"method"`
+	URL    string `yaml:"url"`
+	Header string `yaml:"header"`
+	Body   string `yaml:"body"`
 }
 
 // LoadConfig 从文件加载配置

@@ -100,3 +100,21 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 
 	return content, nil
 }
+
+func GetUrl(client *http.Client, url string) ([]byte, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("HTTP request failed with status: " + resp.Status)
+	}
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
+}
