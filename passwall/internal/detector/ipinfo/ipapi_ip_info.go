@@ -40,9 +40,12 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error
 	// 提取风险分数, 格式为0.0067 (Low)
 	scoreText := result.Get("company.abuser_score").String()
 	// 空格分隔
-	scoreTextList := strings.Split(scoreText, " ")
-	if len(scoreTextList) > 0 {
-		score, err = strconv.ParseFloat(scoreTextList[0], 64)
+	spaceIndex := strings.Index(scoreText, " ")
+	scoreString := scoreText[:spaceIndex]
+	scoreDesc := scoreText[spaceIndex+1:]
+	// 解析风险分数
+	if len(scoreString) > 0 {
+		score, err = strconv.ParseFloat(scoreString, 64)
 		if err != nil {
 			log.Warnln("IPAPIRiskDetector Detect Atoi error: %v", err)
 		}
@@ -55,7 +58,7 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error
 		Risk: RiskResult{
 			ScoreFloat: score,
 			ScoreText:  scoreText,
-			IPRiskType: i.GetRiskType(scoreTextList[1]),
+			IPRiskType: i.GetRiskType(scoreDesc),
 		},
 		Geo: IPGeoInfo{
 			CountryCode: countryCode,

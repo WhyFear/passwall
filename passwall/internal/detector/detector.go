@@ -65,19 +65,23 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 
 	// 并发执行IP信息检测
 	if ipInfoEnabled {
+		wg.Add(1)
 		go func() {
-			wg.Add(1)
 			defer wg.Done()
-			ipInfoResult, ipInfoErr = dm.ipInfoManager.DetectByAll(ipProxy)
+			result, err := dm.ipInfoManager.DetectByAll(ipProxy)
+			ipInfoResult = result
+			ipInfoErr = err
 		}()
 	}
 
 	// 并发执行解锁检测
 	if unlockEnable {
+		wg.Add(1)
 		go func() {
-			wg.Add(1)
 			defer wg.Done()
-			unlockResult, unlockErr = dm.unlockCheckManager.CheckByAll(ipProxy)
+			result, err := dm.unlockCheckManager.CheckByAll(ipProxy)
+			unlockResult = result
+			unlockErr = err
 		}()
 	}
 
