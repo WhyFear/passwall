@@ -49,7 +49,7 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 		return nil, err
 	}
 	if baseInfo.IPV4 == "" && baseInfo.IPV6 == "" {
-		return nil, errors.New("both IPV4 and IPV6 are empty")
+		return nil, errors.New("both IPV4 and IPV6 are empty, maybe the proxy is not working")
 	}
 	if baseInfo.IPV4 == "" {
 		ipProxy.IP = baseInfo.IPV6

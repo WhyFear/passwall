@@ -12,7 +12,7 @@ import (
 type IPAddressRepository interface {
 	FindByID(id uint) (*model.IPAddress, error)
 	FindByIP(ip string) (*model.IPAddress, error)
-	CreateOrUpdate(ipAddress *model.IPAddress) error
+	CreateOrIgnore(ipAddress *model.IPAddress) error
 }
 
 // GormIPAddressRepository 基于GORM的IP地址仓库实现
@@ -52,7 +52,7 @@ func (r *GormIPAddressRepository) FindByIP(ip string) (*model.IPAddress, error) 
 }
 
 // CreateOrUpdate 创建或更新IP地址
-func (r *GormIPAddressRepository) CreateOrUpdate(ipAddress *model.IPAddress) error {
+func (r *GormIPAddressRepository) CreateOrIgnore(ipAddress *model.IPAddress) error {
 	if ipAddress == nil {
 		return errors.New("ip address cannot be nil")
 	}
@@ -65,8 +65,8 @@ func (r *GormIPAddressRepository) CreateOrUpdate(ipAddress *model.IPAddress) err
 
 	if existing != nil {
 		// 更新现有记录
-		ipAddress.UpdatedAt = time.Now()
-		return r.db.Model(existing).Updates(ipAddress).Error
+		ipAddress.ID = existing.ID
+		return nil
 	}
 
 	// 创建新记录

@@ -14,6 +14,7 @@ type IPUnlockInfoRepository interface {
 	FindByIPAddressID(ipAddressID uint) ([]*model.IPUnlockInfo, error)
 	FindByIPAddressIDAndAppName(ipAddressID uint, appName string) (*model.IPUnlockInfo, error)
 	CreateOrUpdate(ipUnlockInfo *model.IPUnlockInfo) error
+	BatchCreateOrUpdate(ipUnlockInfos []*model.IPUnlockInfo) error
 }
 
 // GormIPUnlockInfoRepository 基于GORM的IP解锁信息仓库实现
@@ -84,4 +85,41 @@ func (r *GormIPUnlockInfoRepository) CreateOrUpdate(ipUnlockInfo *model.IPUnlock
 	ipUnlockInfo.CreatedAt = time.Now()
 	ipUnlockInfo.UpdatedAt = time.Now()
 	return r.db.Create(ipUnlockInfo).Error
+}
+
+// BatchCreateOrUpdate 批量创建或更新IP解锁信息
+func (r *GormIPUnlockInfoRepository) BatchCreateOrUpdate(ipUnlockInfos []*model.IPUnlockInfo) error {
+	if len(ipUnlockInfos) == 0 {
+		return nil
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, ipUnlockInfo := range ipUnlockInfos {
+			if ipUnlockInfo == nil {
+				continue
+			}
+
+			// 先尝试查找是否已存在
+			existing, err := r.FindByIPAddressIDAndAppName(ipUnlockInfo.IPAddressesID, ipUnlockInfo.AppName)
+			if err != nil {
+				return err
+			}
+
+			if existing != nil {
+				// 更新现有记录
+				ipUnlockInfo.UpdatedAt = time.Now()
+				if err := tx.Model(existing).Updates(ipUnlockInfo).Error; err != nil {
+					return err
+				}
+			} else {
+				// 创建新记录
+				ipUnlockInfo.CreatedAt = time.Now()
+				ipUnlockInfo.UpdatedAt = time.Now()
+				if err := tx.Create(ipUnlockInfo).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }

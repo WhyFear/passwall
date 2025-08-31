@@ -14,7 +14,6 @@ type ProxyIPAddressRepository interface {
 	FindByProxyID(proxyID uint) ([]*model.ProxyIPAddress, error)
 	FindByIPAddressID(ipAddressID uint) ([]*model.ProxyIPAddress, error)
 	CreateOrUpdate(proxyIPAddress *model.ProxyIPAddress) error
-	DeleteByProxyIDAndIPAddressID(proxyID, ipAddressID uint) error
 }
 
 // GormProxyIPAddressRepository 基于GORM的代理IP关联仓库实现
@@ -66,6 +65,7 @@ func (r *GormProxyIPAddressRepository) CreateOrUpdate(proxyIPAddress *model.Prox
 		return errors.New("proxy IP address cannot be nil")
 	}
 
+	// 先查proxy关联的所有latest记录，然后
 	// 先尝试查找是否已存在
 	var existing model.ProxyIPAddress
 	result := r.db.Where("proxy_id = ? AND ip_addresses_id = ?",
@@ -85,9 +85,4 @@ func (r *GormProxyIPAddressRepository) CreateOrUpdate(proxyIPAddress *model.Prox
 	proxyIPAddress.CreatedAt = time.Now()
 	proxyIPAddress.UpdatedAt = time.Now()
 	return r.db.Create(proxyIPAddress).Error
-}
-
-// DeleteByProxyIDAndIPAddressID 根据代理ID和IP地址ID删除关联
-func (r *GormProxyIPAddressRepository) DeleteByProxyIDAndIPAddressID(proxyID, ipAddressID uint) error {
-	return r.db.Where("proxy_id = ? AND ip_addresses_id = ?", proxyID, ipAddressID).Delete(&model.ProxyIPAddress{}).Error
 }

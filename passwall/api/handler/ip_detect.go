@@ -13,8 +13,7 @@ import (
 
 // DetectIPQualityRequest 检测IP质量请求
 type DetectIPQualityRequest struct {
-	IP      string `json:"ip" binding:"required"`
-	ProxyID uint   `json:"proxy_id" binding:"required"`
+	ProxyID uint `json:"proxy_id" binding:"required"`
 }
 
 // BatchDetectIPQualityRequest 批量检测IP质量请求
@@ -27,25 +26,8 @@ type BatchDetectIPQualityRequest struct {
 	MaxConcurrency         *int     `json:"max_concurrency,omitempty"`
 }
 
-// BatchDetectResponse 批量检测响应
-type BatchDetectResponse struct {
-	TotalCount   int                        `json:"total_count"`
-	SuccessCount int                        `json:"success_count"`
-	FailureCount int                        `json:"failure_count"`
-	Results      []*service.IPQualityResult `json:"results"`
-	Failures     []BatchDetectFailure       `json:"failures,omitempty"`
-	Duration     time.Duration              `json:"duration"`
-}
-
-// BatchDetectFailure 批量检测失败项
-type BatchDetectFailure struct {
-	IP    string `json:"ip"`
-	Error string `json:"error"`
-	Code  string `json:"code,omitempty"`
-}
-
 // DetectIPQuality 检测IP质量
-func DetectIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc {
+func DetectIPQuality(ipQualityService *service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req DetectIPQualityRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -76,7 +58,7 @@ func DetectIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc
 }
 
 // GetIPQuality 获取IP质量信息
-func GetIPQuality(ipQualityService *service.IPQualityService) gin.HandlerFunc {
+func GetIPQuality(ipQualityService *service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.Param("ip")
 		if ip == "" {

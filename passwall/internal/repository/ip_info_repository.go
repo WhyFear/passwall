@@ -14,6 +14,7 @@ type IPInfoRepository interface {
 	FindByIPAddressID(ipAddressID uint) ([]*model.IPInfo, error)
 	FindByIPAddressIDAndDetector(ipAddressID uint, detector string) (*model.IPInfo, error)
 	CreateOrUpdate(ipInfo *model.IPInfo) error
+	BatchCreateOrUpdate(ipInfos []*model.IPInfo) error
 }
 
 // GormIPInfoRepository 基于GORM的IP信息仓库实现
@@ -84,4 +85,41 @@ func (r *GormIPInfoRepository) CreateOrUpdate(ipInfo *model.IPInfo) error {
 	ipInfo.CreatedAt = time.Now()
 	ipInfo.UpdatedAt = time.Now()
 	return r.db.Create(ipInfo).Error
+}
+
+// BatchCreateOrUpdate 批量创建或更新IP信息
+func (r *GormIPInfoRepository) BatchCreateOrUpdate(ipInfos []*model.IPInfo) error {
+	if len(ipInfos) == 0 {
+		return nil
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, ipInfo := range ipInfos {
+			if ipInfo == nil {
+				continue
+			}
+
+			// 先尝试查找是否已存在
+			existing, err := r.FindByIPAddressIDAndDetector(ipInfo.IPAddressesID, ipInfo.Detector)
+			if err != nil {
+				return err
+			}
+
+			if existing != nil {
+				// 更新现有记录
+				ipInfo.UpdatedAt = time.Now()
+				if err := tx.Model(existing).Updates(ipInfo).Error; err != nil {
+					return err
+				}
+			} else {
+				// 创建新记录
+				ipInfo.CreatedAt = time.Now()
+				ipInfo.UpdatedAt = time.Now()
+				if err := tx.Create(ipInfo).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }

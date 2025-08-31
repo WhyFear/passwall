@@ -11,7 +11,7 @@ import (
 type IPAddress struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	IP        string    `json:"ip" gorm:"uniqueIndex;not null;type:varchar(45)"`
-	IPType    string    `json:"ip_type" gorm:"type:varchar(10)"`
+	IPType    uint      `json:"ip_type" gorm:"type:integer"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -22,6 +22,7 @@ type ProxyIPAddress struct {
 	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	ProxyID       uint      `json:"proxy_id" gorm:"not null;index"`
 	IPAddressesID uint      `json:"ip_addresses_id" gorm:"not null;index"`
+	Latest        bool      `json:"latest" gorm:"not null;default:true"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
