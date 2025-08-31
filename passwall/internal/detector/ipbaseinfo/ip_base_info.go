@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"passwall/internal/util"
+	"strings"
 	"sync"
 
 	"github.com/metacubex/mihomo/log"
@@ -52,8 +53,10 @@ func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
 				log.Infoln("IP服务 %s 获取IP失败: %v", svc.Name, err)
 				return
 			}
-			log.Infoln("IP服务 %s 获取IP成功: %s", svc.Name, ip)
-			results <- string(ip)
+			ipStr := strings.TrimSpace(string(ip))
+			ipStr = strings.Replace(ipStr, "\n", "", -1)
+			log.Infoln("IP服务 %s 获取IP成功: %s", svc.Name, ipStr)
+			results <- ipStr
 		}(service)
 	}
 
@@ -61,11 +64,27 @@ func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
 	close(results)
 
 	ipInfo := &IPBaseInfo{}
+	ipv4Map := make(map[string]int)
+	ipv6Map := make(map[string]int)
 
 	for ip := range results {
 		if ipInfo.IPV4 == "" && checkIPV4(ip) {
-			ipInfo.IPV4 = ip
+			ipv4Map[ip]++
 		} else if ipInfo.IPV6 == "" && checkIPV6(ip) {
+			ipv6Map[ip]++
+		}
+	}
+	var ipv4Count int
+	var ipv6Count int
+	for ip, count := range ipv4Map {
+		if count > ipv4Count {
+			ipv4Count = count
+			ipInfo.IPV4 = ip
+		}
+	}
+	for ip, count := range ipv6Map {
+		if count > ipv6Count {
+			ipv6Count = count
 			ipInfo.IPV6 = ip
 		}
 	}

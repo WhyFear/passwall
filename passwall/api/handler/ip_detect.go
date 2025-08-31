@@ -1,19 +1,16 @@
 package handler
 
 import (
-	"context"
 	"net/http"
-	"strconv"
-	"time"
-
+	"passwall/config"
 	"passwall/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-// DetectIPQualityRequest 检测IP质量请求
-type DetectIPQualityRequest struct {
-	ProxyID uint `json:"proxy_id" binding:"required"`
+// IPDetectRequest 检测IP质量请求
+type IPDetectRequest struct {
+	ProxyID uint `json:"proxy_id" form:"proxy_id" binding:"required"`
 }
 
 // BatchDetectIPQualityRequest 批量检测IP质量请求
@@ -27,9 +24,9 @@ type BatchDetectIPQualityRequest struct {
 }
 
 // DetectIPQuality 检测IP质量
-func DetectIPQuality(ipQualityService *service.IPDetectorService) gin.HandlerFunc {
+func DetectIPQuality(config config.CheckConfig, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req DetectIPQualityRequest
+		var req IPDetectRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
@@ -39,60 +36,53 @@ func DetectIPQuality(ipQualityService *service.IPDetectorService) gin.HandlerFun
 			return
 		}
 
-		// 创建上下文
-		ctx := c.Request.Context()
-
 		// 执行IP质量检测
-		result, err := ipQualityService.DetectIPQuality(ctx, req.IP)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusInternalServerError,
-				"status_msg":  "IP质量检测失败",
+		go func() {
+			_ = ipDetectorService.Detect(&service.IPDetectorReq{
+				ProxyID:         req.ProxyID,
+				Enabled:         config.Enable,
+				IPInfoEnable:    config.IPInfo.Enable,
+				APPUnlockEnable: config.AppUnlock.Enable,
+				Refresh:         true,
 			})
-			return
-		}
+		}()
 
-		c.JSON(http.StatusOK, result)
+		c.JSON(http.StatusOK, gin.H{
+			"result":      "success",
+			"status_code": http.StatusOK,
+			"status_msg":  "IP Check Started",
+		})
 	}
 }
 
 // GetIPQuality 获取IP质量信息
-func GetIPQuality(ipQualityService *service.IPDetectorService) gin.HandlerFunc {
+func GetIPQuality(ipQualityService service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.Param("ip")
-		if ip == "" {
+		var req IPDetectRequest
+		if err := c.ShouldBindQuery(&req); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
-				"status_msg":  "缺少IP地址参数",
+				"status_msg":  "请求参数无效",
 			})
 			return
 		}
-
-		// 解析查询参数
-		timeout := 60 // 默认60秒超时
-		if timeoutStr := c.Query("timeout"); timeoutStr != "" {
-			if t, err := strconv.Atoi(timeoutStr); err == nil && t > 0 {
-				timeout = t
-			}
-		}
-
-		// 创建上下文
-		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(timeout)*time.Second)
-		defer cancel()
-
-		// 执行IP质量检测
-		result, err := ipQualityService.DetectIPQuality(ctx, ip)
+		resp, err := ipQualityService.GetInfo(&service.IPDetectorReq{
+			ProxyID: req.ProxyID,
+		})
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
-				"status_msg":  "IP质量检测失败",
+				"status_msg":  "get ip info failed",
 			})
 			return
 		}
-
-		c.JSON(http.StatusOK, result)
+		c.JSON(http.StatusOK, gin.H{
+			"result":      "success",
+			"status_code": http.StatusOK,
+			"status_msg":  "get ip info success",
+			"data":        resp,
+		})
 	}
 }

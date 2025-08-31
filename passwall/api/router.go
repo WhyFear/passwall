@@ -91,8 +91,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 
 		// IP质量检测API
-		webGroup.POST("/ip_quality_detect", handler.DetectIPQuality(services.IPQualityService))
-		webGroup.GET("/ip_quality_detect/:ip", handler.GetIPQuality(services.IPQualityService))
+		webGroup.POST("/ip_quality_detect", handler.DetectIPQuality(cfg.Check, services.IPDetectorService))
+		webGroup.GET("/get_ip_quality", handler.GetIPQuality(services.IPDetectorService))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

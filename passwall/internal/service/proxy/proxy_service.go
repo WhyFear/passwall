@@ -34,7 +34,6 @@ type ProxyService interface {
 	// IP质量检测相关方法
 	DetectProxyIPQuality(ctx context.Context, proxyID uint) error
 	BatchDetectIPQuality(ctx context.Context, proxyIDs []uint) error
-	GetProxyIPQuality(proxyID uint) (*model.IPQualitySummary, error)
 }
 
 type DefaultProxyService struct {
@@ -343,40 +342,4 @@ func (s *DefaultProxyService) BatchDetectIPQuality(ctx context.Context, proxyIDs
 	}()
 
 	return nil
-}
-
-// GetProxyIPQuality 获取代理IP质量信息
-func (s *DefaultProxyService) GetProxyIPQuality(proxyID uint) (*model.IPQualitySummary, error) {
-	proxy, err := s.proxyRepo.FindByID(proxyID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find proxy: %w", err)
-	}
-
-	if s.ipQualityService == nil {
-		return nil, fmt.Errorf("IP quality service not available")
-	}
-
-	// 使用类型断言调用获取摘要方法
-	if ipqs, ok := s.ipQualityService.(interface {
-		GetCachedResult(ip string) interface{}
-	}); ok {
-		if cachedResult := ipqs.GetCachedResult(proxy.Domain); cachedResult != nil {
-			// 尝试转换为IPQualitySummary
-			if summary, ok := cachedResult.(interface {
-				GetSummary() *model.IPQualitySummary
-			}); ok {
-				return summary.GetSummary(), nil
-			}
-		}
-	}
-
-	// 如果没有缓存结果，返回默认摘要
-	return &model.IPQualitySummary{
-		OverallScore:      0,
-		Status:            model.IPQualityStatusUnknown,
-		StreamingCount:    0,
-		StreamingUnlocked: 0,
-		AICount:           0,
-		AIUnlocked:        0,
-	}, nil
 }

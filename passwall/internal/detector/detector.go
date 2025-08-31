@@ -6,9 +6,9 @@ import (
 	"passwall/internal/detector/ipinfo"
 	"passwall/internal/detector/unlockchecker"
 	"passwall/internal/model"
-	"sync"
 
 	"github.com/metacubex/mihomo/log"
+	"golang.org/x/sync/errgroup"
 )
 
 type DetectionResult struct {
@@ -58,41 +58,40 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	}
 
 	// 第二步：并发执行IP信息检测和解锁检测
-	var wg sync.WaitGroup
 	var ipInfoResult []*ipinfo.IPInfoResult
 	var unlockResult []*unlockchecker.CheckResult
-	var ipInfoErr, unlockErr error
+
+	g := &errgroup.Group{}
 
 	// 并发执行IP信息检测
 	if ipInfoEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		g.Go(func() error {
 			result, err := dm.ipInfoManager.DetectByAll(ipProxy)
+			if err != nil {
+				log.Errorln("DetectAll IPInfo error: %v", err)
+				return err
+			}
 			ipInfoResult = result
-			ipInfoErr = err
-		}()
+			return nil
+		})
 	}
 
 	// 并发执行解锁检测
 	if unlockEnable {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		g.Go(func() error {
 			result, err := dm.unlockCheckManager.CheckByAll(ipProxy)
+			if err != nil {
+				log.Errorln("DetectAll UnlockCheck error: %v", err)
+				return err
+			}
 			unlockResult = result
-			unlockErr = err
-		}()
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	// 检查并发执行中的错误
-	if ipInfoErr != nil {
-		log.Errorln("DetectAll IPInfo error: %v", ipInfoErr)
-	}
-	if unlockErr != nil {
-		log.Errorln("DetectAll UnlockCheck error: %v", unlockErr)
+	// 等待所有goroutine完成
+	if err := g.Wait(); err != nil {
+		log.Errorln("DetectAll error: %v", err)
 	}
 
 	return &DetectionResult{

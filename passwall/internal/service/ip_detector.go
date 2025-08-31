@@ -19,13 +19,22 @@ type IPDetectorReq struct {
 	IPProxy         *model.IPProxy
 }
 
+type IPDetectResp struct {
+	IPv4 string
+	//IPv6        string
+	Risk        string
+	CountryCode string
+	AppUnlock   []*model.IPUnlockInfo
+}
+
 type IPDetectorService interface {
 	Detect(req *IPDetectorReq) error
-	//GetInfo()
+	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
 }
 
 type ipDetectorImpl struct {
 	Detector         *detector.DetectorManager
+	ProxyRepo        repository.ProxyRepository
 	ProxyIPAddress   repository.ProxyIPAddressRepository
 	IPAddressRepo    repository.IPAddressRepository
 	IPBaseInfoRepo   repository.IPBaseInfoRepository
@@ -33,9 +42,11 @@ type ipDetectorImpl struct {
 	IPUnlockInfoRepo repository.IPUnlockInfoRepository
 }
 
-func NewIPDetector(ipAddressRepo repository.IPAddressRepository, ipBaseInfoRepo repository.IPBaseInfoRepository, ipInfoRepo repository.IPInfoRepository, ipUnlockInfoRepo repository.IPUnlockInfoRepository) IPDetectorService {
+func NewIPDetector(proxyRepo repository.ProxyRepository, proxyIPAddressRepo repository.ProxyIPAddressRepository, ipAddressRepo repository.IPAddressRepository, ipBaseInfoRepo repository.IPBaseInfoRepository, ipInfoRepo repository.IPInfoRepository, ipUnlockInfoRepo repository.IPUnlockInfoRepository) IPDetectorService {
 	return &ipDetectorImpl{
 		Detector:         detector.NewDetectorManager(),
+		ProxyRepo:        proxyRepo,
+		ProxyIPAddress:   proxyIPAddressRepo,
 		IPAddressRepo:    ipAddressRepo,
 		IPBaseInfoRepo:   ipBaseInfoRepo,
 		IPInfoRepo:       ipInfoRepo,
@@ -58,6 +69,17 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		log.Infoln("refresh is disabled, have record, skip...")
 		return nil
 	}
+	// 查代理
+	proxy, err := i.ProxyRepo.FindByID(req.ProxyID)
+	if err != nil {
+		log.Errorln("find proxy by id failed, err: %v", err)
+		return err
+	}
+	if proxy == nil {
+		log.Errorln("proxy is nil, skip...")
+		return nil
+	}
+	req.IPProxy = model.NewIPProxy("", proxy)
 	resp, err := i.Detector.DetectAll(req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
 	if err != nil {
 		log.Errorln("detect proxy ip failed, err: %v", err)
@@ -164,4 +186,42 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		}
 	}
 	return nil
+}
+
+func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
+	resp := &IPDetectResp{}
+	proxyIPList, err := i.ProxyIPAddress.FindByProxyID(req.ProxyID)
+	if err != nil || len(proxyIPList) == 0 {
+		log.Errorln("find proxy ip address by proxy id failed, err: %v", err)
+		return nil, err
+	}
+	ipAddId := proxyIPList[0].IPAddressesID
+	ipAddress, err := i.IPAddressRepo.FindByID(ipAddId)
+	if err != nil {
+		log.Errorln("find ip address by id failed, err: %v", err)
+		return nil, err
+	}
+	if ipAddress.IPType == 4 {
+		resp.IPv4 = ipAddress.IP
+	}
+	// 查ip base info
+	ipBaseInfo, err := i.IPBaseInfoRepo.FindByIPAddressID(ipAddId)
+	if err != nil {
+		log.Errorln("find ip base info by ip failed, err: %v", err)
+		return nil, err
+	}
+	if ipBaseInfo != nil {
+		resp.CountryCode = ipBaseInfo.CountryCode
+		resp.Risk = ipBaseInfo.RiskLevel
+	}
+	// 查app unlock info
+	appUnlockList, err := i.IPUnlockInfoRepo.FindByIPAddressID(ipAddId)
+	if err != nil {
+		log.Errorln("find ip unlock info by ip failed, err: %v", err)
+		return nil, err
+	}
+	if appUnlockList != nil {
+		resp.AppUnlock = appUnlockList
+	}
+	return resp, nil
 }

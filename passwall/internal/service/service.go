@@ -26,7 +26,7 @@ type Services struct {
 	GeneratorFactory        generator.GeneratorFactory
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
 	StatisticsService       *traffic.StatisticsService
-	IPDetectorService       *IPDetectorService
+	IPDetectorService       IPDetectorService
 }
 
 // NewServices 初始化所有服务
@@ -62,7 +62,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 
 	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret, proxyService, repos.Traffic)
 
-	ipDetectorService := NewIPDetector(repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo)
+	ipDetectorService := NewIPDetector(repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo)
 
 	return &Services{
 		SubscriptionManager:     subscriptionManager,
@@ -75,6 +75,6 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 		ParserFactory:           parserFactory,
 		GeneratorFactory:        generatorFactory,
 		StatisticsService:       &statisticsService,
-		IPDetectorService:       &ipDetectorService,
+		IPDetectorService:       ipDetectorService,
 	}
 }
