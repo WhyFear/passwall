@@ -3,7 +3,7 @@ package unlockchecker
 import (
 	"encoding/json"
 	"fmt"
-	"passwall/internal/detector"
+	"passwall/internal/detector/model"
 	"passwall/internal/util"
 
 	"github.com/metacubex/mihomo/log"
@@ -16,13 +16,13 @@ func NewDisneyPlusChecker() UnlockCheck {
 	return &DisneyPlusChecker{}
 }
 
-func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, error) {
+func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 	client := ipProxy.ProxyClient
 
 	// 检查ProxyClient是否为nil
 	if client == nil {
 		log.Errorln("DisneyPlusChecker Check: ProxyClient is nil")
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 
 	headers := map[string]string{
@@ -35,28 +35,28 @@ func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 	deviceAssertionBody := `{"deviceFamily":"browser","applicationRuntime":"chrome","deviceProfile":"windows","attributes":{}}`
 	deviceAssertionResp, err := util.PostUrlWithHeaders(client, "https://disney.api.edge.bamgrid.com/devices", headers, []byte(deviceAssertionBody))
 	if err != nil {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 
 	var deviceAssertionRespData map[string]interface{}
 	if err := json.Unmarshal(deviceAssertionResp, &deviceAssertionRespData); err != nil {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 	assertion, ok := deviceAssertionRespData["assertion"].(string)
 	if !ok {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 
 	// 第二次请求：获取访问令牌
 	grantBody := `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&latitude=0&longitude=0&platform=browser&subject_token=` + assertion + `&subject_token_type=urn%3Abamtech%3Aparams%3Aoauth%3Atoken-type%3Adevice`
 	grantResp, err := util.PostUrlWithHeaders(client, "https://disney.api.edge.bamgrid.com/token", headers, []byte(grantBody))
 	if err != nil {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden}
 	}
 
 	var grantRespData map[string]interface{}
 	if err := json.Unmarshal(grantResp, &grantRespData); err != nil {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 	// {
 	//  "error" : "unauthorized_client",
@@ -64,12 +64,12 @@ func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 	//}
 	_, ok = grantRespData["error_description"].(string)
 	if ok {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden}
 	}
 
 	refreshToken, ok := grantRespData["refresh_token"].(string)
 	if !ok {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden}
 	}
 	headers["Authorization"] = "Bearer " + refreshToken
 
@@ -78,13 +78,13 @@ func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 
 	graphqlResp, err := util.PostUrlWithHeaders(client, "https://disney.api.edge.bamgrid.com/graph/v1/device/graphql", headers, []byte(graphqlQuery))
 	if err != nil {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 
 	var graphqlRespData map[string]interface{}
 	if err := json.Unmarshal(graphqlResp, &graphqlRespData); err != nil {
-		log.Errorln("DisneyPlusChecker Check: Failed to unmarshal graphqlResp, err:", err)
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+		log.Errorln("DisneyPlusChecker Check: Failed to unmarshal graphqlResp, err: %v", err)
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 
 	// 解析地区信息
@@ -108,16 +108,16 @@ func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 		} else if acc, ok := graphqlRespData["account"].(map[string]interface{}); ok {
 			account = acc
 		} else {
-			return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+			return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 		}
 
 		location, ok := account["location"].(map[string]interface{})
 		if !ok {
-			return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+			return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 		}
 		countryCode, ok = location["countryCode"].(string)
 		if !ok {
-			return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}, nil
+			return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 		}
 	}
 
@@ -132,7 +132,7 @@ func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 	// 根据countryCode和区域支持信息判断解锁状态
 	// 特殊处理日本地区
 	if countryCode == "JP" {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusUnlock, Region: countryCode}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusUnlock, Region: countryCode}
 	}
 
 	// 尝试从extensions.sdk.session获取inSupportedLocation信息
@@ -149,12 +149,12 @@ func (c *DisneyPlusChecker) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 
 	// 根据inSupportedLocation和countryCode判断最终状态
 	if inSupportedLocation {
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusUnlock, Region: countryCode}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusUnlock, Region: countryCode}
 	} else if countryCode != "" {
 		// 区域不支持
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden, Region: countryCode}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden, Region: countryCode}
 	} else {
 		// 有区域信息但不支持
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden, Region: countryCode}, nil
+		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusForbidden, Region: countryCode}
 	}
 }

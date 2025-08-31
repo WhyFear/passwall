@@ -1,11 +1,10 @@
 package unlockchecker
 
-import "passwall/internal/detector"
+import "passwall/internal/detector/model"
 
 type application string
 
 const (
-	Unknown    application = "unknown"
 	TikTok     application = "tiktok"
 	DisneyPlus application = "disneyplus"
 )
@@ -13,7 +12,6 @@ const (
 type checkStatus string
 
 const (
-	CheckStatusSuccess   checkStatus = "success"
 	CheckStatusFail      checkStatus = "fail"
 	CheckStatusUnlock    checkStatus = "unlock"
 	CheckStatusForbidden checkStatus = "forbidden"
@@ -26,7 +24,7 @@ type CheckResult struct {
 }
 
 type UnlockCheck interface {
-	Check(ipProxy *detector.IPProxy) (*CheckResult, error)
+	Check(ipProxy *model.IPProxy) *CheckResult
 }
 
 type UnlockCheckFactory interface {

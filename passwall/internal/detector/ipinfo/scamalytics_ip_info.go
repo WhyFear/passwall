@@ -1,7 +1,7 @@
 package ipinfo
 
 import (
-	"passwall/internal/detector"
+	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"regexp"
 	"strconv"
@@ -16,7 +16,7 @@ func NewScamalyticsRiskDetector() IPInfo {
 	return &ScamalyticsRiskDetector{}
 }
 
-func (s *ScamalyticsRiskDetector) Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error) {
+func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://scamalytics.com/ip/"+ipProxy.IP)
 	if err != nil {
 		return &IPInfoResult{

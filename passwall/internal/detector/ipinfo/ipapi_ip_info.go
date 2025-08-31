@@ -1,7 +1,7 @@
 package ipinfo
 
 import (
-	"passwall/internal/detector"
+	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"strconv"
 	"strings"
@@ -17,7 +17,7 @@ func NewIPAPIRiskDetector() IPInfo {
 	return &IPAPIRiskDetector{}
 }
 
-func (i *IPAPIRiskDetector) Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error) {
+func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
 	score := -1.0
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://api.ipapi.is/?q="+ipProxy.IP)
 	if err != nil {

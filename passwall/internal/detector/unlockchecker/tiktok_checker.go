@@ -1,7 +1,7 @@
 package unlockchecker
 
 import (
-	"passwall/internal/detector"
+	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"regexp"
 )
@@ -9,11 +9,11 @@ import (
 type TikTokUnlockCheck struct {
 }
 
-func NewUnlockCheck() UnlockCheck {
+func NewTikTokUnlockCheck() UnlockCheck {
 	return &TikTokUnlockCheck{}
 }
 
-func (t *TikTokUnlockCheck) Check(ipProxy *detector.IPProxy) (*CheckResult, error) {
+func (t *TikTokUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	headers := map[string]string{
 		"User-Agent": util.GetRandomUserAgent(),
 	}
@@ -22,7 +22,7 @@ func (t *TikTokUnlockCheck) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 		return &CheckResult{
 			APPName: TikTok,
 			Status:  CheckStatusFail,
-		}, nil
+		}
 	}
 	region := ""
 	reList := regexp.MustCompile(`"region"\s*:\s*"([A-Z]{2})"`).FindStringSubmatch(string(resp))
@@ -33,11 +33,11 @@ func (t *TikTokUnlockCheck) Check(ipProxy *detector.IPProxy) (*CheckResult, erro
 		return &CheckResult{
 			APPName: TikTok,
 			Status:  CheckStatusFail,
-		}, nil
+		}
 	}
 	return &CheckResult{
 		APPName: TikTok,
 		Status:  CheckStatusUnlock,
 		Region:  region,
-	}, nil
+	}
 }

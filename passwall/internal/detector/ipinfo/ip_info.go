@@ -1,6 +1,6 @@
 package ipinfo
 
-import "passwall/internal/detector"
+import "passwall/internal/detector/model"
 
 type IPInfoDetector struct {
 }
@@ -43,7 +43,7 @@ type IPGeoInfo struct {
 }
 
 type IPInfo interface {
-	Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error)
+	Detect(ipProxy *model.IPProxy) (*IPInfoResult, error)
 }
 
 type IPInfoFactory interface {

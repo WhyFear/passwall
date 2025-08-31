@@ -1,7 +1,7 @@
 package ipinfo
 
 import (
-	"passwall/internal/detector"
+	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"strings"
 
@@ -15,7 +15,7 @@ func NewNodeGetRiskDetector() IPInfo {
 	return &NodeGetRiskDetector{}
 }
 
-func (n *NodeGetRiskDetector) Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error) {
+func (n *NodeGetRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
 	// 0-100
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://ip.nodeget.com/json")
 	if err != nil {

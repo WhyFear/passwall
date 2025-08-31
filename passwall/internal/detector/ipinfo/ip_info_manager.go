@@ -2,7 +2,7 @@ package ipinfo
 
 import (
 	"fmt"
-	"passwall/internal/detector"
+	"passwall/internal/detector/model"
 )
 
 // RiskManager 管理风险检测器
@@ -16,7 +16,7 @@ func NewRiskManager(factory IPInfoFactory) *RiskManager {
 }
 
 // DetectByAll 调用所有已注册的风险检测器
-func (rm *RiskManager) DetectByAll(ipProxy *detector.IPProxy) (*map[DetectorName]*IPInfoResult, error) {
+func (rm *RiskManager) DetectByAll(ipProxy *model.IPProxy) (*map[DetectorName]*IPInfoResult, error) {
 	allDetectors := rm.factory.GetAllIPInfoDetectors()
 	results := make(map[DetectorName]*IPInfoResult)
 
