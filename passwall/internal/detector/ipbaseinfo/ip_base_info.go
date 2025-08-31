@@ -1,6 +1,7 @@
 package ipbaseinfo
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,6 +36,10 @@ var ipServices = []IPService{
 
 // GetProxyIP 从多个服务获取代理IP地址
 func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
+	if proxyClient == nil {
+		log.Errorln("GetProxyIP error: proxyClient is nil")
+		return nil, errors.New("proxyClient is nil")
+	}
 	var wg sync.WaitGroup
 	results := make(chan string, len(ipServices))
 

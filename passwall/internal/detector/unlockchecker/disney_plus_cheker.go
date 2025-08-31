@@ -17,13 +17,14 @@ func NewDisneyPlusChecker() UnlockCheck {
 }
 
 func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
-	client := ipProxy.ProxyClient
-
-	// 检查ProxyClient是否为nil
-	if client == nil {
-		log.Errorln("DisneyPlusChecker Check: ProxyClient is nil")
-		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
+	if ipProxy == nil || ipProxy.ProxyClient == nil {
+		log.Errorln("DisneyPlusChecker Check error: ipProxy is nil")
+		return &CheckResult{
+			APPName: DisneyPlus,
+			Status:  CheckStatusFail,
+		}
 	}
+	client := ipProxy.ProxyClient
 
 	headers := map[string]string{
 		"User-Agent":    util.GetRandomUserAgent(),

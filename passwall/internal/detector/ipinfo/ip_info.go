@@ -29,6 +29,7 @@ type IPInfoResult struct {
 	Detector DetectorName
 	Risk     RiskResult `json:"ipinfo"`
 	Geo      IPGeoInfo  `json:"geo"`
+	Raw      string     `json:"raw"`
 }
 
 type RiskResult struct {

@@ -13,8 +13,8 @@ import (
 
 type DetectionResult struct {
 	BaseInfo     *ipbaseinfo.IPBaseInfo
-	IPInfoResult *map[ipinfo.DetectorName]*ipinfo.IPInfoResult
-	UnlockResult []unlockchecker.CheckResult
+	IPInfoResult []*ipinfo.IPInfoResult
+	UnlockResult []*unlockchecker.CheckResult
 }
 
 type DetectorManager struct {
@@ -56,8 +56,8 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy) (*DetectionResult, 
 
 	// 第二步：并发执行IP信息检测和解锁检测
 	var wg sync.WaitGroup
-	var ipInfoResult *map[ipinfo.DetectorName]*ipinfo.IPInfoResult
-	var unlockResult []unlockchecker.CheckResult
+	var ipInfoResult []*ipinfo.IPInfoResult
+	var unlockResult []*unlockchecker.CheckResult
 	var ipInfoErr, unlockErr error
 
 	wg.Add(2)

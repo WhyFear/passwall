@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"errors"
 	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"strconv"
@@ -18,6 +19,11 @@ func NewIPAPIRiskDetector() IPInfo {
 }
 
 func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
+	if ipProxy == nil || ipProxy.ProxyClient == nil {
+		log.Errorln("IPAPIRiskDetector Detect error: ipProxy is nil")
+		return nil, errors.New("ipProxy is nil")
+	}
+
 	score := -1.0
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://api.ipapi.is/?q="+ipProxy.IP)
 	if err != nil {
@@ -54,6 +60,7 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error
 		Geo: IPGeoInfo{
 			CountryCode: countryCode,
 		},
+		Raw: string(resp),
 	}, nil
 }
 

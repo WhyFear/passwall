@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"errors"
 	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"regexp"
@@ -17,6 +18,10 @@ func NewScamalyticsRiskDetector() IPInfo {
 }
 
 func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
+	if ipProxy == nil || ipProxy.ProxyClient == nil {
+		log.Errorln("ScamalyticsRiskDetector Detect error: ipProxy is nil")
+		return nil, errors.New("ipProxy is nil")
+	}
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://scamalytics.com/ip/"+ipProxy.IP)
 	if err != nil {
 		return &IPInfoResult{
@@ -36,6 +41,7 @@ func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult,
 				Score:      -1,
 				IPRiskType: s.GetRiskType(-1),
 			},
+			Raw: string(resp),
 		}, nil
 	}
 	// 转换分数
@@ -60,6 +66,7 @@ func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult,
 		Geo: IPGeoInfo{
 			CountryCode: countryCode,
 		},
+		Raw: string(resp),
 	}, nil
 }
 

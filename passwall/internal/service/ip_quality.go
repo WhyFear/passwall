@@ -120,7 +120,7 @@ func (s *IPQualityService) DetectIPQuality(ctx context.Context, ip string, proxy
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				geoResult, err := s.detectGeolocation(ctx, proxyID, detectors)
+				geoResult, err := s.detectGeolocation(ctx, ip, detectors)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -188,11 +188,11 @@ func (s *IPQualityService) DetectIPQuality(ctx context.Context, ip string, proxy
 }
 
 // detectGeolocation 执行地理位置检测
-func (s *IPQualityService) detectGeolocation(ctx context.Context, ip string, detectors []detector.Detector, proxyID uint) (*detector.GeolocationResult, error) {
+func (s *IPQualityService) detectGeolocation(ctx context.Context, ip string, detectors []detector.Detector) (*detector.GeolocationResult, error) {
 	// 优先使用第一个可用的地理位置检测器
 	for _, det := range detectors {
 		if geoDet, ok := det.(detector.GeolocationDetector); ok && det.IsEnabled() {
-			result, err := geoDet.DetectGeolocation(ctx, proxyID)
+			result, err := geoDet.DetectGeolocation(ctx, ip)
 			if err == nil {
 				return result, nil
 			}
@@ -208,7 +208,7 @@ func (s *IPQualityService) detectRisk(ctx context.Context, ip string, detectors 
 	// 收集所有风险检测器的结果
 	for _, det := range detectors {
 		if riskDet, ok := det.(detector.RiskDetector); ok && det.IsEnabled() {
-			result, err := riskDet.DetectRisk(ctx, proxyID)
+			result, err := riskDet.DetectRisk(ctx, ip)
 			if err == nil {
 				allResults = append(allResults, result)
 			}
@@ -229,7 +229,7 @@ func (s *IPQualityService) detectServices(ctx context.Context, ip string, detect
 	// 合并所有服务检测器的结果
 	for _, det := range detectors {
 		if serviceDet, ok := det.(detector.ServiceDetector); ok && det.IsEnabled() {
-			results, err := serviceDet.DetectService(ctx, proxyID)
+			results, err := serviceDet.DetectService(ctx, ip)
 			if err == nil {
 				allResults = append(allResults, results...)
 			}

@@ -4,6 +4,8 @@ import (
 	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"regexp"
+
+	"github.com/metacubex/mihomo/log"
 )
 
 type TikTokUnlockCheck struct {
@@ -14,6 +16,14 @@ func NewTikTokUnlockCheck() UnlockCheck {
 }
 
 func (t *TikTokUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+	if ipProxy == nil || ipProxy.ProxyClient == nil {
+		log.Errorln("TikTokUnlockCheck Check error: ipProxy is nil")
+		return &CheckResult{
+			APPName: TikTok,
+			Status:  CheckStatusFail,
+		}
+	}
+
 	headers := map[string]string{
 		"User-Agent": util.GetRandomUserAgent(),
 	}

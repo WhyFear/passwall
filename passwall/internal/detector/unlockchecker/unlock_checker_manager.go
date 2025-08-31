@@ -16,12 +16,12 @@ func NewUnlockCheckManager(factory UnlockCheckFactory) *UnlockCheckManager {
 }
 
 // CheckByAll 调用所有已注册的解锁检测器
-func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]CheckResult, error) {
+func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]*CheckResult, error) {
 	allCheckers := m.factory.GetAllUnlockCheckers()
-	results := make([]CheckResult, len(allCheckers))
+	results := make([]*CheckResult, len(allCheckers))
 
 	// 并发执行所有检测器
-	resultChan := make(chan CheckResult, len(allCheckers))
+	resultChan := make(chan *CheckResult, len(allCheckers))
 	var wg sync.WaitGroup
 
 	for _, checker := range allCheckers {
@@ -29,7 +29,7 @@ func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]CheckResult, 
 		go func(ch UnlockCheck) {
 			defer wg.Done()
 			result := ch.Check(ipProxy)
-			resultChan <- *result
+			resultChan <- result
 		}(checker)
 	}
 

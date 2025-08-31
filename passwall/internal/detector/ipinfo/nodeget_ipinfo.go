@@ -1,10 +1,12 @@
 package ipinfo
 
 import (
+	"errors"
 	"passwall/internal/detector/model"
 	"passwall/internal/util"
 	"strings"
 
+	"github.com/metacubex/mihomo/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -16,6 +18,10 @@ func NewNodeGetRiskDetector() IPInfo {
 }
 
 func (n *NodeGetRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
+	if ipProxy == nil || ipProxy.ProxyClient == nil {
+		log.Errorln("NodeGetRiskDetector Detect error: ipProxy is nil")
+		return nil, errors.New("ipProxy is nil")
+	}
 	// 0-100
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://ip.nodeget.com/json")
 	if err != nil {
@@ -40,6 +46,7 @@ func (n *NodeGetRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, err
 		Geo: IPGeoInfo{
 			CountryCode: countryCode,
 		},
+		Raw: string(resp),
 	}, nil
 }
 
