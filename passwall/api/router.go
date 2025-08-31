@@ -71,7 +71,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 
 		// 获取代理信息
-		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService))
+		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService, services.IPDetectorService))
 		// 获取代理历史测速记录
 		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(services.SpeedTestHistoryService))
 		// 生成代理分享链接
@@ -91,8 +91,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 
 		// IP质量检测API
-		webGroup.POST("/ip_quality_detect", handler.DetectIPQuality(cfg.Check, services.IPDetectorService))
-		webGroup.GET("/get_ip_quality", handler.GetIPQuality(services.IPDetectorService))
+		webGroup.POST("/detect_ip", handler.DetectIPQuality(cfg.Check, services.IPDetectorService))
+		webGroup.GET("/get_ip_info", handler.GetIPQuality(services.IPDetectorService))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

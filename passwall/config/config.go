@@ -47,9 +47,9 @@ type Proxy struct {
 }
 
 type ClashAPIConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	URL     string `yaml:"url"`
-	Secret  string `yaml:"secret"`
+	Enable bool   `yaml:"enable"`
+	URL    string `yaml:"url"`
+	Secret string `yaml:"secret"`
 }
 
 type BanProxyConfig struct {

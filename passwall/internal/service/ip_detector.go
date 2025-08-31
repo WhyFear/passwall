@@ -20,11 +20,11 @@ type IPDetectorReq struct {
 }
 
 type IPDetectResp struct {
-	IPv4 string
-	//IPv6        string
-	Risk        string
-	CountryCode string
-	AppUnlock   []*model.IPUnlockInfo
+	IPv4 string `json:"ipv4"`
+	//IPv6        string `json:"ipv6"`
+	Risk        string                `json:"risk"`
+	CountryCode string                `json:"country_code"`
+	AppUnlock   []*model.IPUnlockInfo `json:"app_unlock"`
 }
 
 type IPDetectorService interface {

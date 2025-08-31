@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   EyeOutlined,
+  InfoCircleOutlined,
   PushpinFilled,
   PushpinOutlined,
   ReloadOutlined,
@@ -29,6 +30,24 @@ const StatusTag = ({status}) => {
   } else if (status === 3) {
     color = 'warning';
     text = '未知错误';
+  }
+
+  return <Tag color={color}>{text}</Tag>;
+};
+
+const AppUnlockStatusTag = ({status}) => {
+  let color = 'default';
+  let text = '未知';
+  // fail unlock forbidden
+  if (status === "fail") {
+    color = 'error';
+    text = '失败';
+  } else if (status === "unlock") {
+    color = 'success';
+    text = '解锁';
+  } else if (status === "forbidden") {
+    color = 'warning';
+    text = '屏蔽';
   }
 
   return <Tag color={color}>{text}</Tag>;
@@ -327,6 +346,23 @@ const NodesPage = () => {
       console.error(error);
     }
   };
+  // 处理IP检测
+  const handleDetectIP = async (nodeId) => {
+    try {
+      const params = {
+        proxy_id: nodeId,
+      };
+      const data = await nodeApi.detectIP(params);
+      if (data.status_code === 200) {
+        message.success('IP检测任务已启动');
+      } else {
+        message.error('IP检测失败：' + data.status_msg);
+      }
+    } catch (error) {
+      message.error('IP检测失败：' + error.message);
+      console.error(error);
+    }
+  };
 
   // 处理节点置顶
   const handlePinProxy = async (nodeId, currentPinned) => {
@@ -527,7 +563,7 @@ const NodesPage = () => {
   }, {
     title: '操作',
     key: 'action',
-    width: 120,
+    width: 130,
     fixed: isMobile ? undefined : 'right',
     render: (_, record) => (<div className="table-action">
       <Tooltip title="查看详情">
@@ -542,6 +578,13 @@ const NodesPage = () => {
           type="text"
           icon={<ReloadOutlined/>}
           onClick={() => handleTestProxy(record.id)}
+        />
+      </Tooltip>
+      <Tooltip title="检测IP">
+        <Button
+          type="text"
+          icon={<InfoCircleOutlined/>}
+          onClick={() => handleDetectIP(record.id)}
         />
       </Tooltip>
       <Tooltip title={record.pinned ? "取消置顶" : "置顶"}>
@@ -658,6 +701,25 @@ const NodesPage = () => {
           <InfoItem label="分享链接" value={currentNode.share_url} isMultiLine={true}/>
           <InfoItem label="总计下载流量" value={formatTraffic(currentNode.download_total)}/>
           <InfoItem label="总计上传流量" value={formatTraffic(currentNode.upload_total)}/>
+          <InfoItem label="风险等级" value={currentNode.ip_info?.risk || '-'}/>
+          <InfoItem label="国家/地区代码" value={currentNode.ip_info?.country_code || '-'}/>
+        </Card>
+
+        <Card title="应用解锁">
+          <Table
+            columns={[{
+              title: '应用名称', dataIndex: 'app_name', key: 'app_name'
+            }, {
+              title: '解锁状态',
+              dataIndex: 'status',
+              key: 'status',
+              render: (status) => <AppUnlockStatusTag status={status}/>
+            }, {
+              title: '地区', dataIndex: 'region', key: 'region', render: (region) => region || '-'
+            }]}
+            dataSource={currentNode.ip_info?.app_unlock || []}
+            rowKey="id"
+          />
         </Card>
 
         <Card title="历史记录">

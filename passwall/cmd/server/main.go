@@ -31,7 +31,7 @@ func main() {
 
 	// 3. 初始化服务
 	services := service.NewServices(db, cfg)
-	if cfg.ClashAPI.Enabled {
+	if cfg.ClashAPI.Enable {
 		_ = services.StatisticsService.Start()
 	}
 
