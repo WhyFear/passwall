@@ -1,4 +1,4 @@
-package risk
+package ipinfo
 
 import (
 	"net/http"
@@ -32,7 +32,7 @@ func TestScamalyticsRiskDetector_Detect_Success(t *testing.T) {
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
-	assert.Equal(t, 75, detect.Score)
+	assert.Equal(t, 75, detect.Risk.Score)
 }
 
 func TestScamalyticsRiskDetector_Detect_NoScoreFound(t *testing.T) {
@@ -49,7 +49,7 @@ func TestScamalyticsRiskDetector_Detect_NoScoreFound(t *testing.T) {
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
 	// 当没有分数信息时，应该返回 -1
-	assert.Equal(t, -1, detect.Score)
+	assert.Equal(t, -1, detect.Risk.Score)
 }
 
 func TestScamalyticsRiskDetector_Detect_InvalidScore(t *testing.T) {
@@ -66,7 +66,7 @@ func TestScamalyticsRiskDetector_Detect_InvalidScore(t *testing.T) {
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
 	// 当分数转换失败时，应该返回 -1
-	assert.Equal(t, -1, detect.Score)
+	assert.Equal(t, -1, detect.Risk.Score)
 }
 
 func TestScamalyticsRiskDetector_Detect_EdgeCases(t *testing.T) {
@@ -102,7 +102,50 @@ func TestScamalyticsRiskDetector_Detect_EdgeCases(t *testing.T) {
 				IP:          "1.1.1.1",
 				ProxyClient: new(http.Client)})
 			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, detect.Score)
+			assert.Equal(t, tc.expected, detect.Risk.Score)
+		})
+	}
+}
+
+func TestScamalyticsRiskDetector_Detect_CountryCode(t *testing.T) {
+	testCases := []struct {
+		name         string
+		response     string
+		expectedCode string
+	}{
+		{
+			name:         "有效的国家代码",
+			response:     `<html><body><div>Fraud Score: 100</div><table><tr><th>Country Code</th><td>US</td></tr></table></body></html>`,
+			expectedCode: "US",
+		},
+		{
+			name:         "没有国家代码表格",
+			response:     `<html><body><div>Fraud Score: 100</div><div>No country code here</div></body></html>`,
+			expectedCode: "",
+		},
+		{
+			name:         "国家代码格式正确但内容为空",
+			response:     `<html><body><div>Fraud Score: 100</div><table><tr><th>Country Code</th><td></td></tr></table></body></html>`,
+			expectedCode: "",
+		},
+		{
+			name:         "小写国家代码,取不到",
+			response:     `<html><body><div>Fraud Score: 100</div><table><tr><th>Country Code</th><td>us</td></tr></table></body></html>`,
+			expectedCode: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			httpmock.Activate(t)
+			httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
+				httpmock.NewStringResponder(200, tc.response))
+			scamalyticsDetector := NewScamalyticsRiskDetector()
+			detect, err := scamalyticsDetector.Detect(&detector.IPProxy{
+				IP:          "1.1.1.1",
+				ProxyClient: new(http.Client)})
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedCode, detect.Geo.CountryCode)
 		})
 	}
 }

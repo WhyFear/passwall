@@ -1,4 +1,4 @@
-package risk
+package ipinfo
 
 import (
 	"passwall/internal/detector"
@@ -13,18 +13,20 @@ import (
 type IPAPIRiskDetector struct {
 }
 
-func NewIPAPIRiskDetector() Risk {
+func NewIPAPIRiskDetector() IPInfo {
 	return &IPAPIRiskDetector{}
 }
 
-func (i *IPAPIRiskDetector) Detect(ipProxy *detector.IPProxy) (*RiskResult, error) {
+func (i *IPAPIRiskDetector) Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error) {
 	score := -1.0
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://api.ipapi.is/?q="+ipProxy.IP)
 	if err != nil {
-		return &RiskResult{
-			Detector:   IPRiskDetectorIPAPI,
-			ScoreFloat: score,
-			IPRiskType: i.GetRiskType(""),
+		return &IPInfoResult{
+			Detector: DetectorIPAPI,
+			Risk: RiskResult{
+				ScoreFloat: score,
+				IPRiskType: i.GetRiskType(""),
+			},
 		}, nil
 	}
 	// 解析响应
@@ -39,12 +41,19 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *detector.IPProxy) (*RiskResult, erro
 			log.Warnln("IPAPIRiskDetector Detect Atoi error: %v", err)
 		}
 	}
+	// 提取国家代码
+	countryCode := strings.ToUpper(result.Get("location.country_code").String())
 
-	return &RiskResult{
-		Detector:   IPRiskDetectorIPAPI,
-		ScoreFloat: score,
-		ScoreText:  scoreText,
-		IPRiskType: i.GetRiskType(scoreTextList[1]),
+	return &IPInfoResult{
+		Detector: DetectorIPAPI,
+		Risk: RiskResult{
+			ScoreFloat: score,
+			ScoreText:  scoreText,
+			IPRiskType: i.GetRiskType(scoreTextList[1]),
+		},
+		Geo: IPGeoInfo{
+			CountryCode: countryCode,
+		},
 	}, nil
 }
 

@@ -1,8 +1,9 @@
-package risk
+package ipinfo
 
 import (
 	"passwall/internal/detector"
 	"passwall/internal/util"
+	"strings"
 
 	"github.com/tidwall/gjson"
 )
@@ -10,27 +11,35 @@ import (
 type NodeGetRiskDetector struct {
 }
 
-func NewNodeGetRiskDetector() Risk {
+func NewNodeGetRiskDetector() IPInfo {
 	return &NodeGetRiskDetector{}
 }
 
-func (n *NodeGetRiskDetector) Detect(ipProxy *detector.IPProxy) (*RiskResult, error) {
+func (n *NodeGetRiskDetector) Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error) {
 	// 0-100
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://ip.nodeget.com/json")
 	if err != nil {
-		return &RiskResult{
-			Detector:   IPRiskDetectorNodeGet,
-			Score:      -1,
-			IPRiskType: n.GetRiskType(-1),
+		return &IPInfoResult{
+			Detector: DetectorNodeGet,
+			Risk: RiskResult{
+				Score:      -1,
+				IPRiskType: n.GetRiskType(-1),
+			},
 		}, nil
 	}
 	result := gjson.Parse(string(resp))
 	score := result.Get("ip.riskScore").Int()
+	countryCode := strings.ToUpper(result.Get("ip.location.country").String())
 
-	return &RiskResult{
-		Detector:   IPRiskDetectorNodeGet,
-		Score:      int(score),
-		IPRiskType: n.GetRiskType(score),
+	return &IPInfoResult{
+		Detector: DetectorNodeGet,
+		Risk: RiskResult{
+			Score:      int(score),
+			IPRiskType: n.GetRiskType(score),
+		},
+		Geo: IPGeoInfo{
+			CountryCode: countryCode,
+		},
 	}, nil
 }
 

@@ -142,7 +142,7 @@ func (s *IPQualityService) DetectIPQuality(ctx context.Context, ip string, proxy
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
-					detectorErrors = append(detectorErrors, fmt.Errorf("risk assessment failed: %w", err))
+					detectorErrors = append(detectorErrors, fmt.Errorf("ipinfo assessment failed: %w", err))
 				} else if len(riskResults) > 0 {
 					result.RiskResults = riskResults
 				}
@@ -216,7 +216,7 @@ func (s *IPQualityService) detectRisk(ctx context.Context, ip string, detectors 
 	}
 
 	if len(allResults) == 0 {
-		return nil, fmt.Errorf("no risk detector available")
+		return nil, fmt.Errorf("no ipinfo detector available")
 	}
 
 	return allResults, nil
@@ -414,7 +414,7 @@ func (s *IPQualityService) generateSummary(result *IPQualityResult) {
 // generateRecommendations 生成建议
 func (s *IPQualityService) generateRecommendations(result *IPQualityResult, summary *IPQualitySummary) {
 	if summary.IsHighRisk {
-		summary.Recommendations = append(summary.Recommendations, "High risk IP detected - consider additional verification")
+		summary.Recommendations = append(summary.Recommendations, "High ipinfo IP detected - consider additional verification")
 	}
 
 	if summary.IsVPN || summary.IsProxy || summary.IsTor {

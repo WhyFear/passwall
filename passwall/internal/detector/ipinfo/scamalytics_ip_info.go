@@ -1,4 +1,4 @@
-package risk
+package ipinfo
 
 import (
 	"passwall/internal/detector"
@@ -12,38 +12,54 @@ import (
 type ScamalyticsRiskDetector struct {
 }
 
-func NewScamalyticsRiskDetector() Risk {
+func NewScamalyticsRiskDetector() IPInfo {
 	return &ScamalyticsRiskDetector{}
 }
 
-func (s *ScamalyticsRiskDetector) Detect(ipProxy *detector.IPProxy) (*RiskResult, error) {
+func (s *ScamalyticsRiskDetector) Detect(ipProxy *detector.IPProxy) (*IPInfoResult, error) {
 	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://scamalytics.com/ip/"+ipProxy.IP)
 	if err != nil {
-		return &RiskResult{
-			Detector:   IPRiskDetectorScamalytics,
-			Score:      -1,
-			IPRiskType: s.GetRiskType(-1),
+		return &IPInfoResult{
+			Detector: DetectorScamalytics,
+			Risk: RiskResult{
+				Score:      -1,
+				IPRiskType: s.GetRiskType(-1),
+			},
 		}, nil
 	}
 	// 从响应体中正则读取风险分数。local tmpscore=$(echo "$RESPONSE"|grep -oE 'Fraud Score: [0-9]+'|awk -F': ' '{print $2}')
 	score := regexp.MustCompile(`Fraud Score: (\d+)`).FindStringSubmatch(string(resp))
 	if len(score) < 2 {
-		return &RiskResult{
-			Detector:   IPRiskDetectorScamalytics,
-			Score:      -1,
-			IPRiskType: s.GetRiskType(-1),
+		return &IPInfoResult{
+			Detector: DetectorScamalytics,
+			Risk: RiskResult{
+				Score:      -1,
+				IPRiskType: s.GetRiskType(-1),
+			},
 		}, nil
 	}
 	// 转换分数
 	scoreInt, err := strconv.Atoi(score[1])
 	if err != nil {
-		log.Warnln("Scamalytics risk detector: failed to convert score to int: %v", err)
+		log.Warnln("Scamalytics ipinfo detector: failed to convert score to int: %v", err)
 		scoreInt = -1
 	}
-	return &RiskResult{
-		Detector:   IPRiskDetectorScamalytics,
-		Score:      scoreInt,
-		IPRiskType: s.GetRiskType(scoreInt),
+	countryCode := ""
+	countryCodeList := regexp.MustCompile(`<th>Country Code<\/th><td>([A-Z]+)<\/td>`).FindStringSubmatch(string(resp))
+	if len(countryCodeList) > 1 {
+		// 转大写
+		countryCode = countryCodeList[1]
+	}
+
+	return &IPInfoResult{
+		Detector: DetectorScamalytics,
+		Risk: RiskResult{
+			Score:      scoreInt,
+			IPRiskType: s.GetRiskType(scoreInt),
+		},
+		Geo: IPGeoInfo{
+			CountryCode: countryCode,
+		},
 	}, nil
 }
 
