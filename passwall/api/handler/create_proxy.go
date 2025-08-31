@@ -24,7 +24,7 @@ type CreateProxyRequest struct {
 }
 
 // CreateProxy 创建代理处理器
-func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
+func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -263,6 +263,23 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				Concurrent: cfg.Concurrent,
 			}, true); err != nil {
 				log.Errorln("测试代理失败: %v", err)
+			}
+		}()
+
+		go func() {
+			log.Infoln("开始检测IP...")
+			proxyIdList := make([]uint, len(proxies))
+			for i, singleProxy := range proxies {
+				proxyIdList[i] = singleProxy.ID
+			}
+			if err := ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
+				ProxyIDList:     proxyIdList,
+				Enabled:         cfg.IPCheck.Enable,
+				IPInfoEnable:    cfg.IPCheck.IPInfo.Enable,
+				APPUnlockEnable: cfg.IPCheck.IPInfo.Enable,
+				Refresh:         false,
+			}); err != nil {
+				log.Errorln("检测IP失败: %v", err)
 			}
 		}()
 

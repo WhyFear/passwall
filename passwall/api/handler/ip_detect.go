@@ -24,7 +24,7 @@ type BatchDetectIPQualityRequest struct {
 }
 
 // DetectIPQuality 检测IP质量
-func DetectIPQuality(config config.CheckConfig, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
+func DetectIPQuality(config config.IPCheckConfig, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req IPDetectRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,7 +50,7 @@ func DetectIPQuality(config config.CheckConfig, ipDetectorService service.IPDete
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "success",
 			"status_code": http.StatusOK,
-			"status_msg":  "IP Check Started",
+			"status_msg":  "IP IPCheck Started",
 		})
 	}
 }

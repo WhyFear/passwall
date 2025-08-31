@@ -13,14 +13,15 @@ type Config struct {
 	Server     Server         `yaml:"server"`
 	Database   Database       `yaml:"database"`
 	Proxy      Proxy          `yaml:"proxy"`
-	Check      CheckConfig    `yaml:"check"`
+	IPCheck    IPCheckConfig  `yaml:"ip_check"`
 	ClashAPI   ClashAPIConfig `yaml:"clash_api"`
 	CronJobs   []CronJob      `yaml:"cron_jobs"`
 }
-type CheckConfig struct {
+type IPCheckConfig struct {
 	Enable    bool            `yaml:"enable"`
 	IPInfo    IPInfoConfig    `yaml:"ip_info"`
 	AppUnlock AppUnlockConfig `yaml:"app_unlock"`
+	Refresh   bool            `yaml:"refresh"`
 }
 type IPInfoConfig struct {
 	Enable bool `yaml:"enable"`
@@ -74,6 +75,7 @@ type CronJob struct {
 	ReloadSubscribeConfig bool            `yaml:"reload_subscribe_config"`
 	TestProxy             TestProxyConfig `yaml:"test_proxy"`
 	AutoBan               BanProxyConfig  `yaml:"auto_ban"`
+	IPCheck               IPCheckConfig   `yaml:"ip_check"`
 	Webhook               []WebhookConfig `yaml:"webhook"`
 }
 

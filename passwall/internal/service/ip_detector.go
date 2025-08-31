@@ -19,6 +19,14 @@ type IPDetectorReq struct {
 	IPProxy         *model.IPProxy
 }
 
+type BatchIPDetectorReq struct {
+	ProxyIDList     []uint `json:"proxy_ids"`
+	Enabled         bool
+	IPInfoEnable    bool
+	APPUnlockEnable bool
+	Refresh         bool
+}
+
 type IPDetectResp struct {
 	IPv4 string `json:"ipv4"`
 	//IPv6        string `json:"ipv6"`
@@ -28,6 +36,7 @@ type IPDetectResp struct {
 }
 
 type IPDetectorService interface {
+	BatchDetect(req *BatchIPDetectorReq) error
 	Detect(req *IPDetectorReq) error
 	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
 }
@@ -54,6 +63,24 @@ func NewIPDetector(proxyRepo repository.ProxyRepository, proxyIPAddressRepo repo
 	}
 }
 
+func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
+	if !req.Enabled {
+		return nil
+	}
+	go func() {
+		for _, proxyID := range req.ProxyIDList {
+			_ = i.Detect(&IPDetectorReq{
+				ProxyID:         proxyID,
+				Enabled:         true,
+				IPInfoEnable:    req.IPInfoEnable,
+				APPUnlockEnable: req.APPUnlockEnable,
+				Refresh:         req.Refresh,
+			})
+		}
+	}()
+	return nil
+}
+
 func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 	if !req.Enabled {
 		log.Infoln("ip detector is disabled")
@@ -65,7 +92,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		log.Errorln("find proxy ip address by proxy id failed, err: %v", err)
 		return err
 	}
-	if !req.Refresh && proxyIPAddress != nil {
+	if !req.Refresh && len(proxyIPAddress) > 0 {
 		log.Infoln("refresh is disabled, have record, skip...")
 		return nil
 	}

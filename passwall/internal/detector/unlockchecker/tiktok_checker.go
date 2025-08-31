@@ -17,7 +17,7 @@ func NewTikTokUnlockCheck() UnlockCheck {
 
 func (t *TikTokUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
-		log.Errorln("TikTokUnlockCheck Check error: ipProxy is nil")
+		log.Errorln("TikTokUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
 			APPName: TikTok,
 			Status:  CheckStatusFail,

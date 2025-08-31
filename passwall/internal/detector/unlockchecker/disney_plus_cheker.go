@@ -18,7 +18,7 @@ func NewDisneyPlusChecker() UnlockCheck {
 
 func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
-		log.Errorln("DisneyPlusChecker Check error: ipProxy is nil")
+		log.Errorln("DisneyPlusChecker IPCheck error: ipProxy is nil")
 		return &CheckResult{
 			APPName: DisneyPlus,
 			Status:  CheckStatusFail,
@@ -84,7 +84,7 @@ func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 
 	var graphqlRespData map[string]interface{}
 	if err := json.Unmarshal(graphqlResp, &graphqlRespData); err != nil {
-		log.Errorln("DisneyPlusChecker Check: Failed to unmarshal graphqlResp, err: %v", err)
+		log.Errorln("DisneyPlusChecker IPCheck: Failed to unmarshal graphqlResp, err: %v", err)
 		return &CheckResult{APPName: DisneyPlus, Status: CheckStatusFail}
 	}
 

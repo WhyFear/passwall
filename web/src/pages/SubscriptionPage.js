@@ -139,7 +139,7 @@ const SubscriptionPage = () => {
     setCurrentSubscription(null);
     form.resetFields();
     setUploadType('url');
-    form.setFieldsValue({upload_type: 'url'});
+    form.setFieldsValue({upload_type: 'url', type: 'auto'});
     setModalVisible(true);
   };
 
@@ -367,4 +367,4 @@ const SubscriptionPage = () => {
   </div>);
 };
 
-export default SubscriptionPage; 
+export default SubscriptionPage;
