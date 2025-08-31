@@ -47,7 +47,7 @@ type IPInfo interface {
 }
 
 type IPInfoFactory interface {
-	RegisterIPInfoDetector(typeName string, ipInfo IPInfo)
-	GetIPInfoDetector(typeName string) (IPInfo, error)
+	RegisterIPInfoDetector(detectorName DetectorName, ipInfo IPInfo)
+	GetIPInfoDetector(detectorName DetectorName) (IPInfo, error)
 	GetAllIPInfoDetectors() []IPInfo
 }

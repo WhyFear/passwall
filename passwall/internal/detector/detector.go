@@ -12,7 +12,7 @@ type IPProxy struct {
 	ProxyClient *http.Client
 }
 
-func newIPProxy(ip string, proxy *model.Proxy) *IPProxy {
+func NewIPProxy(ip string, proxy *model.Proxy) *IPProxy {
 	proxyClient := util.GetClashProxyClient(proxy, 5*time.Second)
 	return &IPProxy{
 		IP:          ip,
