@@ -13,8 +13,21 @@ type Config struct {
 	Server     Server         `yaml:"server"`
 	Database   Database       `yaml:"database"`
 	Proxy      Proxy          `yaml:"proxy"`
+	IPCheck    IPCheckConfig  `yaml:"ip_check"`
 	ClashAPI   ClashAPIConfig `yaml:"clash_api"`
 	CronJobs   []CronJob      `yaml:"cron_jobs"`
+}
+type IPCheckConfig struct {
+	Enable    bool            `yaml:"enable"`
+	IPInfo    IPInfoConfig    `yaml:"ip_info"`
+	AppUnlock AppUnlockConfig `yaml:"app_unlock"`
+	Refresh   bool            `yaml:"refresh"`
+}
+type IPInfoConfig struct {
+	Enable bool `yaml:"enable"`
+}
+type AppUnlockConfig struct {
+	Enable bool `yaml:"enable"`
 }
 
 // Server 服务器配置
@@ -35,9 +48,9 @@ type Proxy struct {
 }
 
 type ClashAPIConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	URL     string `yaml:"url"`
-	Secret  string `yaml:"secret"`
+	Enable bool   `yaml:"enable"`
+	URL    string `yaml:"url"`
+	Secret string `yaml:"secret"`
 }
 
 type BanProxyConfig struct {
@@ -62,6 +75,16 @@ type CronJob struct {
 	ReloadSubscribeConfig bool            `yaml:"reload_subscribe_config"`
 	TestProxy             TestProxyConfig `yaml:"test_proxy"`
 	AutoBan               BanProxyConfig  `yaml:"auto_ban"`
+	IPCheck               IPCheckConfig   `yaml:"ip_check"`
+	Webhook               []WebhookConfig `yaml:"webhook"`
+}
+
+type WebhookConfig struct {
+	Name   string `yaml:"name"`
+	Method string `yaml:"method"`
+	URL    string `yaml:"url"`
+	Header string `yaml:"header"`
+	Body   string `yaml:"body"`
 }
 
 // LoadConfig 从文件加载配置

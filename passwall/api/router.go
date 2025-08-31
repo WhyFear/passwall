@@ -2,12 +2,13 @@ package api
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
 	"passwall/api/handler"
 	"passwall/api/middleware"
 	"passwall/config"
 	"passwall/internal/scheduler"
 	"passwall/internal/service"
+
+	"github.com/gin-gonic/gin"
 )
 
 // SetupRouter 设置API路由
@@ -36,7 +37,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	apiGroup.Use(authMiddleware)
 	{
 		// 公开API
-		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester))
+		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService))
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
 		apiGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 
@@ -63,14 +64,14 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	webGroup.Use(webAuthMiddleware)
 	{
 		// 新增订阅
-		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester))
+		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService))
 		// 获取订阅链接
 		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionManager, services.ProxyService))
 		// 刷新订阅
 		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 
 		// 获取代理信息
-		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService))
+		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService, services.IPDetectorService))
 		// 获取代理历史测速记录
 		webGroup.GET("/proxy/:id/history", handler.GetProxyHistory(services.SpeedTestHistoryService))
 		// 生成代理分享链接
@@ -88,6 +89,10 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.GET("/get_task_status", handler.GetTaskStatus(services.TaskManager))
 		// 停止任务
 		webGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
+
+		// IP质量检测API
+		webGroup.POST("/detect_ip", handler.DetectIPQuality(cfg.IPCheck, services.IPDetectorService))
+		webGroup.GET("/get_ip_info", handler.GetIPQuality(services.IPDetectorService))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

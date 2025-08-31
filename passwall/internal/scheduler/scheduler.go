@@ -2,14 +2,17 @@ package scheduler
 
 import (
 	"context"
-	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
+	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
+	"passwall/internal/util"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/metacubex/mihomo/log"
 
 	"github.com/robfig/cron/v3"
 
@@ -18,14 +21,15 @@ import (
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
-	cron         *cron.Cron
-	jobMutex     sync.Mutex
-	isRunning    bool
-	taskManager  task.TaskManager
-	proxyTester  proxy.Tester
-	subsManager  proxy.SubscriptionManager
-	proxyService proxy.ProxyService
-	jobIDs       map[string]cron.EntryID // 存储任务ID，用于更新
+	cron            *cron.Cron
+	jobMutex        sync.Mutex
+	isRunning       bool
+	taskManager     task.TaskManager
+	proxyTester     proxy.Tester
+	subsManager     proxy.SubscriptionManager
+	proxyService    proxy.ProxyService
+	ipDetectService service.IPDetectorService
+	jobIDs          map[string]cron.EntryID // 存储任务ID，用于更新
 }
 
 // NewScheduler 创建调度器
@@ -38,11 +42,17 @@ func NewScheduler() *Scheduler {
 }
 
 // SetServices 设置服务
-func (s *Scheduler) SetServices(taskManager task.TaskManager, proxyTester proxy.Tester, subsManager proxy.SubscriptionManager, proxyService proxy.ProxyService) {
+func (s *Scheduler) SetServices(taskManager task.TaskManager,
+	proxyTester proxy.Tester,
+	subsManager proxy.SubscriptionManager,
+	proxyService proxy.ProxyService,
+	ipDetectService service.IPDetectorService,
+) {
 	s.taskManager = taskManager
 	s.proxyTester = proxyTester
 	s.subsManager = subsManager
 	s.proxyService = proxyService
+	s.ipDetectService = ipDetectService
 }
 
 // Init 启动调度器
@@ -191,6 +201,41 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 		err := s.proxyService.BanProxy(ctx, serviceReq)
 		if err != nil {
 			log.Errorln("Job '%s': Failed to ban proxy: %v", job.Name, err)
+		}
+	}
+
+	if job.IPCheck.Enable {
+		filters := make(map[string]interface{})
+		filters["status"] = model.ProxyStatusOK
+		proxies, _, err := s.proxyService.GetProxiesByFilters(filters, "id", "asc", 1, 100000)
+		if err != nil {
+			log.Errorln("Job '%s': Failed to get proxies: %v", job.Name, err)
+		}
+		proxyIdList := make([]uint, len(proxies))
+		for _, singleProxy := range proxies {
+			proxyIdList = append(proxyIdList, singleProxy.ID)
+		}
+		err = s.ipDetectService.BatchDetect(&service.BatchIPDetectorReq{
+			ProxyIDList:     proxyIdList,
+			Enabled:         true,
+			IPInfoEnable:    job.IPCheck.IPInfo.Enable,
+			APPUnlockEnable: job.IPCheck.AppUnlock.Enable,
+			Refresh:         job.IPCheck.Refresh,
+		})
+		if err != nil {
+			log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
+		}
+	}
+
+	if len(job.Webhook) > 0 {
+		webhookClient := util.NewWebhookClient()
+
+		if errs := webhookClient.ExecuteWebhooks(job.Webhook, nil); len(errs) > 0 {
+			for _, err := range errs {
+				log.Errorln("Webhook execution error: %v", err)
+			}
+		} else {
+			log.Infoln("Job '%s': All webhooks executed successfully", job.Name)
 		}
 	}
 

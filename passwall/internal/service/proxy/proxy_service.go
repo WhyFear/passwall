@@ -3,11 +3,12 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"github.com/metacubex/mihomo/log"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 	"strconv"
+
+	"github.com/metacubex/mihomo/log"
 )
 
 type BanProxyReq struct {

@@ -28,9 +28,9 @@ const SubscriptionForm = ({
         style={{width: '100%'}}
         placeholder="请选择订阅类型"
         options={[{value: 'auto', label: '自动识别'}, {value: 'clash', label: 'Clash'}, {
-          value: 'share_url',
-          label: '分享链接'
+          value: 'share_url', label: '分享链接'
         },]}
+        defaultValue={'auto'}
       />
     </Form.Item>
 

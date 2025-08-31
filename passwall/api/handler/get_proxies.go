@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"github.com/metacubex/mihomo/log"
 	"net/http"
 	"passwall/internal/repository"
 	"passwall/internal/service"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/metacubex/mihomo/log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,22 +25,23 @@ type ProxyReq struct {
 }
 
 type ProxyResp struct {
-	ID              int       `json:"id"`
-	SubscriptionUrl string    `json:"subscription_url"`
-	Name            string    `json:"name"`
-	Address         string    `json:"address"`
-	Type            string    `json:"type"`
-	Status          int       `json:"status"`
-	Pinned          bool      `json:"pinned"`
-	Ping            int       `json:"ping"`
-	DownloadSpeed   int       `json:"download_speed"`
-	UploadSpeed     int       `json:"upload_speed"`
-	LatestTestTime  time.Time `json:"latest_test_time"`
-	ShareUrl        string    `json:"share_url"`
-	CreatedAt       time.Time `json:"created_at"`
-	SuccessRate     float64   `json:"success_rate"`
-	DownloadTotal   int64     `json:"download_total"`
-	UploadTotal     int64     `json:"upload_total"`
+	ID              int                   `json:"id"`
+	SubscriptionUrl string                `json:"subscription_url"`
+	Name            string                `json:"name"`
+	Address         string                `json:"address"`
+	Type            string                `json:"type"`
+	Status          int                   `json:"status"`
+	Pinned          bool                  `json:"pinned"`
+	Ping            int                   `json:"ping"`
+	DownloadSpeed   int                   `json:"download_speed"`
+	UploadSpeed     int                   `json:"upload_speed"`
+	LatestTestTime  time.Time             `json:"latest_test_time"`
+	ShareUrl        string                `json:"share_url"`
+	CreatedAt       time.Time             `json:"created_at"`
+	SuccessRate     float64               `json:"success_rate"`
+	DownloadTotal   int64                 `json:"download_total"`
+	UploadTotal     int64                 `json:"upload_total"`
+	IPInfo          *service.IPDetectResp `json:"ip_info,omitempty"`
 }
 
 // PaginatedResponse 分页响应
@@ -49,7 +51,10 @@ type PaginatedResponse struct {
 }
 
 // GetProxies 获取所有代理
-func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, speedTestHistoryService service.SpeedTestHistoryService, statisticsService *traffic.StatisticsService) gin.HandlerFunc {
+func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager,
+	speedTestHistoryService service.SpeedTestHistoryService, statisticsService *traffic.StatisticsService,
+	ipDetectService service.IPDetectorService,
+) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ProxyReq
 		if err := c.ShouldBindQuery(&req); err != nil {
@@ -134,6 +139,12 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 			if err != nil {
 				log.Infoln("获取代理 %s 的消耗流量失败: %v", singleProxy.ID, err)
 			}
+			ipInfo, err := ipDetectService.GetInfo(&service.IPDetectorReq{
+				ProxyID: singleProxy.ID,
+			})
+			if err != nil {
+				log.Infoln("获取代理 %s 的IP信息失败: %v", singleProxy.ID, err)
+			}
 
 			tempProxy := ProxyResp{
 				ID:              int(singleProxy.ID),
@@ -155,6 +166,9 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 			if proxyTrafficStatistics != nil {
 				tempProxy.DownloadTotal = proxyTrafficStatistics.DownloadTotal
 				tempProxy.UploadTotal = proxyTrafficStatistics.UploadTotal
+			}
+			if ipInfo != nil {
+				tempProxy.IPInfo = ipInfo
 			}
 			result = append(result, tempProxy)
 		}

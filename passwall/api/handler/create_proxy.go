@@ -24,7 +24,7 @@ type CreateProxyRequest struct {
 }
 
 // CreateProxy 创建代理处理器
-func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester) gin.HandlerFunc {
+func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -54,7 +54,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			// 处理URL (去除两端空白)
 			req.URL = strings.TrimSpace(req.URL)
 			if req.URL == "" {
-				c.JSON(http.StatusBadRequest, gin.H{
+				c.JSON(http.StatusOK, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusBadRequest,
 					"status_msg":  "URL cannot be empty",
@@ -85,7 +85,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				content, err = util.DownloadFromURL(req.URL, downloadOptions)
 				if err != nil {
 					log.Errorln("下载订阅内容失败: %v", err)
-					c.JSON(http.StatusBadRequest, gin.H{
+					c.JSON(http.StatusOK, gin.H{
 						"result":      "fail",
 						"status_code": http.StatusBadRequest,
 						"status_msg":  "Failed to download from URL: " + err.Error(),
@@ -97,7 +97,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			// 处理文件上传
 			file, fileHeader, err := c.Request.FormFile("file")
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
+				c.JSON(http.StatusOK, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusBadRequest,
 					"status_msg":  "Missing URL or file",
@@ -113,7 +113,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 
 			// 检查文件大小
 			if fileHeader.Size == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{
+				c.JSON(http.StatusOK, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusBadRequest,
 					"status_msg":  "File cannot be empty",
@@ -123,7 +123,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 
 			// 限制文件大小
 			if fileHeader.Size > 10*1024*1024 { // 10MB
-				c.JSON(http.StatusBadRequest, gin.H{
+				c.JSON(http.StatusOK, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusBadRequest,
 					"status_msg":  "File too large, max 10MB",
@@ -144,7 +144,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 
 			// 检查读取的内容是否为空
 			if len(content) == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{
+				c.JSON(http.StatusOK, gin.H{
 					"result":      "fail",
 					"status_code": http.StatusBadRequest,
 					"status_msg":  "File content cannot be empty",
@@ -155,7 +155,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			// 对于文件上传，使用截取的md5作为订阅URL
 			subscriptionURL = util.MD5(string(content))[:20]
 		} else {
-			c.JSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
 				"status_msg":  "Missing URL or file",
@@ -166,7 +166,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		p, err := parserFactory.GetParser(req.Type, content)
 		if err != nil {
 			log.Errorln("不支持的代理类型: %v", req.Type)
-			c.JSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
 				"status_msg":  "Unsupported proxy type: " + req.Type,
@@ -225,7 +225,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			// 更新订阅状态为无法处理
 			subscription.Status = model.SubscriptionStatusInvalid
 			_ = subscriptionManager.UpdateSubscriptionStatus(subscription)
-			c.JSON(http.StatusBadRequest, gin.H{
+			c.JSON(http.StatusOK, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
 				"status_msg":  "Failed to parse subscription: " + err.Error(),
@@ -263,6 +263,23 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				Concurrent: cfg.Concurrent,
 			}, true); err != nil {
 				log.Errorln("测试代理失败: %v", err)
+			}
+		}()
+
+		go func() {
+			log.Infoln("开始检测IP...")
+			proxyIdList := make([]uint, len(proxies))
+			for i, singleProxy := range proxies {
+				proxyIdList[i] = singleProxy.ID
+			}
+			if err := ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
+				ProxyIDList:     proxyIdList,
+				Enabled:         cfg.IPCheck.Enable,
+				IPInfoEnable:    cfg.IPCheck.IPInfo.Enable,
+				APPUnlockEnable: cfg.IPCheck.IPInfo.Enable,
+				Refresh:         false,
+			}); err != nil {
+				log.Errorln("检测IP失败: %v", err)
 			}
 		}()
 

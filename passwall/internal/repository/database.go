@@ -63,6 +63,11 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 			&model.Proxy{},
 			&model.Subscription{},
 			&model.SpeedTestHistory{},
+			&model.IPAddress{},
+			&model.ProxyIPAddress{},
+			&model.IPInfo{},
+			&model.IPBaseInfo{},
+			&model.IPUnlockInfo{},
 		)
 		if err != nil {
 			return nil, err

@@ -88,6 +88,8 @@ export const nodeApi = {
   testProxy: (params) => api.post('/test_proxy_server', params),
   pinProxy: (id, pinned) => api.post('/pin_proxy', {id: id, pinned: pinned}),
   banProxy: (params) => api.post(`/ban_proxy`, params),
+  detectIP: (params) => api.post(`/detect_ip`, params),
+  getIPInfo: (params) => api.post(`/get_ip_info`, params),
 };
 
 // 任务相关API
