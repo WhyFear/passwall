@@ -3,7 +3,7 @@ package unlockchecker
 import (
 	"encoding/json"
 	"fmt"
-	"passwall/internal/detector/model"
+	"passwall/internal/model"
 	"passwall/internal/util"
 
 	"github.com/metacubex/mihomo/log"

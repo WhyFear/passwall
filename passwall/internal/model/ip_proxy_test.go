@@ -1,18 +1,16 @@
-package util
+package model
 
 import (
 	"io"
 	"net/http"
 	"testing"
 	"time"
-
-	"passwall/internal/model"
 )
 
 func TestGetProxyClient(t *testing.T) {
 
 	// 创建一个模拟的 ProxyClient 配置
-	proxyConfig := &model.Proxy{
+	proxyConfig := &Proxy{
 		Config: `{"your client here":true}`,
 	}
 

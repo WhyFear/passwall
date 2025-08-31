@@ -2,7 +2,7 @@ package ipinfo
 
 import (
 	"errors"
-	"passwall/internal/detector/model"
+	"passwall/internal/model"
 	"passwall/internal/util"
 	"regexp"
 	"strconv"

@@ -2,7 +2,7 @@ package ipinfo
 
 import (
 	"errors"
-	"passwall/internal/detector/model"
+	"passwall/internal/model"
 	"passwall/internal/util"
 	"strconv"
 	"strings"
@@ -66,15 +66,15 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error
 
 func (i *IPAPIRiskDetector) GetRiskType(scoreText string) IPRiskType {
 	switch scoreText {
-	case "Very Low":
+	case "(Very Low)":
 		return IPRiskTypeVeryLow
-	case "Low":
+	case "(Low)":
 		return IPRiskTypeLow
-	case "Elevated":
+	case "(Elevated)":
 		return IPRiskTypeMedium
-	case "High":
+	case "(High)":
 		return IPRiskTypeHigh
-	case "Very High":
+	case "(Very High)":
 		return IPRiskTypeVeryHigh
 	default:
 		return IPRiskTypeDetectFailed

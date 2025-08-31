@@ -1,6 +1,8 @@
 package unlockchecker
 
-import "passwall/internal/detector/model"
+import (
+	"passwall/internal/model"
+)
 
 type application string
 

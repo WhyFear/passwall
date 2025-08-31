@@ -4,8 +4,8 @@ import (
 	"errors"
 	"passwall/internal/detector/ipbaseinfo"
 	"passwall/internal/detector/ipinfo"
-	"passwall/internal/detector/model"
 	"passwall/internal/detector/unlockchecker"
+	"passwall/internal/model"
 	"sync"
 
 	"github.com/metacubex/mihomo/log"
@@ -38,7 +38,10 @@ func NewDetectorManager() *DetectorManager {
 	}
 }
 
-func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy) (*DetectionResult, error) {
+func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool, unlockEnable bool) (*DetectionResult, error) {
+	if ipProxy == nil {
+		return nil, errors.New("ipProxy is nil")
+	}
 	// 第一步：获取基础IP信息（强依赖）
 	baseInfo, err := ipbaseinfo.GetProxyIP(ipProxy.ProxyClient)
 	if err != nil {
@@ -60,19 +63,23 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy) (*DetectionResult, 
 	var unlockResult []*unlockchecker.CheckResult
 	var ipInfoErr, unlockErr error
 
-	wg.Add(2)
-
 	// 并发执行IP信息检测
-	go func() {
-		defer wg.Done()
-		ipInfoResult, ipInfoErr = dm.ipInfoManager.DetectByAll(ipProxy)
-	}()
+	if ipInfoEnabled {
+		go func() {
+			wg.Add(1)
+			defer wg.Done()
+			ipInfoResult, ipInfoErr = dm.ipInfoManager.DetectByAll(ipProxy)
+		}()
+	}
 
 	// 并发执行解锁检测
-	go func() {
-		defer wg.Done()
-		unlockResult, unlockErr = dm.unlockCheckManager.CheckByAll(ipProxy)
-	}()
+	if unlockEnable {
+		go func() {
+			wg.Add(1)
+			defer wg.Done()
+			unlockResult, unlockErr = dm.unlockCheckManager.CheckByAll(ipProxy)
+		}()
+	}
 
 	wg.Wait()
 

@@ -2,7 +2,11 @@ package ipinfo
 
 import (
 	"fmt"
-	"passwall/internal/detector/model"
+	"passwall/internal/model"
+
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // RiskManager 管理风险检测器
@@ -19,33 +23,25 @@ func NewRiskManager(factory IPInfoFactory) *RiskManager {
 func (rm *RiskManager) DetectByAll(ipProxy *model.IPProxy) ([]*IPInfoResult, error) {
 	allDetectors := rm.factory.GetAllIPInfoDetectors()
 	results := make([]*IPInfoResult, 0)
+	var mu sync.Mutex
 
-	// 并发执行所有检测器
-	resultChan := make(chan struct {
-		result *IPInfoResult
-		err    error
-	}, len(allDetectors))
-
-	for _, d := range allDetectors {
-		go func(detector IPInfo) {
-			result, err := detector.Detect(ipProxy)
-			resultChan <- struct {
-				result *IPInfoResult
-				err    error
-			}{result: result, err: err}
-		}(d)
+	g := new(errgroup.Group)
+	for _, detector := range allDetectors {
+		d := detector
+		g.Go(func() error {
+			result, err := d.Detect(ipProxy)
+			if err != nil {
+				return fmt.Errorf("检测器执行失败: %w", err)
+			}
+			mu.Lock()
+			results = append(results, result)
+			mu.Unlock()
+			return nil
+		})
 	}
 
-	// 等待所有检测器执行完成并处理结果
-	for i := 0; i < len(allDetectors); i++ {
-		res := <-resultChan
-		if res.err != nil {
-			// 处理错误，可以选择记录日志或返回错误
-			fmt.Printf("检测器 %s 执行失败: %v\n", res.result.Detector, res.err)
-		} else if res.result != nil {
-			results = append(results, res.result)
-		}
+	if err := g.Wait(); err != nil {
+		return results, err
 	}
-
 	return results, nil
 }

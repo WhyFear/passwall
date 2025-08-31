@@ -1,8 +1,11 @@
 package unlockchecker
 
 import (
-	"passwall/internal/detector/model"
+	"passwall/internal/model"
+
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // UnlockCheckManager 管理解锁检测器
@@ -19,27 +22,23 @@ func NewUnlockCheckManager(factory UnlockCheckFactory) *UnlockCheckManager {
 func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]*CheckResult, error) {
 	allCheckers := m.factory.GetAllUnlockCheckers()
 	results := make([]*CheckResult, len(allCheckers))
+	var mu sync.Mutex
 
-	// 并发执行所有检测器
-	resultChan := make(chan *CheckResult, len(allCheckers))
-	var wg sync.WaitGroup
-
-	for _, checker := range allCheckers {
-		wg.Add(1)
-		go func(ch UnlockCheck) {
-			defer wg.Done()
+	g := new(errgroup.Group)
+	for i, checker := range allCheckers {
+		idx := i
+		ch := checker
+		g.Go(func() error {
 			result := ch.Check(ipProxy)
-			resultChan <- result
-		}(checker)
+			mu.Lock()
+			results[idx] = result
+			mu.Unlock()
+			return nil
+		})
 	}
 
-	// 等待所有goroutine完成
-	wg.Wait()
-	close(resultChan)
-
-	for i := range results {
-		results[i] = <-resultChan
+	if err := g.Wait(); err != nil {
+		return results, err
 	}
-
 	return results, nil
 }

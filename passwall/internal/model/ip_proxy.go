@@ -1,11 +1,10 @@
-package util
+package model
 
 import (
 	"context"
 	"encoding/json"
 	"net"
 	"net/http"
-	"passwall/internal/model"
 	"strconv"
 	"time"
 
@@ -13,7 +12,20 @@ import (
 	"github.com/metacubex/mihomo/constant"
 )
 
-func GetClashProxyClient(proxyConfig *model.Proxy, timeout time.Duration) *http.Client {
+type IPProxy struct {
+	IP          string
+	ProxyClient *http.Client
+}
+
+func NewIPProxy(ip string, proxy *Proxy) *IPProxy {
+	proxyClient := GetClashProxyClient(proxy, 5*time.Second)
+	return &IPProxy{
+		IP:          ip,
+		ProxyClient: proxyClient,
+	}
+}
+
+func GetClashProxyClient(proxyConfig *Proxy, timeout time.Duration) *http.Client {
 	// Config 转 map
 	var configMap map[string]any
 	if err := json.Unmarshal([]byte(proxyConfig.Config), &configMap); err != nil {

@@ -1,6 +1,8 @@
 package ipinfo
 
-import "passwall/internal/detector/model"
+import (
+	"passwall/internal/model"
+)
 
 type IPInfoDetector struct {
 }

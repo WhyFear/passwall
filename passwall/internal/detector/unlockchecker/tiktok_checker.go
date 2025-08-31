@@ -1,7 +1,7 @@
 package unlockchecker
 
 import (
-	"passwall/internal/detector/model"
+	"passwall/internal/model"
 	"passwall/internal/util"
 	"regexp"
 
