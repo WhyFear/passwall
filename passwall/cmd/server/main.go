@@ -31,13 +31,13 @@ func main() {
 
 	// 3. 初始化服务
 	services := service.NewServices(db, cfg)
-	if cfg.ClashAPI.Enabled {
+	if cfg.ClashAPI.Enable {
 		_ = services.StatisticsService.Start()
 	}
 
 	// 4. 初始化调度器
 	newScheduler := scheduler.NewScheduler()
-	newScheduler.SetServices(services.TaskManager, services.NewTester, services.SubscriptionManager, services.ProxyService)
+	newScheduler.SetServices(services.TaskManager, services.NewTester, services.SubscriptionManager, services.ProxyService, services.IPDetectorService)
 	err = newScheduler.Init(cfg.CronJobs)
 	if err != nil {
 		log.Fatalf("Failed to start scheduler: %v", err)

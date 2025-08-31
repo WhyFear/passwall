@@ -26,6 +26,7 @@ type Services struct {
 	GeneratorFactory        generator.GeneratorFactory
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
 	StatisticsService       *traffic.StatisticsService
+	IPDetectorService       IPDetectorService
 }
 
 // NewServices 初始化所有服务
@@ -56,14 +57,12 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 	speedTestHistoryService := NewSpeedTestHistoryService(repos.SpeedTestHistory)
 
 	// 创建代理测试服务
-	// 目前有两个实现：
-	// 1. NewProxyTester - 新的实现，直接使用 proxy 包中的服务
-	// 2. NewProxyTesterAdapter - 适配器实现，兼容旧版接口
-	// 这里我们使用新的实现，因为适配器是为了兼容旧版接口而存在的
 	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager)
 	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
 
 	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret, proxyService, repos.Traffic)
+
+	ipDetectorService := NewIPDetector(repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo)
 
 	return &Services{
 		SubscriptionManager:     subscriptionManager,
@@ -76,5 +75,6 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 		ParserFactory:           parserFactory,
 		GeneratorFactory:        generatorFactory,
 		StatisticsService:       &statisticsService,
+		IPDetectorService:       ipDetectorService,
 	}
 }

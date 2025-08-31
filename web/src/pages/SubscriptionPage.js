@@ -139,7 +139,7 @@ const SubscriptionPage = () => {
     setCurrentSubscription(null);
     form.resetFields();
     setUploadType('url');
-    form.setFieldsValue({upload_type: 'url'});
+    form.setFieldsValue({upload_type: 'url', type: 'auto'});
     setModalVisible(true);
   };
 
@@ -180,6 +180,7 @@ const SubscriptionPage = () => {
     try {
       const values = await form.validateFields();
       setLoading(true);
+      let data
 
       // 处理表单提交
       if (values.upload_type === 'file' && values.content) {
@@ -192,12 +193,16 @@ const SubscriptionPage = () => {
         const contentBlob = new Blob([values.content], {type: 'text/plain'});
         formData.append('file', contentBlob, 'subscription.txt');
 
-        await subscriptionApi.createProxyWithFormData(formData);
+        data = await subscriptionApi.createProxyWithFormData(formData);
       } else {
         // 处理URL提交
-        await subscriptionApi.createProxy({
+        data = await subscriptionApi.createProxy({
           type: values.type, upload_type: values.upload_type, url: values.url || '', content: values.content || ''
         });
+      }
+      if (data.result === 'fail') {
+        message.error(`添加订阅失败: ${data?.status_msg || '未知错误'}`);
+        return;
       }
 
       message.success('添加订阅成功');
@@ -362,4 +367,4 @@ const SubscriptionPage = () => {
   </div>);
 };
 
-export default SubscriptionPage; 
+export default SubscriptionPage;
