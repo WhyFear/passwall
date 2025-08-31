@@ -2,7 +2,7 @@ package ipinfo
 
 import (
 	"net/http"
-	"passwall/internal/detector"
+	"passwall/internal/model"
 	"testing"
 
 	"github.com/jarcoal/httpmock"
@@ -28,7 +28,7 @@ func TestScamalyticsRiskDetector_Detect_Success(t *testing.T) {
 			</body>
 		</html>`))
 	scamalyticsDetector := NewScamalyticsRiskDetector()
-	detect, err := scamalyticsDetector.Detect(&detector.IPProxy{
+	detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
@@ -44,7 +44,7 @@ func TestScamalyticsRiskDetector_Detect_NoScoreFound(t *testing.T) {
 			</body>
 		</html>`))
 	scamalyticsDetector := NewScamalyticsRiskDetector()
-	detect, err := scamalyticsDetector.Detect(&detector.IPProxy{
+	detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
@@ -61,7 +61,7 @@ func TestScamalyticsRiskDetector_Detect_InvalidScore(t *testing.T) {
 			</body>
 		</html>`))
 	scamalyticsDetector := NewScamalyticsRiskDetector()
-	detect, err := scamalyticsDetector.Detect(&detector.IPProxy{
+	detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
@@ -98,7 +98,7 @@ func TestScamalyticsRiskDetector_Detect_EdgeCases(t *testing.T) {
 			httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
 				httpmock.NewStringResponder(200, tc.response))
 			scamalyticsDetector := NewScamalyticsRiskDetector()
-			detect, err := scamalyticsDetector.Detect(&detector.IPProxy{
+			detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 				IP:          "1.1.1.1",
 				ProxyClient: new(http.Client)})
 			assert.NoError(t, err)
@@ -141,7 +141,7 @@ func TestScamalyticsRiskDetector_Detect_CountryCode(t *testing.T) {
 			httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
 				httpmock.NewStringResponder(200, tc.response))
 			scamalyticsDetector := NewScamalyticsRiskDetector()
-			detect, err := scamalyticsDetector.Detect(&detector.IPProxy{
+			detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 				IP:          "1.1.1.1",
 				ProxyClient: new(http.Client)})
 			assert.NoError(t, err)

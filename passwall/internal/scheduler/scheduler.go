@@ -6,6 +6,7 @@ import (
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
+	"passwall/internal/util"
 	"strconv"
 	"strings"
 	"sync"
@@ -223,6 +224,18 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 		})
 		if err != nil {
 			log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
+		}
+	}
+
+	if len(job.Webhook) > 0 {
+		webhookClient := util.NewWebhookClient()
+
+		if errs := webhookClient.ExecuteWebhooks(job.Webhook, nil); len(errs) > 0 {
+			for _, err := range errs {
+				log.Errorln("Webhook execution error: %v", err)
+			}
+		} else {
+			log.Infoln("Job '%s': All webhooks executed successfully", job.Name)
 		}
 	}
 
