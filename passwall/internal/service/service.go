@@ -53,7 +53,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 
 	// 创建服务
 	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.Proxy, parserFactory, taskManager)
-	proxyService := proxy.NewProxyService(repos.Proxy, repos.SpeedTestHistory, taskManager, repos.Traffic)
+	proxyService := proxy.NewProxyService(repos.Proxy, repos.SpeedTestHistory, taskManager)
 	speedTestHistoryService := NewSpeedTestHistoryService(repos.SpeedTestHistory)
 
 	// 创建代理测试服务

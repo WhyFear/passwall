@@ -7,7 +7,6 @@ import (
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 	"strconv"
-	"time"
 
 	"github.com/metacubex/mihomo/log"
 )
@@ -31,27 +30,21 @@ type ProxyService interface {
 	GetTypes() ([]string, error)
 	PinProxy(id uint, pin bool) error
 	BanProxy(ctx context.Context, req BanProxyReq) error
-	// IP质量检测相关方法
-	DetectProxyIPQuality(ctx context.Context, proxyID uint) error
-	BatchDetectIPQuality(ctx context.Context, proxyIDs []uint) error
 }
 
 type DefaultProxyService struct {
 	proxyRepo            repository.ProxyRepository
 	speedTestHistoryRepo repository.SpeedTestHistoryRepository
 	taskManager          task.TaskManager
-	ipQualityService     interface{} // 使用interface{}避免循环导入
 }
 
 func NewProxyService(proxyRepo repository.ProxyRepository,
 	speedtestRepo repository.SpeedTestHistoryRepository,
-	taskManager task.TaskManager,
-	ipQualityService interface{}) ProxyService {
+	taskManager task.TaskManager) ProxyService {
 	return &DefaultProxyService{
 		proxyRepo:            proxyRepo,
 		speedTestHistoryRepo: speedtestRepo,
 		taskManager:          taskManager,
-		ipQualityService:     ipQualityService,
 	}
 }
 
@@ -251,95 +244,6 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		}
 	}
 	log.Infoln("处理完成，共封禁 %d 个代理,共计 %d 个代理", len(proxiesToBan), len(allProxies))
-
-	return nil
-}
-
-// DetectProxyIPQuality 检测单个代理的IP质量
-func (s *DefaultProxyService) DetectProxyIPQuality(ctx context.Context, proxyID uint) error {
-	proxy, err := s.proxyRepo.FindByID(proxyID)
-	if err != nil {
-		return fmt.Errorf("failed to find proxy: %w", err)
-	}
-
-	if s.ipQualityService == nil {
-		return fmt.Errorf("IP quality service not available")
-	}
-
-	// 异步执行IP质量检测
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// 使用类型断言调用IP质量检测方法
-		if ipqs, ok := s.ipQualityService.(interface {
-			DetectIPQuality(ctx context.Context, ip string) (interface{}, error)
-		}); ok {
-			_, err := ipqs.DetectIPQuality(ctx, proxy.Domain)
-			if err != nil {
-				log.Warnln("Failed to detect IP quality for proxy %d: %v", proxyID, err)
-			}
-		} else {
-			log.Warnln("IP quality service does not support detection")
-		}
-	}()
-
-	return nil
-}
-
-// BatchDetectIPQuality 批量检测代理IP质量
-func (s *DefaultProxyService) BatchDetectIPQuality(ctx context.Context, proxyIDs []uint) error {
-	if s.ipQualityService == nil {
-		return fmt.Errorf("IP quality service not available")
-	}
-
-	// 获取代理域名列表
-	var domains []string
-	proxyIDMap := make(map[string]uint)
-
-	for _, proxyID := range proxyIDs {
-		proxy, err := s.proxyRepo.FindByID(proxyID)
-		if err != nil {
-			log.Warnln("Failed to find proxy %d: %v", proxyID, err)
-			continue
-		}
-		domains = append(domains, proxy.Domain)
-		proxyIDMap[proxy.Domain] = proxyID
-	}
-
-	if len(domains) == 0 {
-		return fmt.Errorf("no valid proxies found")
-	}
-
-	// 异步执行批量IP质量检测
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-
-		// 逐个检测IP质量
-		for _, domain := range domains {
-			if ipqs, ok := s.ipQualityService.(interface {
-				DetectIPQuality(ctx context.Context, ip string) (interface{}, error)
-			}); ok {
-				result, err := ipqs.DetectIPQuality(ctx, domain)
-				if err != nil {
-					log.Warnln("Failed to detect IP quality for %s: %v", domain, err)
-					continue
-				}
-
-				// 提取评分信息
-				if proxyID, exists := proxyIDMap[domain]; exists {
-					if resultWithScore, ok := result.(interface {
-						GetOverallScore() float64
-					}); ok {
-						log.Infoln("IP quality detected for proxy %d (%s): score=%.2f", proxyID, domain, resultWithScore.GetOverallScore())
-					} else {
-						log.Infoln("IP quality detected for proxy %d (%s)", proxyID, domain)
-					}
-				}
-			}
-		}
-	}()
 
 	return nil
 }
