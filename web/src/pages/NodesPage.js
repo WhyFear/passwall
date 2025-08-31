@@ -704,8 +704,8 @@ const NodesPage = () => {
           <InfoItem label="风险等级" value={currentNode.ip_info?.risk || '-'}/>
           <InfoItem label="国家/地区代码" value={currentNode.ip_info?.country_code || '-'}/>
         </Card>
-
-        <Card title="应用解锁">
+        {/* 如果没有app_unlock，不展示这个模块*/}
+        {currentNode?.ip_info?.app_unlock && (<Card title="应用解锁">
           <Table
             columns={[{
               title: '应用名称', dataIndex: 'app_name', key: 'app_name'
@@ -718,9 +718,9 @@ const NodesPage = () => {
               title: '地区', dataIndex: 'region', key: 'region', render: (region) => region || '-'
             }]}
             dataSource={currentNode.ip_info?.app_unlock || []}
-            rowKey="id"
+            pagination={false}
           />
-        </Card>
+        </Card>)}
 
         <Card title="历史记录">
           <Table
@@ -754,4 +754,4 @@ const NodesPage = () => {
   </div>);
 };
 
-export default NodesPage; 
+export default NodesPage;
