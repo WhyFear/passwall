@@ -7,8 +7,13 @@ import (
 type application string
 
 const (
-	TikTok     application = "tiktok"
-	DisneyPlus application = "disneyplus"
+	TikTok         application = "TikTok"
+	DisneyPlus     application = "DisneyPlus"
+	Netflix        application = "Netflix"
+	YouTubePremium application = "YouTubePremium"
+	PrimeVideo     application = "PrimeVideo"
+	Spotify        application = "Spotify"
+	OpenAI         application = "OpenAI"
 )
 
 type checkStatus string

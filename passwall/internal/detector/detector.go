@@ -29,8 +29,13 @@ func NewDetectorManager() *DetectorManager {
 	ipInfoFactory.RegisterIPInfoDetector(ipinfo.DetectorNodeGet, ipinfo.NewNodeGetRiskDetector())
 
 	unlockFactory := unlockchecker.NewUnlockCheckFactory()
-	unlockFactory.RegisterUnlockChecker(unlockchecker.TikTok, unlockchecker.NewTikTokUnlockCheck())
 	unlockFactory.RegisterUnlockChecker(unlockchecker.DisneyPlus, unlockchecker.NewDisneyPlusChecker())
+	unlockFactory.RegisterUnlockChecker(unlockchecker.Netflix, unlockchecker.NewNetflixUnlockCheck())
+	//unlockFactory.RegisterUnlockChecker(unlockchecker.OpenAI, unlockchecker.NewOpenAIUnlockCheck())
+	unlockFactory.RegisterUnlockChecker(unlockchecker.PrimeVideo, unlockchecker.NewPrimeVideoUnlockCheck())
+	unlockFactory.RegisterUnlockChecker(unlockchecker.Spotify, unlockchecker.NewSpotifyUnlockCheck())
+	unlockFactory.RegisterUnlockChecker(unlockchecker.TikTok, unlockchecker.NewTikTokUnlockCheck())
+	unlockFactory.RegisterUnlockChecker(unlockchecker.YouTubePremium, unlockchecker.NewYoutubePremiumCheck())
 
 	return &DetectorManager{
 		ipInfoManager:      ipinfo.NewRiskManager(ipInfoFactory),

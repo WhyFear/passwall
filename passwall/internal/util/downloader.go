@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -121,6 +122,24 @@ func GetUrl(client *http.Client, url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New("HTTP request failed with status: " + resp.Status)
 	}
+
+	// 检查是否为gzip压缩内容
+	contentEncoding := resp.Header.Get("Content-Encoding")
+	if contentEncoding == "gzip" {
+		// 使用gzip reader解压内容
+		gzipReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer gzipReader.Close()
+		content, err := io.ReadAll(gzipReader)
+		if err != nil {
+			return nil, err
+		}
+		return content, nil
+	}
+
+	// 非压缩内容直接读取
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -150,6 +169,24 @@ func GetUrlWithHeaders(client *http.Client, url string, headers map[string]strin
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.New("HTTP request failed with status: " + resp.Status)
 	}
+
+	// 检查是否为gzip压缩内容
+	contentEncoding := resp.Header.Get("Content-Encoding")
+	if contentEncoding == "gzip" {
+		// 使用gzip reader解压内容
+		gzipReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer gzipReader.Close()
+		content, err := io.ReadAll(gzipReader)
+		if err != nil {
+			return nil, err
+		}
+		return content, nil
+	}
+
+	// 非压缩内容直接读取
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -175,6 +212,24 @@ func PostUrlWithHeaders(client *http.Client, url string, headers map[string]stri
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, errors.New("HTTP request failed with status: " + resp.Status)
 	}
+
+	// 检查是否为gzip压缩内容
+	contentEncoding := resp.Header.Get("Content-Encoding")
+	if contentEncoding == "gzip" {
+		// 使用gzip reader解压内容
+		gzipReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer gzipReader.Close()
+		content, err := io.ReadAll(gzipReader)
+		if err != nil {
+			return nil, err
+		}
+		return content, nil
+	}
+
+	// 非压缩内容直接读取
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
