@@ -65,24 +65,40 @@ func (r *GormProxyIPAddressRepository) CreateOrUpdate(proxyIPAddress *model.Prox
 		return errors.New("proxy IP address cannot be nil")
 	}
 
-	// 先查proxy关联的所有latest记录，然后
-	// 先尝试查找是否已存在
-	var existing model.ProxyIPAddress
-	result := r.db.Where("proxy_id = ? AND ip_addresses_id = ?",
-		proxyIPAddress.ProxyID, proxyIPAddress.IPAddressesID).First(&existing)
-
+	// 先查proxy关联的所有latest记录，然后判断是否有关联到ip_addresses_id的记录，如果有就更新updatetime，如果没有则将latest设置为false，然后插入新表
+	var existing []*model.ProxyIPAddress
+	result := r.db.Where("proxy_id = ? AND latest = ?", proxyIPAddress.ProxyID, true).Find(&existing)
 	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return result.Error
-	}
-
-	if result.Error == nil {
-		// 更新现有记录
+	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		// 创建新记录
+		proxyIPAddress.CreatedAt = time.Now()
 		proxyIPAddress.UpdatedAt = time.Now()
-		return r.db.Model(&existing).Updates(proxyIPAddress).Error
+		return r.db.Create(proxyIPAddress).Error
 	}
-
-	// 创建新记录
-	proxyIPAddress.CreatedAt = time.Now()
-	proxyIPAddress.UpdatedAt = time.Now()
-	return r.db.Create(proxyIPAddress).Error
+	// todo 后续IPV6启用了，这里需要判断是否是IPV6
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+		// 有记录，判断是否关联到ip_addresses_id的记录
+		for _, item := range existing {
+			if item.IPAddressesID == proxyIPAddress.IPAddressesID {
+				// 更新现有记录
+				item.UpdatedAt = time.Now()
+				return tx.Model(&item).Updates(item).Error
+			}
+		}
+		// 走到这里，说明没有关联到ip_addresses_id的记录，需要将latest设置为false，然后插入新表
+		for _, item := range existing {
+			item.Latest = false
+			tx.Model(&item).Updates(item)
+		}
+		// 插入新记录
+		proxyIPAddress.CreatedAt = time.Now()
+		proxyIPAddress.UpdatedAt = time.Now()
+		return tx.Create(proxyIPAddress).Error
+	})
 }

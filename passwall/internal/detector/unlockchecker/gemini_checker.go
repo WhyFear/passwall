@@ -8,44 +8,38 @@ import (
 	"github.com/metacubex/mihomo/log"
 )
 
-type OpenAIUnlockCheck struct {
+type GeminiChecker struct {
 }
 
-func NewOpenAIUnlockCheck() UnlockCheck {
-	return &OpenAIUnlockCheck{}
+func NewGeminiChecker() UnlockCheck {
+	return &GeminiChecker{}
 }
 
-func (o *OpenAIUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (c *GeminiChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
-		log.Errorln("OpenAIUnlockCheck IPCheck error: ipProxy is nil")
+		log.Errorln("GeminiUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Gemini,
 			Status:  CheckStatusFail,
 		}
 	}
-	checkResult := MediaUnlockTest.ChatGPT(*ipProxy.ProxyClient)
+	checkResult := MediaUnlockTest.Gemini(*ipProxy.ProxyClient)
 	switch checkResult.Status {
 	case 1:
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Gemini,
 			Status:  CheckStatusUnlock,
 			Region:  strings.ToUpper(checkResult.Region),
 		}
 	case 3, 4:
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Gemini,
 			Status:  CheckStatusForbidden,
-			Region:  checkResult.Region,
-		}
-	case 2:
-		return &CheckResult{
-			APPName: OpenAI,
-			Status:  CheckStatusRateLimit,
 			Region:  checkResult.Region,
 		}
 	default:
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Gemini,
 			Status:  CheckStatusFail,
 			Region:  "",
 		}

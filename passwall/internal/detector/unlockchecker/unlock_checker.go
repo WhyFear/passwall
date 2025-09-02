@@ -14,6 +14,8 @@ const (
 	PrimeVideo     application = "PrimeVideo"
 	Spotify        application = "Spotify"
 	OpenAI         application = "OpenAI"
+	Gemini         application = "Gemini"
+	Claude         application = "Claude"
 )
 
 type checkStatus string
@@ -22,6 +24,7 @@ const (
 	CheckStatusFail      checkStatus = "fail"
 	CheckStatusUnlock    checkStatus = "unlock"
 	CheckStatusForbidden checkStatus = "forbidden"
+	CheckStatusRateLimit checkStatus = "rateLimit"
 )
 
 type CheckResult struct {
