@@ -345,13 +345,14 @@ graph TD
 
 - [ ] 支持更多订阅格式
 - [ ] 优化测速算法
-- [ ] 支持多种数据库
 
 ## 特别鸣谢
 
 https://github.com/MetaCubeX/mihomo 提供的核心能力
 
 https://github.com/faceair/clash-speedtest 项目提供的底层测速能力
+
+https://github.com/HsukqiLee/MediaUnlockTest 提供的解锁测试能力
 
 ## License
 

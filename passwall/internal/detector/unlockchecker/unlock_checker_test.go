@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"fmt"
 	"passwall/internal/model"
 	"testing"
 
@@ -21,6 +22,7 @@ func TestChecker(t *testing.T) {
 		{"PrimeVideo", NewPrimeVideoUnlockCheck()},
 		{"Spotify", NewSpotifyUnlockCheck()},
 		{"OpenAI", NewOpenAIUnlockCheck()},
+		{"Claude", NewClaudeChecker()},
 	}
 
 	for _, tc := range testCheckerList {
@@ -31,6 +33,7 @@ func TestChecker(t *testing.T) {
 
 			resp := tc.UnlockCheck.Check(ipProxy)
 			assert.NotNil(t, resp)
+			fmt.Printf("%s: %v", tc.name, resp)
 		})
 	}
 }

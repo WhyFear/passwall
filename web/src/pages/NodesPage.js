@@ -48,6 +48,9 @@ const AppUnlockStatusTag = ({status}) => {
   } else if (status === "forbidden") {
     color = 'warning';
     text = '屏蔽';
+  } else if (status === "rateLimit") {
+    color = 'warning';
+    text = '限流';
   }
 
   return <Tag color={color}>{text}</Tag>;
