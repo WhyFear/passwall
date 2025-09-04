@@ -2,9 +2,10 @@ package parser
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestShareURLParser_Parse(t *testing.T) {
@@ -27,7 +28,7 @@ func TestShareURLParser_Parse(t *testing.T) {
 
 func TestShareURLParser_CanNotParse(t *testing.T) {
 	contentList := []string{
-		"anytls://9f125839-3a31-4d55-89fd-b59d251efa53@sg1.bppp.shop:22311?insecure=1&sni=sg1.bppp.shop#%F0%9F%87%B8%F0%9F%87%AC%E6%96%B0%E5%8A%A0%E5%9D%A15%20%7C%20%E2%AC%87%EF%B8%8F%201.7MB/s",
+		"notls://9f125839-3a31-4d55-89fd-b59d251efa53@sg1.bppp.shop:22311?insecure=1&sni=sg1.bppp.shop#%F0%9F%87%B8%F0%9F%87%AC%E6%96%B0%E5%8A%A0%E5%9D%A15%20%7C%20%E2%AC%87%EF%B8%8F%201.7MB/s",
 	}
 	content := []byte(strings.Join(contentList, "\n"))
 
