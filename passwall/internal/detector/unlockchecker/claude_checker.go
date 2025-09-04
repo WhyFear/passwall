@@ -25,19 +25,19 @@ func (c *ClaudeChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 	switch checkResult.Status {
 	case 1:
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Claude,
 			Status:  CheckStatusUnlock,
 			Region:  strings.ToUpper(checkResult.Region),
 		}
 	case 3:
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Claude,
 			Status:  CheckStatusForbidden,
 			Region:  checkResult.Region,
 		}
 	default:
 		return &CheckResult{
-			APPName: OpenAI,
+			APPName: Claude,
 			Status:  CheckStatusFail,
 			Region:  "",
 		}
