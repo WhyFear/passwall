@@ -35,7 +35,7 @@ func (c *GeminiChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 		return &CheckResult{
 			APPName: Gemini,
 			Status:  CheckStatusForbidden,
-			Region:  checkResult.Region,
+			Region:  strings.ToUpper(checkResult.Region),
 		}
 	default:
 		return &CheckResult{

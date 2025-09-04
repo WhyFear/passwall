@@ -45,7 +45,7 @@ func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 		return &CheckResult{
 			APPName: DisneyPlus,
 			Status:  CheckStatusForbidden,
-			Region:  checkResult.Region,
+			Region:  strings.ToUpper(checkResult.Region),
 		}
 	default:
 		return &CheckResult{

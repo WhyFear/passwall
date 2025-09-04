@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/log"
-
 	"github.com/robfig/cron/v3"
 
 	"passwall/config"
@@ -221,6 +220,7 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 			IPInfoEnable:    job.IPCheck.IPInfo.Enable,
 			APPUnlockEnable: job.IPCheck.AppUnlock.Enable,
 			Refresh:         job.IPCheck.Refresh,
+			Concurrent:      job.IPCheck.Concurrent,
 		})
 		if err != nil {
 			log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)

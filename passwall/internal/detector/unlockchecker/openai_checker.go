@@ -35,13 +35,13 @@ func (o *OpenAIUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 		return &CheckResult{
 			APPName: OpenAI,
 			Status:  CheckStatusForbidden,
-			Region:  checkResult.Region,
+			Region:  strings.ToUpper(checkResult.Region),
 		}
 	case 2:
 		return &CheckResult{
 			APPName: OpenAI,
 			Status:  CheckStatusRateLimit,
-			Region:  checkResult.Region,
+			Region:  strings.ToUpper(checkResult.Region),
 		}
 	default:
 		return &CheckResult{

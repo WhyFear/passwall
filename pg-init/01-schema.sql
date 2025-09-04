@@ -148,3 +148,5 @@ CREATE TABLE IF NOT EXISTS ip_unlock_infos
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_ip_unlock_infos_ip_addresses_id ON ip_unlock_infos (ip_addresses_id);

@@ -33,7 +33,7 @@ func (c *ClaudeChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 		return &CheckResult{
 			APPName: Claude,
 			Status:  CheckStatusForbidden,
-			Region:  checkResult.Region,
+			Region:  strings.ToUpper(checkResult.Region),
 		}
 	default:
 		return &CheckResult{

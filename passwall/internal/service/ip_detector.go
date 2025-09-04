@@ -1,13 +1,16 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"passwall/internal/detector"
 	"passwall/internal/detector/ipinfo"
 	"passwall/internal/model"
 	"passwall/internal/repository"
+	"strings"
 
 	"github.com/metacubex/mihomo/log"
+	"golang.org/x/sync/errgroup"
 )
 
 type IPDetectorReq struct {
@@ -25,6 +28,7 @@ type BatchIPDetectorReq struct {
 	IPInfoEnable    bool
 	APPUnlockEnable bool
 	Refresh         bool
+	Concurrent      int
 }
 
 type IPDetectResp struct {
@@ -67,17 +71,29 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 	if !req.Enabled {
 		return nil
 	}
-	go func() {
-		for _, proxyID := range req.ProxyIDList {
-			_ = i.Detect(&IPDetectorReq{
+	if req.Concurrent == 0 {
+		req.Concurrent = 20
+	}
+	eg, _ := errgroup.WithContext(context.Background())
+	eg.SetLimit(req.Concurrent)
+
+	for _, proxyID := range req.ProxyIDList {
+		eg.Go(func() error {
+			err := i.Detect(&IPDetectorReq{
 				ProxyID:         proxyID,
 				Enabled:         true,
 				IPInfoEnable:    req.IPInfoEnable,
 				APPUnlockEnable: req.APPUnlockEnable,
 				Refresh:         req.Refresh,
 			})
-		}
-	}()
+			return err
+		})
+	}
+	err := eg.Wait()
+	if err != nil {
+		log.Errorln("batch detect proxy ip failed, err: %v", err)
+		return err
+	}
 	return nil
 }
 
@@ -169,31 +185,35 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			log.Errorln("create or update ip info failed, err: %v", err)
 		}
 		// ip base info 取出最大值
-		var riskLevel ipinfo.IPRiskType
-		var riskLevelCount int
-		for k, v := range riskLevelMap {
-			if v > riskLevelCount {
-				riskLevel = k
-				riskLevelCount = v
+		// riskLevelMap和countryCodeMap都为空，就不保存
+		if len(riskLevelMap) == 0 && len(countryCodeMap) == 0 {
+			log.Infoln("ip base info is empty, skip...")
+		} else {
+			var riskLevel ipinfo.IPRiskType
+			var riskLevelCount int
+			for k, v := range riskLevelMap {
+				if v > riskLevelCount {
+					riskLevel = k
+					riskLevelCount = v
+				}
 			}
-		}
-		var countryCode string
-		var countryCodeCount int
-		for k, v := range countryCodeMap {
-			if v > countryCodeCount {
-				countryCode = k
-				countryCodeCount = v
+			var countryCode string
+			var countryCodeCount int
+			for k, v := range countryCodeMap {
+				if v > countryCodeCount {
+					countryCode = k
+					countryCodeCount = v
+				}
 			}
-		}
-		// ip base info
-		ipBaseInfo := &model.IPBaseInfo{
-			IPAddressesID: ipAddressId,
-			RiskLevel:     string(riskLevel),
-			CountryCode:   countryCode,
-		}
-		err = i.IPBaseInfoRepo.CreateOrUpdate(ipBaseInfo)
-		if err != nil {
-			log.Errorln("create or update ip base info failed, err: %v", err)
+			ipBaseInfo := &model.IPBaseInfo{
+				IPAddressesID: ipAddressId,
+				RiskLevel:     string(riskLevel),
+				CountryCode:   countryCode,
+			}
+			err = i.IPBaseInfoRepo.CreateOrUpdate(ipBaseInfo)
+			if err != nil {
+				log.Errorln("create or update ip base info failed, err: %v", err)
+			}
 		}
 	}
 	// ip unlock info
@@ -204,7 +224,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 				IPAddressesID: ipAddressId,
 				AppName:       string(unlockResult.APPName),
 				Status:        string(unlockResult.Status),
-				Region:        unlockResult.Region,
+				Region:        strings.ToUpper(unlockResult.Region),
 			}
 		}
 		err = i.IPUnlockInfoRepo.BatchCreateOrUpdate(ipUnlockInfoList)
