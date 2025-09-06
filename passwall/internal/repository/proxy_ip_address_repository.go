@@ -67,7 +67,7 @@ func (r *GormProxyIPAddressRepository) CreateOrUpdate(proxyIPAddress *model.Prox
 
 	// 先查proxy关联的所有latest记录，然后判断是否有关联到ip_addresses_id的记录，如果有就更新updatetime，如果没有则将latest设置为false，然后插入新表
 	var existing []*model.ProxyIPAddress
-	result := r.db.Where("proxy_id = ? AND latest = ?", proxyIPAddress.ProxyID, true).Find(&existing)
+	result := r.db.Where("proxy_id = ? AND latest = ? AND ip_type = ?", proxyIPAddress.ProxyID, true, proxyIPAddress.IPType).Find(&existing)
 	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return result.Error
 	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -76,7 +76,6 @@ func (r *GormProxyIPAddressRepository) CreateOrUpdate(proxyIPAddress *model.Prox
 		proxyIPAddress.UpdatedAt = time.Now()
 		return r.db.Create(proxyIPAddress).Error
 	}
-	// todo 后续IPV6启用了，这里需要判断是否是IPV6
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		defer func() {
 			if r := recover(); r != nil {

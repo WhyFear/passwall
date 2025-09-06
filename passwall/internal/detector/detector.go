@@ -12,9 +12,9 @@ import (
 )
 
 type DetectionResult struct {
-	BaseInfo     *ipbaseinfo.IPBaseInfo
-	IPInfoResult []*ipinfo.IPInfoResult
-	UnlockResult []*unlockchecker.CheckResult
+	BaseInfo        *ipbaseinfo.IPBaseInfo
+	IPInfoResultMap map[string][]*ipinfo.IPInfoResult
+	UnlockResult    []*unlockchecker.CheckResult
 }
 
 type DetectorManager struct {
@@ -49,23 +49,28 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	if ipProxy == nil {
 		return nil, errors.New("ipProxy is nil")
 	}
-	// 第一步：获取基础IP信息（强依赖）
-	baseInfo, err := ipbaseinfo.GetProxyIP(ipProxy.ProxyClient)
-	if err != nil {
-		log.Errorln("DetectAll GetProxyIP error: %v", err)
-		return nil, err
-	}
-	if baseInfo.IPV4 == "" && baseInfo.IPV6 == "" {
-		return nil, errors.New("both IPV4 and IPV6 are empty, maybe the proxy is not working")
-	}
-	if baseInfo.IPV4 == "" {
-		ipProxy.IP = baseInfo.IPV6
-	} else {
-		ipProxy.IP = baseInfo.IPV4
+
+	var baseInfo *ipbaseinfo.IPBaseInfo
+	if ipProxy.IPV4 == "" && ipProxy.IPV6 == "" {
+		// 第一步：获取基础IP信息（强依赖）
+		baseInfo, err := ipbaseinfo.GetProxyIP(ipProxy.ProxyClient)
+		if err != nil {
+			log.Errorln("DetectAll GetProxyIP error: %v", err)
+			return nil, err
+		}
+		if baseInfo.IPV4 == "" && baseInfo.IPV6 == "" {
+			return nil, errors.New("both IPV4 and IPV6 are empty, maybe the proxy is not working")
+		}
+		if baseInfo.IPV4 != "" {
+			ipProxy.IPV4 = baseInfo.IPV4
+		}
+		if baseInfo.IPV6 != "" {
+			ipProxy.IPV6 = baseInfo.IPV6
+		}
 	}
 
 	// 第二步：并发执行IP信息检测和解锁检测
-	var ipInfoResult []*ipinfo.IPInfoResult
+	var ipInfoResultMap map[string][]*ipinfo.IPInfoResult
 	var unlockResult []*unlockchecker.CheckResult
 
 	g := &errgroup.Group{}
@@ -73,12 +78,24 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	// 并发执行IP信息检测
 	if ipInfoEnabled {
 		g.Go(func() error {
-			result, err := dm.ipInfoManager.DetectByAll(ipProxy)
-			if err != nil {
-				log.Errorln("DetectAll IPInfo error: %v", err)
-				return err
+			if ipProxy.IPV4 != "" {
+				ipProxy.IP = ipProxy.IPV4
+				result, err := dm.ipInfoManager.DetectByAll(ipProxy)
+				if err != nil {
+					log.Errorln("DetectAll IPInfo error: %v", err)
+				} else {
+					ipInfoResultMap[ipProxy.IPV4] = result
+				}
 			}
-			ipInfoResult = result
+			if ipProxy.IPV6 != "" {
+				ipProxy.IP = ipProxy.IPV6
+				result, err := dm.ipInfoManager.DetectByAll(ipProxy)
+				if err != nil {
+					log.Errorln("DetectAll IPInfo error: %v", err)
+				} else {
+					ipInfoResultMap[ipProxy.IPV6] = result
+				}
+			}
 			return nil
 		})
 	}
@@ -102,8 +119,8 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	}
 
 	return &DetectionResult{
-		BaseInfo:     baseInfo,
-		IPInfoResult: ipInfoResult,
-		UnlockResult: unlockResult,
+		BaseInfo:        baseInfo,
+		IPInfoResultMap: ipInfoResultMap,
+		UnlockResult:    unlockResult,
 	}, nil
 }

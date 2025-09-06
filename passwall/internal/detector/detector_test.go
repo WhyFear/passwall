@@ -10,7 +10,7 @@ import (
 func TestNewDetectorManager(t *testing.T) {
 	manager := NewDetectorManager()
 	assert.NotNil(t, manager)
-	resp, err := manager.DetectAll(model.NewIPProxy("", &model.Proxy{
+	resp, err := manager.DetectAll(model.NewIPProxy(&model.Proxy{
 		Config: "you config here",
 	}), true, true)
 	assert.NoError(t, err)

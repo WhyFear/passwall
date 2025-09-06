@@ -22,6 +22,7 @@ type ProxyIPAddress struct {
 	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	ProxyID       uint      `json:"proxy_id" gorm:"not null;index"`
 	IPAddressesID uint      `json:"ip_addresses_id" gorm:"not null;index"`
+	IPType        uint      `json:"ip_type" gorm:"type:integer;not null"`
 	Latest        bool      `json:"latest" gorm:"not null;default:true"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
