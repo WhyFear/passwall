@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"passwall/internal/model"
 	"passwall/internal/util"
+	"strings"
 )
 
 type SpotifyUnlockCheck struct {
@@ -61,13 +62,13 @@ func (s *SpotifyUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 			return &CheckResult{
 				APPName: Spotify,
 				Status:  CheckStatusUnlock,
-				Region:  country,
+				Region:  strings.ToUpper(country),
 			}
 		} else {
 			return &CheckResult{
 				APPName: Spotify,
 				Status:  CheckStatusForbidden,
-				Region:  country,
+				Region:  strings.ToUpper(country),
 			}
 		}
 	case 320, 120:

@@ -278,6 +278,7 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				IPInfoEnable:    cfg.IPCheck.IPInfo.Enable,
 				APPUnlockEnable: cfg.IPCheck.IPInfo.Enable,
 				Refresh:         false,
+				Concurrent:      cfg.IPCheck.Concurrent,
 			}); err != nil {
 				log.Errorln("检测IP失败: %v", err)
 			}

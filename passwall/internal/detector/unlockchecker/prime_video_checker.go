@@ -1,7 +1,6 @@
 package unlockchecker
 
 import (
-	"fmt"
 	"log"
 	"passwall/internal/model"
 	"passwall/internal/util"
@@ -26,7 +25,7 @@ func (p *PrimeVideoUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	// 检查IP代理是否有效
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		result.Status = CheckStatusFail
-		result.Region = "no proxy"
+		result.Region = ""
 		return result
 	}
 
@@ -45,7 +44,7 @@ func (p *PrimeVideoUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	if err != nil {
 		log.Printf("PrimeVideo check request failed: %v", err)
 		result.Status = CheckStatusFail
-		result.Region = fmt.Sprintf("request error: %v", err)
+		result.Region = ""
 		return result
 	}
 
@@ -61,7 +60,7 @@ func (p *PrimeVideoUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 			region := matches[1]
 			if region != "" {
 				result.Status = CheckStatusUnlock
-				result.Region = region
+				result.Region = strings.ToUpper(region)
 				return result
 			}
 		}
@@ -72,13 +71,13 @@ func (p *PrimeVideoUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	for _, pattern := range restrictedPatterns {
 		if regexp.MustCompile(`(?i)` + pattern).MatchString(contentStr) {
 			result.Status = CheckStatusForbidden
-			result.Region = "restricted"
+			result.Region = ""
 			return result
 		}
 	}
 
 	// 如果以上方法都失败，返回失败状态
 	result.Status = CheckStatusFail
-	result.Region = "no region info"
+	result.Region = ""
 	return result
 }

@@ -18,10 +18,11 @@ type Config struct {
 	CronJobs   []CronJob      `yaml:"cron_jobs"`
 }
 type IPCheckConfig struct {
-	Enable    bool            `yaml:"enable"`
-	IPInfo    IPInfoConfig    `yaml:"ip_info"`
-	AppUnlock AppUnlockConfig `yaml:"app_unlock"`
-	Refresh   bool            `yaml:"refresh"`
+	Enable     bool            `yaml:"enable"`
+	IPInfo     IPInfoConfig    `yaml:"ip_info"`
+	AppUnlock  AppUnlockConfig `yaml:"app_unlock"`
+	Refresh    bool            `yaml:"refresh"`
+	Concurrent int             `yaml:"concurrent"`
 }
 type IPInfoConfig struct {
 	Enable bool `yaml:"enable"`

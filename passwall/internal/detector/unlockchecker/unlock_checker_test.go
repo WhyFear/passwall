@@ -27,7 +27,7 @@ func TestChecker(t *testing.T) {
 
 	for _, tc := range testCheckerList {
 		t.Run(tc.name, func(t *testing.T) {
-			ipProxy := model.NewIPProxy("1.1.1.1", &model.Proxy{
+			ipProxy := model.NewIPProxy(&model.Proxy{
 				Config: config,
 			})
 

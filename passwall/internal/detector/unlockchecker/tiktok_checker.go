@@ -4,6 +4,7 @@ import (
 	"passwall/internal/model"
 	"passwall/internal/util"
 	"regexp"
+	"strings"
 
 	"github.com/metacubex/mihomo/log"
 )
@@ -48,6 +49,6 @@ func (t *TikTokUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	return &CheckResult{
 		APPName: TikTok,
 		Status:  CheckStatusUnlock,
-		Region:  region,
+		Region:  strings.ToUpper(region),
 	}
 }

@@ -73,7 +73,7 @@ func (n *NetflixUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 		return &CheckResult{
 			APPName: Netflix,
 			Status:  CheckStatusForbidden,
-			Region:  region,
+			Region:  strings.ToUpper(region),
 		}
 	}
 
@@ -82,7 +82,7 @@ func (n *NetflixUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 		return &CheckResult{
 			APPName: Netflix,
 			Status:  CheckStatusUnlock,
-			Region:  region,
+			Region:  strings.ToUpper(region),
 		}
 	}
 

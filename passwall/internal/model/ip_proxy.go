@@ -14,13 +14,14 @@ import (
 
 type IPProxy struct {
 	IP          string
+	IPV4        string
+	IPV6        string
 	ProxyClient *http.Client
 }
 
-func NewIPProxy(ip string, proxy *Proxy) *IPProxy {
+func NewIPProxy(proxy *Proxy) *IPProxy {
 	proxyClient := GetClashProxyClient(proxy, 5*time.Second)
 	return &IPProxy{
-		IP:          ip,
 		ProxyClient: proxyClient,
 	}
 }

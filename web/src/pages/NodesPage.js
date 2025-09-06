@@ -5,10 +5,11 @@ import {
   PushpinFilled,
   PushpinOutlined,
   ReloadOutlined,
+  SettingOutlined,
   StopOutlined
 } from '@ant-design/icons';
-import {Button, Card, InputNumber, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
-import React, {useEffect, useRef, useState} from 'react';
+import {Button, Card, Checkbox, Dropdown, InputNumber, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
+import {useEffect, useRef, useState} from 'react';
 import {nodeApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
@@ -502,15 +503,82 @@ const NodesPage = () => {
     }
   };
 
+
+  const [visibleColumns, setVisibleColumns] = useState({});
+
+  // 定义所有列的配置
+  const allColumns = [{key: 'index', title: '序号', fixed: false, hideable: false}, {
+    key: 'subscription_url', title: '订阅链接', fixed: false, hideable: true
+  }, {
+    key: 'name', title: '名称', fixed: false, hideable: true
+  }, {
+    key: 'address', title: '节点', fixed: false, hideable: true
+  }, {
+    key: 'type', title: '节点类型', fixed: false, hideable: true
+  }, {
+    key: 'status', title: '状态', fixed: false, hideable: true
+  }, {key: 'ping', title: 'Ping', fixed: false, hideable: true}, {
+    key: 'download_speed', title: '下载速度', fixed: false, hideable: true
+  }, {key: 'upload_speed', title: '上传速度', fixed: false, hideable: true}, {
+    key: 'latest_test_time', title: '测试时间', fixed: false, hideable: true
+  }, {key: 'success_rate', title: '成功率', fixed: false, hideable: true}, {
+    key: 'risk', title: '风险等级', fixed: false, hideable: true
+  }, {key: 'country_code', title: '国家/地区', fixed: false, hideable: true}, {
+    key: 'action', title: '操作', fixed: true, hideable: false
+  }];
+
+  // 默认显示的列（不可隐藏的列+一些默认显示的可隐藏列）
+  const defaultVisibleColumns = ['index', 'subscription_url', 'name', 'address', 'type', 'status', 'ping', 'download_speed', 'upload_speed', 'latest_test_time', 'success_rate', 'action'];
+
+  // 初始化列显示状态
+  useEffect(() => {
+    const savedColumns = localStorage.getItem('nodeTableColumns');
+    if (savedColumns) {
+      try {
+        setVisibleColumns(JSON.parse(savedColumns));
+        return
+      } catch (e) {
+        console.error('Failed to parse saved column settings', e);
+      }
+    }
+    // 其他情况，比如首次加载或者配置错误时使用默认设置
+    const initialColumns = {};
+    defaultVisibleColumns.forEach(key => {
+      initialColumns[key] = true;
+    });
+    setVisibleColumns(initialColumns);
+  }, []);
+
+  // 保存列设置到本地存储
+  const saveColumnSettings = (newSettings) => {
+    try {
+      localStorage.setItem('nodeTableColumns', JSON.stringify(newSettings));
+    } catch (e) {
+      console.error('Failed to save column settings', e);
+    }
+  };
+
+  // 处理列显示变化
+  const handleColumnVisibilityChange = (key, checked) => {
+    const newSettings = {...visibleColumns, [key]: checked};
+    setVisibleColumns(newSettings);
+    saveColumnSettings(newSettings);
+  };
+
   // 表格列配置
   const columns = [{
-    title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1,
+    title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1, hidden: !visibleColumns['index']
   }, {
-    title: '订阅链接', dataIndex: 'subscription_url', key: 'subscription_url', width: 300, ellipsis: true,
+    title: '订阅链接',
+    dataIndex: 'subscription_url',
+    key: 'subscription_url',
+    width: 300,
+    ellipsis: true,
+    hidden: !visibleColumns['subscription_url']
   }, {
-    title: '名称', dataIndex: 'name', key: 'name', width: 200, ellipsis: true,
+    title: '名称', dataIndex: 'name', key: 'name', width: 200, ellipsis: true, hidden: !visibleColumns['name']
   }, {
-    title: '节点', dataIndex: 'address', key: 'address', width: 200,
+    title: '节点', dataIndex: 'address', key: 'address', width: 200, hidden: !visibleColumns['address']
   }, {
     title: '节点类型',
     dataIndex: 'type',
@@ -521,6 +589,7 @@ const NodesPage = () => {
     filterMode: 'tree',
     filters: nodeTypes.length > 0 ? nodeTypes : [{text: 'vmess', value: 'vmess'}, {text: 'vless', value: 'vless'}],
     filterMultiple: true,
+    hidden: !visibleColumns['type']
   }, {
     title: '状态',
     dataIndex: 'status',
@@ -532,8 +601,15 @@ const NodesPage = () => {
       text: '未知错误', value: 3
     }],
     filterMultiple: true,
+    hidden: !visibleColumns['status']
   }, {
-    title: 'Ping', dataIndex: 'ping', key: 'ping', width: 120, render: (ping) => ping ? `${ping}ms` : '-', sorter: true,
+    title: 'Ping',
+    dataIndex: 'ping',
+    key: 'ping',
+    width: 120,
+    render: (ping) => ping ? `${ping}ms` : '-',
+    sorter: true,
+    hidden: !visibleColumns['ping']
   }, {
     title: '下载速度',
     dataIndex: 'download_speed',
@@ -542,6 +618,7 @@ const NodesPage = () => {
     render: (speed) => formatSpeed(speed),
     sorter: true,
     defaultSortOrder: 'descend',
+    hidden: !visibleColumns['download_speed']
   }, {
     title: '上传速度',
     dataIndex: 'upload_speed',
@@ -549,6 +626,7 @@ const NodesPage = () => {
     width: 110,
     render: (speed) => formatSpeed(speed),
     sorter: true,
+    hidden: !visibleColumns['upload_speed']
   }, {
     title: '测试时间',
     dataIndex: 'latest_test_time',
@@ -556,6 +634,7 @@ const NodesPage = () => {
     width: 160,
     render: (text) => formatDate(text),
     sorter: true,
+    hidden: !visibleColumns['latest_test_time']
   }, {
     title: '成功率',
     dataIndex: 'success_rate',
@@ -563,6 +642,22 @@ const NodesPage = () => {
     align: 'right',
     render: (rate) => `${rate}%`,
     width: 80,
+    hidden: !visibleColumns['success_rate']
+  }, {
+    title: '风险等级',
+    dataIndex: ['ip_info', 'risk'],
+    key: 'risk',
+    width: 100,
+    render: (risk) => risk ? risk : "-",
+    hidden: !visibleColumns['risk']
+  }, {
+    title: '国家/地区',
+    dataIndex: ['ip_info', 'country_code'],
+    key: 'country',
+    width: 100,
+    render: (country) => country ? country : "-", // filters: [{text: '低', value: 1}, {text: '中', value: 2}, {text: '高', value: 3}],
+    // filterMultiple: true,
+    hidden: !visibleColumns['country_code']
   }, {
     title: '操作',
     key: 'action',
@@ -605,7 +700,20 @@ const NodesPage = () => {
         />
       </Tooltip>
     </div>),
-  },];
+    hidden: !visibleColumns['action']
+  }].filter(column => !column.hidden);
+
+  // 列设置菜单
+  const columnSettingMenu = allColumns.map(column => ({
+    key: column.key, label: (<Checkbox
+      checked={visibleColumns[column.key] ?? defaultVisibleColumns.includes(column.key)}
+      onChange={e => handleColumnVisibilityChange(column.key, e.target.checked)}
+      disabled={!column.hideable}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {column.title}
+    </Checkbox>)
+  }));
 
   return (<div>
     <Tabs
@@ -655,6 +763,15 @@ const NodesPage = () => {
         >
           按当前参数导出订阅链接
         </Button>
+        <Dropdown menu={{items: columnSettingMenu}} trigger={['click']}>
+          <Button
+            type="primary"
+            icon={<SettingOutlined/>}
+            style={{margin: 0}}
+          >
+            列设置
+          </Button>
+        </Dropdown>
       </div>}
     >
       <Tabs.TabPane tab="所有节点" key="2">
@@ -704,8 +821,11 @@ const NodesPage = () => {
           <InfoItem label="分享链接" value={currentNode.share_url} isMultiLine={true}/>
           <InfoItem label="总计下载流量" value={formatTraffic(currentNode.download_total)}/>
           <InfoItem label="总计上传流量" value={formatTraffic(currentNode.upload_total)}/>
-          <InfoItem label="风险等级" value={currentNode.ip_info?.risk || '-'}/>
-          <InfoItem label="国家/地区代码" value={currentNode.ip_info?.country_code || '-'}/>
+          {currentNode.ip_info?.ipv4 && (<InfoItem label="IPV4地址" value={currentNode.ip_info?.ipv4}/>)}
+          {currentNode.ip_info?.ipv6 && (<InfoItem label="IPV6地址" value={currentNode.ip_info?.ipv6}/>)}
+          {currentNode.ip_info?.risk && (<InfoItem label="风险等级" value={currentNode.ip_info?.risk}/>)}
+          {currentNode.ip_info?.country_code && (
+            <InfoItem label="国家/地区代码" value={currentNode.ip_info?.country_code}/>)}
         </Card>
         {/* 如果没有app_unlock，不展示这个模块*/}
         {currentNode?.ip_info?.app_unlock && (<Card title="应用解锁">
