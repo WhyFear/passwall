@@ -5,6 +5,7 @@ import (
 
 	"sync"
 
+	"github.com/metacubex/mihomo/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -29,6 +30,11 @@ func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]*CheckResult,
 		idx := i
 		ch := checker
 		g.Go(func() error {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Errorln("batch check proxy ip failed, checker: %v, err: %v", ch, err)
+				}
+			}()
 			result := ch.Check(ipProxy)
 			mu.Lock()
 			results[idx] = result

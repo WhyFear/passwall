@@ -6,6 +6,7 @@ import (
 
 	"sync"
 
+	"github.com/metacubex/mihomo/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -29,6 +30,11 @@ func (rm *RiskManager) DetectByAll(ipProxy *model.IPProxy) ([]*IPInfoResult, err
 	for _, detector := range allDetectors {
 		d := detector
 		g.Go(func() error {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Errorln("batch detect proxy ip failed, detector: %v, err: %v", detector, err)
+				}
+			}()
 			result, err := d.Detect(ipProxy)
 			if err != nil {
 				return fmt.Errorf("检测器执行失败: %w", err)

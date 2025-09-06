@@ -55,7 +55,7 @@ func (s *Scheduler) SetServices(taskManager task.TaskManager,
 }
 
 // Init 启动调度器
-func (s *Scheduler) Init(cronJobs []config.CronJob) error {
+func (s *Scheduler) Init(config config.Config) error {
 	s.jobMutex.Lock()
 	defer s.jobMutex.Unlock()
 
@@ -69,7 +69,7 @@ func (s *Scheduler) Init(cronJobs []config.CronJob) error {
 	s.jobIDs = make(map[string]cron.EntryID)
 
 	// 添加任务
-	for _, job := range cronJobs {
+	for _, job := range config.CronJobs {
 		// 检查任务配置是否有效
 		if job.Schedule == "" {
 			log.Infoln("Job %s has invalid schedule, skipping", job.Name)
@@ -79,7 +79,7 @@ func (s *Scheduler) Init(cronJobs []config.CronJob) error {
 		// 创建任务闭包
 		jobConfig := job // 创建副本避免闭包问题
 		entryID, err := s.cron.AddFunc(jobConfig.Schedule, func() {
-			s.executeJob(jobConfig)
+			s.executeJob(jobConfig, config.IPCheck)
 		})
 
 		if err != nil {
@@ -112,7 +112,7 @@ func (s *Scheduler) Stop() {
 }
 
 // executeJob 执行定时任务
-func (s *Scheduler) executeJob(job config.CronJob) {
+func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckConfig) {
 	log.Infoln("Executing job: %s", job.Name)
 
 	defer func() {
@@ -145,6 +145,29 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 			return // 如果刷新失败，则终止当前任务
 		}
 		log.Infoln("Job '%s': Subscription refresh finished.", job.Name)
+		if checkConfig.Enable {
+			// 查所有没有检查记录的节点
+			proxyIDs, err := s.ipDetectService.GetProxyIDsNotInIPAddress()
+			if err != nil {
+				log.Errorln("Job '%s': Failed to get proxy ids not in ip address: %v", job.Name, err)
+				return
+			}
+			if len(proxyIDs) > 0 {
+				go func() {
+					err = s.ipDetectService.BatchDetect(&service.BatchIPDetectorReq{
+						ProxyIDList:     proxyIDs,
+						Enabled:         true,
+						IPInfoEnable:    checkConfig.IPInfo.Enable,
+						APPUnlockEnable: checkConfig.AppUnlock.Enable,
+						Refresh:         false,
+						Concurrent:      checkConfig.Concurrent,
+					})
+					if err != nil {
+						log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
+					}
+				}()
+			}
+		}
 	}
 
 	// 步骤 2: 执行节点测试
@@ -204,9 +227,7 @@ func (s *Scheduler) executeJob(job config.CronJob) {
 	}
 
 	if job.IPCheck.Enable {
-		filters := make(map[string]interface{})
-		filters["status"] = model.ProxyStatusOK
-		proxies, _, err := s.proxyService.GetProxiesByFilters(filters, "id", "asc", 1, 100000)
+		proxies, _, err := s.proxyService.GetProxiesByFilters(nil, "id", "asc", 1, 100000)
 		if err != nil {
 			log.Errorln("Job '%s': Failed to get proxies: %v", job.Name, err)
 		}

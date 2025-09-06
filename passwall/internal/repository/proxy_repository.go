@@ -44,6 +44,7 @@ type ProxyRepository interface {
 	FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error)
 	FindPage(query PageQuery) (*PageResult, error)
 	FindByName(name string) (*model.Proxy, error)
+	FindNotInIDs(ids []uint) ([]uint, error)
 	Create(proxy *model.Proxy) error
 	BatchCreate(proxies []*model.Proxy) error
 	BatchUpdateProxyStatus(proxyIDs []uint, status model.ProxyStatus) error
@@ -62,6 +63,15 @@ type ProxyRepository interface {
 // GormProxyRepository 基于GORM的代理服务器仓库实现
 type GormProxyRepository struct {
 	db *gorm.DB
+}
+
+func (r *GormProxyRepository) FindNotInIDs(ids []uint) ([]uint, error) {
+	var proxyIDs []uint
+	result := r.db.Model(&model.Proxy{}).Where("id NOT IN ?", ids).Pluck("id", &proxyIDs)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return proxyIDs, nil
 }
 
 // NewProxyRepository 创建代理服务器仓库

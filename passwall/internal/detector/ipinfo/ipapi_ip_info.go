@@ -39,8 +39,29 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error
 	result := gjson.Parse(string(resp))
 	// 提取风险分数, 格式为0.0067 (Low)
 	scoreText := result.Get("company.abuser_score").String()
+	if scoreText == "" {
+		return &IPInfoResult{
+			Detector: DetectorIPAPI,
+			Risk: RiskResult{
+				ScoreFloat: score,
+				IPRiskType: i.GetRiskType(""),
+			},
+			Raw: string(resp),
+		}, nil
+	}
 	// 空格分隔
 	spaceIndex := strings.Index(scoreText, " ")
+	// 处理超限问题
+	if spaceIndex == -1 {
+		return &IPInfoResult{
+			Detector: DetectorIPAPI,
+			Risk: RiskResult{
+				ScoreFloat: score,
+				IPRiskType: i.GetRiskType(""),
+			},
+			Raw: string(resp),
+		}, nil
+	}
 	scoreString := scoreText[:spaceIndex]
 	scoreDesc := scoreText[spaceIndex+1:]
 	// 解析风险分数

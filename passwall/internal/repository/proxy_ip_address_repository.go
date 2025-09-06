@@ -13,12 +13,22 @@ type ProxyIPAddressRepository interface {
 	FindByID(id uint) (*model.ProxyIPAddress, error)
 	FindByProxyID(proxyID uint) ([]*model.ProxyIPAddress, error)
 	FindByIPAddressID(ipAddressID uint) ([]*model.ProxyIPAddress, error)
+	GetDistinctProxyIDs() ([]uint, error)
 	CreateOrUpdate(proxyIPAddress *model.ProxyIPAddress) error
 }
 
 // GormProxyIPAddressRepository 基于GORM的代理IP关联仓库实现
 type GormProxyIPAddressRepository struct {
 	db *gorm.DB
+}
+
+func (r *GormProxyIPAddressRepository) GetDistinctProxyIDs() ([]uint, error) {
+	var proxyIDs []uint
+	result := r.db.Model(&model.ProxyIPAddress{}).Select("DISTINCT proxy_id").Pluck("proxy_id", &proxyIDs)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return proxyIDs, nil
 }
 
 // NewProxyIPAddressRepository 创建代理IP关联仓库
