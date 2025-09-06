@@ -43,6 +43,7 @@ type IPDetectorService interface {
 	BatchDetect(req *BatchIPDetectorReq) error
 	Detect(req *IPDetectorReq) error
 	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
+	GetProxyIDsNotInIPAddress() ([]uint, error)
 }
 
 type ipDetectorImpl struct {
@@ -383,4 +384,13 @@ func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 		resp.AppUnlock = appUnlockList
 	}
 	return resp, nil
+}
+
+func (i ipDetectorImpl) GetProxyIDsNotInIPAddress() ([]uint, error) {
+	proxyIDList, err := i.ProxyIPAddress.GetDistinctProxyIDs()
+	if err != nil {
+		log.Errorln("get distinct proxy id failed, err: %v", err)
+		return nil, err
+	}
+	return i.ProxyRepo.FindNotInIDs(proxyIDList)
 }
