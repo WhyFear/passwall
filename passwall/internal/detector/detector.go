@@ -51,9 +51,10 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	}
 
 	var baseInfo *ipbaseinfo.IPBaseInfo
+	var err error
 	if ipProxy.IPV4 == "" && ipProxy.IPV6 == "" {
 		// 第一步：获取基础IP信息（强依赖）
-		baseInfo, err := ipbaseinfo.GetProxyIP(ipProxy.ProxyClient)
+		baseInfo, err = ipbaseinfo.GetProxyIP(ipProxy.ProxyClient)
 		if err != nil {
 			log.Errorln("DetectAll GetProxyIP error: %v", err)
 			return nil, err
@@ -77,6 +78,7 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 
 	// 并发执行IP信息检测
 	if ipInfoEnabled {
+		ipInfoResultMap = make(map[string][]*ipinfo.IPInfoResult)
 		g.Go(func() error {
 			if ipProxy.IPV4 != "" {
 				ipProxy.IP = ipProxy.IPV4
