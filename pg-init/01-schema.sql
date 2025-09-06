@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS proxy_ip_addresses
 );
 
 -- 创建索引和唯一约束
-CREATE UNIQUE INDEX IF NOT EXISTS idx_proxy_ip_addresses_proxy_id_ip_addresses_id ON proxy_ip_addresses (proxy_id, ip_addresses_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_proxy_ip_addresses_proxy_id_ip_addresses_id_ip_type ON proxy_ip_addresses (proxy_id, ip_addresses_id, ip_type);
 CREATE INDEX IF NOT EXISTS idx_proxy_ip_addresses_ip_addresses_id ON proxy_ip_addresses (ip_addresses_id);
 CREATE INDEX IF NOT EXISTS idx_proxy_ip_addresses_proxy_id ON proxy_ip_addresses (proxy_id);
 

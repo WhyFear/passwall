@@ -827,25 +827,26 @@ const NodesPage = () => {
           {currentNode.ip_info?.country_code && (
             <InfoItem label="国家/地区代码" value={currentNode.ip_info?.country_code}/>)}
         </Card>
-        {/* 如果没有app_unlock，不展示这个模块*/}
-        {currentNode?.ip_info?.app_unlock && (<Card title="应用解锁">
-          <Table
-            columns={[{
-              title: '应用名称', dataIndex: 'app_name', key: 'app_name'
-            }, {
-              title: '解锁状态',
-              dataIndex: 'status',
-              key: 'status',
-              render: (status) => <AppUnlockStatusTag status={status}/>
-            }, {
-              title: '地区', dataIndex: 'region', key: 'region', render: (region) => region || '-'
-            }]}
-            dataSource={currentNode.ip_info?.app_unlock || []}
-            pagination={false}
-          />
-        </Card>)}
 
-        <Card title="历史记录">
+        {currentNode?.ip_info?.app_unlock && currentNode.ip_info?.app_unlock.length > 0 && (
+          <Card title="应用解锁" style={{marginBottom: 5}}>
+            <Table
+              columns={[{
+                title: '应用名称', dataIndex: 'app_name', key: 'app_name'
+              }, {
+                title: '解锁状态',
+                dataIndex: 'status',
+                key: 'status',
+                render: (status) => <AppUnlockStatusTag status={status}/>
+              }, {
+                title: '地区', dataIndex: 'region', key: 'region', render: (region) => region || '-'
+              }]}
+              dataSource={currentNode.ip_info?.app_unlock || []}
+              pagination={false}
+            />
+          </Card>)}
+
+        {nodeHistory && nodeHistory.length > 0 && <Card title="历史记录" style={{marginBottom: 5}}>
           <Table
             columns={[{
               title: '测试时间', dataIndex: 'tested_at', key: 'tested_at', render: (text) => formatDate(text)
@@ -871,7 +872,7 @@ const NodesPage = () => {
             }}
             onChange={handleHistoryTableChange}
           />
-        </Card>
+        </Card>}
       </div>)}
     </Modal>
   </div>);

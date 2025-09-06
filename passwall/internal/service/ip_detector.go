@@ -185,7 +185,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 	ipAddressId6 := uint(0)
 	if resp.BaseInfo.IPV4 != "" {
 		ipAddress := &model.IPAddress{
-			IP:     req.IPProxy.IP,
+			IP:     resp.BaseInfo.IPV4,
 			IPType: 4,
 		}
 		err = i.IPAddressRepo.CreateOrIgnore(ipAddress)
@@ -207,7 +207,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 	}
 	if resp.BaseInfo.IPV6 != "" {
 		ipAddress := &model.IPAddress{
-			IP:     req.IPProxy.IP,
+			IP:     resp.BaseInfo.IPV6,
 			IPType: 6,
 		}
 		err = i.IPAddressRepo.CreateOrIgnore(ipAddress)
