@@ -6,6 +6,7 @@ import (
 	"passwall/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/metacubex/mihomo/log"
 )
 
 // IPDetectRequest 检测IP质量请求
@@ -38,6 +39,11 @@ func DetectIPQuality(config config.IPCheckConfig, ipDetectorService service.IPDe
 
 		// 执行IP质量检测
 		go func() {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
+				}
+			}()
 			_ = ipDetectorService.Detect(&service.IPDetectorReq{
 				ProxyID:         req.ProxyID,
 				Enabled:         config.Enable,

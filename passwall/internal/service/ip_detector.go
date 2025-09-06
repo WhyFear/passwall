@@ -79,6 +79,11 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 
 	for _, proxyID := range req.ProxyIDList {
 		eg.Go(func() error {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", proxyID, err)
+				}
+			}()
 			err := i.Detect(&IPDetectorReq{
 				ProxyID:         proxyID,
 				Enabled:         true,
@@ -335,7 +340,7 @@ func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 	for _, proxyIP := range proxyIPList {
 		if proxyIP.IPType == 4 {
 			ipAddId = proxyIP.IPAddressesID
-			ipAddress, err := i.IPAddressRepo.FindByID(ipAddId)
+			ipAddress, err := i.IPAddressRepo.FindByID(proxyIP.IPAddressesID)
 			if err != nil {
 				log.Errorln("find ip address by id failed, err: %v", err)
 				return nil, err
@@ -343,11 +348,12 @@ func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 			if ipAddress.IPType == 4 {
 				resp.IPv4 = ipAddress.IP
 			}
-			break
 		}
 		if proxyIP.IPType == 6 {
-			ipAddId = proxyIP.IPAddressesID
-			ipAddress, err := i.IPAddressRepo.FindByID(ipAddId)
+			if ipAddId == 0 { // ipv4 first
+				ipAddId = proxyIP.IPAddressesID
+			}
+			ipAddress, err := i.IPAddressRepo.FindByID(proxyIP.IPAddressesID)
 			if err != nil {
 				log.Errorln("find ip address by id failed, err: %v", err)
 				return nil, err
