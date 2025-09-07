@@ -145,29 +145,6 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 			return // 如果刷新失败，则终止当前任务
 		}
 		log.Infoln("Job '%s': Subscription refresh finished.", job.Name)
-		if checkConfig.Enable {
-			// 查所有没有检查记录的节点
-			proxyIDs, err := s.ipDetectService.GetProxyIDsNotInIPAddress()
-			if err != nil {
-				log.Errorln("Job '%s': Failed to get proxy ids not in ip address: %v", job.Name, err)
-				return
-			}
-			if len(proxyIDs) > 0 {
-				go func() {
-					err = s.ipDetectService.BatchDetect(&service.BatchIPDetectorReq{
-						ProxyIDList:     proxyIDs,
-						Enabled:         true,
-						IPInfoEnable:    checkConfig.IPInfo.Enable,
-						APPUnlockEnable: checkConfig.AppUnlock.Enable,
-						Refresh:         false,
-						Concurrent:      checkConfig.Concurrent,
-					})
-					if err != nil {
-						log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
-					}
-				}()
-			}
-		}
 	}
 
 	// 步骤 2: 执行节点测试
@@ -223,6 +200,28 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 		err := s.proxyService.BanProxy(ctx, serviceReq)
 		if err != nil {
 			log.Errorln("Job '%s': Failed to ban proxy: %v", job.Name, err)
+		}
+	}
+
+	if job.ReloadSubscribeConfig && checkConfig.Enable {
+		// 查所有没有检查记录的节点
+		proxyIDs, err := s.ipDetectService.GetProxyIDsNotInIPAddress()
+		if err != nil {
+			log.Errorln("Job '%s': Failed to get proxy ids not in ip address: %v", job.Name, err)
+			return
+		}
+		if len(proxyIDs) > 0 {
+			err = s.ipDetectService.BatchDetect(&service.BatchIPDetectorReq{
+				ProxyIDList:     proxyIDs,
+				Enabled:         true,
+				IPInfoEnable:    checkConfig.IPInfo.Enable,
+				APPUnlockEnable: checkConfig.AppUnlock.Enable,
+				Refresh:         false,
+				Concurrent:      checkConfig.Concurrent,
+			})
+			if err != nil {
+				log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
+			}
 		}
 	}
 
