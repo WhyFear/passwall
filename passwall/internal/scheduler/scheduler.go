@@ -140,6 +140,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 
 	// 步骤 1: 如果配置了刷新订阅，则串行执行
 	if job.ReloadSubscribeConfig {
+		log.Infoln("reload subscribe Job '%s': Start to refresh subscriptions.", job.Name)
 		if err := s.subsManager.RefreshAllSubscriptions(ctx, false); err != nil {
 			log.Infoln("Job '%s': Failed to refresh subscriptions, stopping job. Error: %v", job.Name, err)
 			return // 如果刷新失败，则终止当前任务
@@ -149,6 +150,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 
 	// 步骤 2: 执行节点测试
 	if job.TestProxy.Enable {
+		log.Infoln("Job '%s': Start to test proxy.", job.Name)
 		filter := &proxy.ProxyFilter{}
 		if job.TestProxy.Status != "" {
 			statusStrList := strings.Split(job.TestProxy.Status, ",")
@@ -186,6 +188,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 
 	// 步骤3 禁用节点
 	if job.AutoBan.Enable {
+		log.Infoln("Job '%s': Start to ban proxy.", job.Name)
 		testTimes := job.AutoBan.TestTimes
 		if testTimes == 0 {
 			testTimes = 5
@@ -204,6 +207,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 	}
 
 	if job.ReloadSubscribeConfig && checkConfig.Enable {
+		log.Infoln("reload subscribe Job '%s': Start to check ip quality.", job.Name)
 		// 查所有没有检查记录的节点
 		proxyIDs, err := s.ipDetectService.GetProxyIDsNotInIPAddress()
 		if err != nil {
@@ -226,6 +230,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 	}
 
 	if job.IPCheck.Enable {
+		log.Infoln("Job '%s': Start to check ip quality.", job.Name)
 		proxies, _, err := s.proxyService.GetProxiesByFilters(nil, "id", "asc", 1, 100000)
 		if err != nil {
 			log.Errorln("Job '%s': Failed to get proxies: %v", job.Name, err)
@@ -248,6 +253,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 	}
 
 	if len(job.Webhook) > 0 {
+		log.Infoln("Job '%s': Start to send webhook.", job.Name)
 		webhookClient := util.NewWebhookClient()
 
 		if errs := webhookClient.ExecuteWebhooks(job.Webhook, nil); len(errs) > 0 {

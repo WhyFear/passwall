@@ -104,18 +104,19 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 }
 
 func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
+	log.Infoln("start to detect proxy ip, proxy id: %v", req.ProxyID)
 	if !req.Enabled {
-		log.Infoln("ip detector is disabled")
+		log.Infoln("ip detector is disabled, proxy id: %v", req.ProxyID)
 		return nil
 	}
 	// get proxy
 	proxy, err := i.ProxyRepo.FindByID(req.ProxyID)
 	if err != nil {
-		log.Errorln("find proxy by id failed, err: %v", err)
+		log.Errorln("find proxy by id failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
 	}
 	if proxy == nil {
-		log.Errorln("proxy is nil, skip...")
+		log.Errorln("proxy is nil, proxy id: %v, skip...", req.ProxyID)
 		return nil
 	}
 	req.IPProxy = model.NewIPProxy(proxy)
@@ -123,24 +124,24 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 	if !req.Refresh {
 		proxyIPAddress, err := i.ProxyIPAddress.FindByProxyID(req.ProxyID)
 		if err != nil {
-			log.Errorln("find proxy ip address by proxy id failed, err: %v", err)
+			log.Errorln("find proxy ip address by proxy id failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 		if len(proxyIPAddress) > 0 {
-			log.Infoln("refresh is disabled, have record, skip...")
+			log.Infoln("refresh is disabled, have record, skip..., proxy id: %v", req.ProxyID)
 			return nil
 		}
 		// 先获取ip地址，然后如果没有记录再做其他检测
 		resp, err := i.Detector.DetectAll(req.IPProxy, false, false)
 		if err != nil {
-			log.Errorln("detect proxy ip failed, err: %v", err)
+			log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 		if resp.BaseInfo != nil {
 			if resp.BaseInfo.IPV4 != "" {
 				ipAddress, err := i.IPAddressRepo.FindByIP(resp.BaseInfo.IPV4)
 				if err != nil {
-					log.Errorln("find ipv4 address by ip failed, err: %v", err)
+					log.Errorln("find ipv4 address by ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 					return err
 				}
 				if ipAddress != nil {
@@ -150,17 +151,17 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 						IPType:        4,
 					})
 					if err != nil {
-						log.Errorln("create or update proxy ip address failed, err: %v", err)
+						log.Errorln("create or update proxy ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
 						return err
 					}
-					log.Infoln("ip address by proxy ip is: %v", ipAddress)
+					log.Infoln("ip address by proxy ip is: %v, proxy id: %v", ipAddress, req.ProxyID)
 					return nil
 				}
 			}
 			if resp.BaseInfo.IPV6 != "" {
 				ipAddress, err := i.IPAddressRepo.FindByIP(resp.BaseInfo.IPV6)
 				if err != nil {
-					log.Errorln("find ipv6 address by ip failed, err: %v", err)
+					log.Errorln("find ipv6 address by ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 					return err
 				}
 				if ipAddress != nil {
@@ -170,10 +171,10 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 						IPType:        6,
 					})
 					if err != nil {
-						log.Errorln("create or update proxy ip address failed, err: %v", err)
+						log.Errorln("create or update proxy ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
 						return err
 					}
-					log.Infoln("ip address by proxy ip is: %v", ipAddress)
+					log.Infoln("ip address by proxy ip is: %v, proxy id: %v", ipAddress, req.ProxyID)
 					return nil
 				}
 			}
@@ -183,7 +184,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 	// below is refresh logic
 	resp, err := i.Detector.DetectAll(req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
 	if err != nil {
-		log.Errorln("detect proxy ip failed, err: %v", err)
+		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
 	}
 	// 下面都是保存逻辑
@@ -196,7 +197,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		}
 		err = i.IPAddressRepo.CreateOrIgnore(ipAddress)
 		if err != nil {
-			log.Errorln("create or update ip address failed, err: %v", err)
+			log.Errorln("create or update ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 		ipAddressId4 = ipAddress.ID
@@ -207,7 +208,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			IPType:        4,
 		})
 		if err != nil {
-			log.Errorln("create or update proxy ip address failed, err: %v", err)
+			log.Errorln("create or update proxy ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 	}
@@ -218,7 +219,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		}
 		err = i.IPAddressRepo.CreateOrIgnore(ipAddress)
 		if err != nil {
-			log.Errorln("create or update ip address failed, err: %v", err)
+			log.Errorln("create or update ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 		ipAddressId6 = ipAddress.ID
@@ -229,12 +230,12 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			IPType:        6,
 		})
 		if err != nil {
-			log.Errorln("create or update proxy ip address failed, err: %v", err)
+			log.Errorln("create or update proxy ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 	}
 	if ipAddressId4 == 0 && ipAddressId6 == 0 {
-		log.Infoln("ip address is empty, skip...")
+		log.Infoln("ip address is empty, skip..., proxy id: %v", req.ProxyID)
 		return nil
 	}
 
@@ -248,7 +249,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			ipAddressId = ipAddressId6
 		}
 		if ipAddressId == 0 {
-			log.Errorln("ip address id is empty, ip: %v", ip)
+			log.Errorln("ip address id is empty, proxy id: %v, ip: %v", req.ProxyID, ip)
 			continue
 		}
 		if ipInfoResultList != nil && len(ipInfoResultList) > 0 {
@@ -275,12 +276,12 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			}
 			err = i.IPInfoRepo.BatchCreateOrUpdate(ipInfoList)
 			if err != nil {
-				log.Errorln("create or update ip info failed, err: %v", err)
+				log.Errorln("create or update ip info failed, proxy id: %v, err: %v", req.ProxyID, err)
 			}
 			// ip base info 取出最大值
 			// riskLevelMap和countryCodeMap都为空，就不保存
 			if len(riskLevelMap) == 0 && len(countryCodeMap) == 0 {
-				log.Infoln("ip base info is empty, skip...")
+				log.Infoln("ip base info is empty, skip..., proxy id: %v", req.ProxyID)
 			} else {
 				var riskLevel ipinfo.IPRiskType
 				var riskLevelCount int
@@ -305,7 +306,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 				}
 				err = i.IPBaseInfoRepo.CreateOrUpdate(ipBaseInfo)
 				if err != nil {
-					log.Errorln("create or update ip base info failed, err: %v", err)
+					log.Errorln("create or update ip base info failed, proxy id: %v, err: %v", req.ProxyID, err)
 				}
 			}
 		}
@@ -322,7 +323,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			}
 			err = i.IPUnlockInfoRepo.BatchCreateOrUpdate(ipUnlockInfoList)
 			if err != nil {
-				log.Errorln("create or update ip unlock info failed, err: %v", err)
+				log.Errorln("create or update ip unlock info failed, proxy id: %v, err: %v", req.ProxyID, err)
 			}
 		}
 	}

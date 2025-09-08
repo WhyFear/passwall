@@ -67,7 +67,7 @@ type GormProxyRepository struct {
 
 func (r *GormProxyRepository) FindNotInIDs(ids []uint) ([]uint, error) {
 	var proxyIDs []uint
-	result := r.db.Model(&model.Proxy{}).Where("id NOT IN ?", ids).Pluck("id", &proxyIDs)
+	result := r.db.Model(&model.Proxy{}).Where("id NOT IN ?", ids).Where("status = ?", model.ProxyStatusOK).Pluck("id", &proxyIDs)
 	if result.Error != nil {
 		return nil, result.Error
 	}
