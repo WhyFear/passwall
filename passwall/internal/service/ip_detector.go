@@ -79,14 +79,15 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 	eg.SetLimit(req.Concurrent)
 
 	for _, proxyID := range req.ProxyIDList {
+		pid := proxyID
 		eg.Go(func() error {
 			defer func() {
 				if err := recover(); err != nil {
-					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", proxyID, err)
+					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", pid, err)
 				}
 			}()
 			err := i.Detect(&IPDetectorReq{
-				ProxyID:         proxyID,
+				ProxyID:         pid,
 				Enabled:         true,
 				IPInfoEnable:    req.IPInfoEnable,
 				APPUnlockEnable: req.APPUnlockEnable,
