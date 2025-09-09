@@ -112,6 +112,9 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 }
 
 func GetUrl(client *http.Client, url string) ([]byte, error) {
+	if client == nil {
+		return nil, errors.New("HTTP client is nil")
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
@@ -152,6 +155,9 @@ func GetRandomUserAgent() string {
 }
 
 func GetUrlWithHeaders(client *http.Client, url string, headers map[string]string) ([]byte, error) {
+	if client == nil {
+		return nil, errors.New("HTTP client is nil")
+	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -195,6 +201,9 @@ func GetUrlWithHeaders(client *http.Client, url string, headers map[string]strin
 }
 
 func PostUrlWithHeaders(client *http.Client, url string, headers map[string]string, body []byte) ([]byte, error) {
+	if client == nil {
+		return nil, errors.New("HTTP client is nil")
+	}
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
