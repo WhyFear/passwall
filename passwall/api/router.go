@@ -52,6 +52,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		apiGroup.GET("/scheduler_status", func(c *gin.Context) {
 			c.JSON(200, scheduler.GetStatus())
 		})
+		// IP质量检测API
+		apiGroup.POST("/batch_detect_ip", handler.BatchDetectIPQuality(cfg.IPCheck, services.IPDetectorService))
 	}
 
 	// 添加API路由

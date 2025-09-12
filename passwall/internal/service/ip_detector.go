@@ -96,11 +96,8 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 			return err
 		})
 	}
-	err := eg.Wait()
-	if err != nil {
-		log.Errorln("batch detect proxy ip failed, err: %v", err)
-		return err
-	}
+	_ = eg.Wait()
+	log.Infoln("batch detect proxy ip finished")
 	return nil
 }
 

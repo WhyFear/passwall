@@ -90,7 +90,7 @@ func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
 	}
 
 	if ipInfo.IPV4 == "" && ipInfo.IPV6 == "" {
-		return nil, fmt.Errorf("no IP services available")
+		return nil, fmt.Errorf("no IP address found")
 	}
 
 	return ipInfo, nil
