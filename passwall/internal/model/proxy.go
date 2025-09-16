@@ -54,6 +54,8 @@ type Proxy struct {
 	LatestTestTime *time.Time  `json:"latest_test_time"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
+
+	ProxyIPAddresses []ProxyIPAddress `json:"proxy_ip_addresses" gorm:"foreignKey:ProxyID"`
 }
 
 // SpeedTestResult 测速结果

@@ -125,3 +125,23 @@ func GetIPQuality(ipQualityService service.IPDetectorService) gin.HandlerFunc {
 		})
 	}
 }
+
+func GetCountryCodeList(ipDetectorService service.IPDetectorService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		countryCodes, err := ipDetectorService.GetDistinctCountryCode()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusInternalServerError,
+				"status_msg":  "get country code failed",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"result":      "success",
+			"status_code": http.StatusOK,
+			"status_msg":  "success",
+			"data":        countryCodes,
+		})
+	}
+}

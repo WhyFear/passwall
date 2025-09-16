@@ -16,12 +16,14 @@ import (
 )
 
 type ProxyReq struct {
-	Page      int    `form:"page" json:"page"`
-	PageSize  int    `form:"pageSize" json:"pageSize"`
-	Status    string `form:"status"`
-	Type      string `form:"type"`
-	SortField string `form:"sortField"`
-	SortOrder string `form:"sortOrder"`
+	Page        int    `form:"page" json:"page"`
+	PageSize    int    `form:"pageSize" json:"pageSize"`
+	Status      string `form:"status"`
+	Type        string `form:"type"`
+	CountryCode string `form:"country_code"`
+	RiskLevel   string `form:"risk_level"`
+	SortField   string `form:"sortField"`
+	SortOrder   string `form:"sortOrder"`
 }
 
 type ProxyResp struct {
@@ -80,6 +82,12 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 		}
 		if len(req.Type) > 0 {
 			filters["type"] = strings.Split(req.Type, ",")
+		}
+		if len(req.CountryCode) > 0 {
+			filters["country_code"] = strings.Split(req.CountryCode, ",")
+		}
+		if len(req.RiskLevel) > 0 {
+			filters["risk_level"] = strings.Split(req.RiskLevel, ",")
 		}
 
 		// 获取所有代理

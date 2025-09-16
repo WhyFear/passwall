@@ -13,11 +13,32 @@ type IPBaseInfoRepository interface {
 	FindByID(id uint) (*model.IPBaseInfo, error)
 	FindByIPAddressID(ipAddressID uint) (*model.IPBaseInfo, error)
 	CreateOrUpdate(ipBaseInfo *model.IPBaseInfo) error
+	GetDistinctCountryCode() ([]string, error)
 }
 
 // GormIPBaseInfoRepository 基于GORM的IP基础信息仓库实现
 type GormIPBaseInfoRepository struct {
 	db *gorm.DB
+}
+
+func (r *GormIPBaseInfoRepository) GetDistinctCountryCode() ([]string, error) {
+	var countryCodes []string
+	// SELECT ip_base_infos.country_code
+	//FROM ip_base_infos
+	//WHERE ip_base_infos.country_code != ''
+	//GROUP BY ip_base_infos.country_code
+	//ORDER BY count(*) DESC
+	result := r.db.Model(&model.IPBaseInfo{}).
+		Select("country_code").
+		Where("country_code != ''").
+		Group("country_code").
+		Order("count(*) DESC").
+		Find(&countryCodes).
+		Error
+	if result != nil {
+		return nil, result
+	}
+	return countryCodes, nil
 }
 
 // NewIPBaseInfoRepository 创建IP基础信息仓库

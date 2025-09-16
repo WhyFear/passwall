@@ -44,6 +44,7 @@ type IPDetectorService interface {
 	Detect(req *IPDetectorReq) error
 	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
 	GetProxyIDsNotInIPAddress() ([]uint, error)
+	GetDistinctCountryCode() ([]string, error)
 }
 
 type ipDetectorImpl struct {
@@ -392,4 +393,13 @@ func (i ipDetectorImpl) GetProxyIDsNotInIPAddress() ([]uint, error) {
 		return nil, err
 	}
 	return i.ProxyRepo.FindNotInIDs(proxyIDList)
+}
+
+func (i ipDetectorImpl) GetDistinctCountryCode() ([]string, error) {
+	result, err := i.IPBaseInfoRepo.GetDistinctCountryCode()
+	if err != nil {
+		log.Errorln("get distinct country code failed, err: %v", err)
+		return nil, err
+	}
+	return result, nil
 }

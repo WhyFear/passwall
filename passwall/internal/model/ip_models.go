@@ -14,6 +14,8 @@ type IPAddress struct {
 	IPType    uint      `json:"ip_type" gorm:"type:integer"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	IPBaseInfo IPBaseInfo `json:"ip_base_info" gorm:"foreignKey:IPAddressesID"`
 }
 
 // ProxyIPAddress 代理IP关联表模型
@@ -26,6 +28,8 @@ type ProxyIPAddress struct {
 	Latest        bool      `json:"latest" gorm:"not null;default:true"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+
+	IPAddress IPAddress `json:"ip_address" gorm:"foreignKey:IPAddressesID"`
 }
 
 // IPInfo IP信息表模型
