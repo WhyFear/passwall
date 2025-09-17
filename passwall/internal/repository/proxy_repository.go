@@ -58,6 +58,7 @@ type ProxyRepository interface {
 	GetTypes(types *[]string) error
 	CountValidBySubscriptionID(subscriptionID uint) (int64, error)
 	CountBySubscriptionID(subscriptionID uint) (int64, error)
+	CountOKBySubscriptionID(subscriptionID uint) (int64, error)
 }
 
 // GormProxyRepository 基于GORM的代理服务器仓库实现
@@ -423,6 +424,16 @@ func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64,
 		Where("subscription_id = ?", subscriptionID).
 		Count(&count).Error
 	return count, err
+}
+
+// CountOKBySubscriptionID 根据订阅ID统计可用代理数量
+func (r *GormProxyRepository) CountOKBySubscriptionID(subscriptionID uint) (int64, error) {
+	var count int64
+	result := r.db.Model(&model.Proxy{}).Where("subscription_id = ?", subscriptionID).Where("status = ?", model.ProxyStatusOK).Count(&count)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return count, nil
 }
 
 // BatchUpdateProxyConfig 在事务中批量更新代理服务器配置

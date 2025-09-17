@@ -232,13 +232,19 @@ const SubscriptionPage = () => {
     width: 120,
     render: (status) => <StatusTag status={status}/>,
   }, {
-    title: '生效节点数量',
+    title: <Tooltip title="节点测速结果为正常的节点"><span>状态正常节点数量</span></Tooltip>,
+    dataIndex: 'ok_proxy_num',
+    key: 'ok_proxy_num',
+    width: 140,
+    render: (ok_proxy_num) => (ok_proxy_num) ? ok_proxy_num : '-',
+  }, {
+    title: <Tooltip title="未被禁用的节点数量"><span>生效节点数量</span></Tooltip>,
     dataIndex: 'proxy_num',
     key: 'proxy_num',
     width: 120,
     render: (proxy_num) => (proxy_num) ? proxy_num : '-',
   }, {
-    title: '所有节点数量',
+    title: <Tooltip title="所有节点数量，包含被禁用的节点"><span>所有节点数量</span></Tooltip>,
     dataIndex: 'all_proxy_num',
     key: 'all_proxy_num',
     width: 120,
