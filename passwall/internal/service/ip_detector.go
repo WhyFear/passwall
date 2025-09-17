@@ -7,6 +7,7 @@ import (
 	"passwall/internal/detector/ipinfo"
 	"passwall/internal/model"
 	"passwall/internal/repository"
+	"passwall/internal/service/task"
 	"strings"
 
 	"github.com/metacubex/mihomo/log"
@@ -55,9 +56,17 @@ type ipDetectorImpl struct {
 	IPBaseInfoRepo   repository.IPBaseInfoRepository
 	IPInfoRepo       repository.IPInfoRepository
 	IPUnlockInfoRepo repository.IPUnlockInfoRepository
+	TaskManager      task.TaskManager
 }
 
-func NewIPDetector(proxyRepo repository.ProxyRepository, proxyIPAddressRepo repository.ProxyIPAddressRepository, ipAddressRepo repository.IPAddressRepository, ipBaseInfoRepo repository.IPBaseInfoRepository, ipInfoRepo repository.IPInfoRepository, ipUnlockInfoRepo repository.IPUnlockInfoRepository) IPDetectorService {
+func NewIPDetector(proxyRepo repository.ProxyRepository,
+	proxyIPAddressRepo repository.ProxyIPAddressRepository,
+	ipAddressRepo repository.IPAddressRepository,
+	ipBaseInfoRepo repository.IPBaseInfoRepository,
+	ipInfoRepo repository.IPInfoRepository,
+	ipUnlockInfoRepo repository.IPUnlockInfoRepository,
+	taskManager task.TaskManager,
+) IPDetectorService {
 	return &ipDetectorImpl{
 		Detector:         detector.NewDetectorManager(),
 		ProxyRepo:        proxyRepo,
@@ -66,6 +75,7 @@ func NewIPDetector(proxyRepo repository.ProxyRepository, proxyIPAddressRepo repo
 		IPBaseInfoRepo:   ipBaseInfoRepo,
 		IPInfoRepo:       ipInfoRepo,
 		IPUnlockInfoRepo: ipUnlockInfoRepo,
+		TaskManager:      taskManager,
 	}
 }
 
@@ -76,8 +86,18 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 	if req.Concurrent == 0 {
 		req.Concurrent = 20
 	}
-	eg, _ := errgroup.WithContext(context.Background())
+	eg, ctx := errgroup.WithContext(context.Background())
 	eg.SetLimit(req.Concurrent)
+
+	_, success := i.TaskManager.StartTask(ctx, task.TaskTypeCheckIp, len(req.ProxyIDList))
+	if !success {
+		log.Errorln("start task failed, task type: %v", task.TaskTypeCheckIp)
+		return nil
+	}
+
+	defer func() {
+		i.TaskManager.FinishTask(task.TaskTypeCheckIp, "batch detect proxy ip finished")
+	}()
 
 	for _, proxyID := range req.ProxyIDList {
 		pid := proxyID
@@ -94,6 +114,7 @@ func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
 				APPUnlockEnable: req.APPUnlockEnable,
 				Refresh:         req.Refresh,
 			})
+			i.TaskManager.UpdateProgress(task.TaskTypeCheckIp, 1, "")
 			return err
 		})
 	}
