@@ -58,6 +58,7 @@ type ProxyRepository interface {
 	GetTypes(types *[]string) error
 	CountValidBySubscriptionID(subscriptionID uint) (int64, error)
 	CountBySubscriptionID(subscriptionID uint) (int64, error)
+	CountOKBySubscriptionID(subscriptionID uint) (int64, error)
 }
 
 // GormProxyRepository 基于GORM的代理服务器仓库实现
@@ -152,6 +153,9 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	var total int64
 	db := r.db.Model(&model.Proxy{})
 
+	// 防止重复join
+	joinIPInfo := false
+
 	if query.Filters != nil {
 		for key, value := range query.Filters {
 			if key == "status" {
@@ -169,6 +173,37 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 					continue
 				}
 			}
+			if key == "country_code" {
+				if !joinIPInfo {
+					// 预加载关联表
+					db = db.Preload("ProxyIPAddresses.IPAddress.IPBaseInfo")
+					db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id").
+						Joins("INNER JOIN ip_base_infos ON proxy_ip_addresses.ip_addresses_id = ip_base_infos.ip_addresses_id")
+					// 联查ip_base_info表
+					joinIPInfo = true
+				}
+				// id in
+				if countryCodeArray, ok := value.([]string); ok && len(countryCodeArray) > 0 {
+					// 联查ip_base_info表
+					db = db.Where("ip_base_infos.country_code IN ?", countryCodeArray)
+					continue
+				}
+			}
+			if key == "risk_level" {
+				if !joinIPInfo {
+					// 预加载关联表
+					db = db.Preload("ProxyIPAddresses.IPAddress.IPBaseInfo")
+					db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id").
+						Joins("INNER JOIN ip_base_infos ON proxy_ip_addresses.ip_addresses_id = ip_base_infos.ip_addresses_id")
+					// 联查ip_base_info表
+					joinIPInfo = true
+				}
+				if riskLevelArray, ok := value.([]string); ok && len(riskLevelArray) > 0 {
+					// 联查ip_base_info表
+					db = db.Where("ip_base_infos.risk_level IN ?", riskLevelArray)
+					continue
+				}
+			}
 			db = db.Where(key, value)
 		}
 	}
@@ -177,17 +212,25 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	if err := db.Count(&total).Error; err != nil {
 		return nil, err
 	}
+
 	if query.Page <= 0 {
 		query.Page = 1
 	}
 	if query.PageSize <= 0 {
 		query.PageSize = 10
 	}
+
 	if query.OrderBy != "" {
 		db = db.Order(query.OrderBy)
 	} else {
 		db = db.Order("updated_at DESC")
 	}
+
+	// 如果有join，需要去重
+	if joinIPInfo {
+		db = db.Distinct("proxies.*")
+	}
+	db.Debug().Offset((query.Page - 1) * query.PageSize).Limit(query.PageSize).Find(&proxies)
 	if err := db.Offset((query.Page - 1) * query.PageSize).Limit(query.PageSize).Find(&proxies).Error; err != nil {
 		return nil, err
 	}
@@ -381,6 +424,16 @@ func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64,
 		Where("subscription_id = ?", subscriptionID).
 		Count(&count).Error
 	return count, err
+}
+
+// CountOKBySubscriptionID 根据订阅ID统计可用代理数量
+func (r *GormProxyRepository) CountOKBySubscriptionID(subscriptionID uint) (int64, error) {
+	var count int64
+	result := r.db.Model(&model.Proxy{}).Where("subscription_id = ?", subscriptionID).Where("status = ?", model.ProxyStatusOK).Count(&count)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return count, nil
 }
 
 // BatchUpdateProxyConfig 在事务中批量更新代理服务器配置

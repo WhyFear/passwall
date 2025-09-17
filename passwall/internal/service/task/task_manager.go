@@ -12,7 +12,8 @@ type TaskType string
 const (
 	TaskTypeSpeedTest  TaskType = "speed_test"  // 测速
 	TaskTypeReloadSubs TaskType = "reload_subs" // 重新加载订阅
-	TaskTypeBanProxy   TaskType = "ban_proxy"   // 重新加载订阅
+	TaskTypeBanProxy   TaskType = "ban_proxy"   // 批量禁用代理
+	TaskTypeCheckIp    TaskType = "check_ip"    // 检查IP
 )
 
 // TaskState 任务状态

@@ -1,11 +1,12 @@
 package handler
 
 import (
-	"github.com/metacubex/mihomo/log"
 	"net/http"
 	"passwall/internal/model"
 	"passwall/internal/service/proxy"
 	"time"
+
+	"github.com/metacubex/mihomo/log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -23,6 +24,7 @@ type SubscriptionResp struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	ProxyNum    int64     `json:"proxy_num,omitempty"`
+	OKProxyNum  int64     `json:"ok_proxy_num,omitempty"`
 	AllProxyNum int64     `json:"all_proxy_num,omitempty"`
 	Content     string    `json:"content,omitempty"`
 }
@@ -79,13 +81,18 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 			subscriptions = allSubscriptions
 		}
 		for _, subscription := range subscriptions {
+			OKProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false, true)
+			if err != nil {
+				log.Infoln("Failed to get proxy num:", err)
+				OKProxyNum = 0
+			}
 			// 获取代理数量
-			validProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, true)
+			validProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, true, false)
 			if err != nil {
 				log.Infoln("Failed to get proxy num:", err)
 				validProxyNum = 0
 			}
-			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false)
+			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false, false)
 			if err != nil {
 				log.Infoln("Failed to get proxy num:", err)
 				proxyNum = 0
@@ -96,6 +103,7 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 				Status:      int(subscription.Status),
 				CreatedAt:   subscription.CreatedAt,
 				UpdatedAt:   subscription.UpdatedAt,
+				OKProxyNum:  OKProxyNum,
 				ProxyNum:    validProxyNum,
 				AllProxyNum: proxyNum,
 			}

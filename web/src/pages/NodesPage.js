@@ -88,6 +88,24 @@ const formatSpeed = (bytesPerSecond) => {
   return `${speed.toFixed(2)}${units[unit]}`;
 };
 
+const formatRisk = (risk) => {
+  if (!risk) return '-';
+  switch (risk) {
+    case 'very_low':
+      return '非常低';
+    case 'low':
+      return '低';
+    case 'medium':
+      return '中';
+    case 'high':
+      return '高';
+    case 'very_high':
+      return '非常高';
+    default:
+      return '-';
+  }
+}
+
 // 格式化流量的函数
 const formatTraffic = (bytes) => {
   if (!bytes) return '-';
@@ -124,8 +142,10 @@ const NodesPage = () => {
   const [filters, setFilters] = useState({});
   const [nodeTypes, setNodeTypes] = useState([]);
   const [taskStatus, setTaskStatus] = useState(null);
-  const timerRef = useRef(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
+  const [countryCodes, setCountryCodes] = useState({});
+
+  const timerRef = useRef(null);
 
   // 获取所有节点
   const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
@@ -148,7 +168,17 @@ const NodesPage = () => {
         params.type = filter.type.join(',');
       }
 
+      if (filter.country) {
+        params.country_code = filter.country.join(',');
+      }
+
+      if (filter.risk) {
+        params.risk_level = filter.risk.join(',');
+      }
+
       const data = await subscriptionApi.getProxies({params});
+      // 在开始加载时立即清空节点列表，避免分页时数据乱序
+      setNodes([]);
 
       // 直接使用返回的items数组作为节点列表
       const nodeList = Array.isArray(data.items) ? data.items : [];
@@ -217,6 +247,22 @@ const NodesPage = () => {
     }
   };
 
+  // 获取国家代码
+  const fetchCountryCodes = async () => {
+    try {
+      const data = await nodeApi.getCountryCodes();
+      if (Array.isArray(data?.data)) {
+        const list = data?.data;
+        setCountryCodes(list.map(code => ({
+          text: code, value: code
+        })));
+      }
+    } catch (error) {
+      console.error('获取国家代码失败');
+      setCountryCodes({});
+      console.error(error);
+    }
+  };
   // 获取任务状态
   const fetchTaskStatusHandler = async () => {
     await fetchTaskStatus("speed_test", setTaskStatus);
@@ -231,40 +277,61 @@ const NodesPage = () => {
   useEffect(() => {
     // 初始获取一次任务状态
     fetchTaskStatusHandler();
+    fetchNodes();
+    fetchNodeTypes();
+    fetchCountryCodes();
 
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
       fetchTaskStatusHandler();
     }, 3000);
 
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+    window.addEventListener('resize', handleResize);
+
     // 组件卸载时清除定时器
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      window.removeEventListener('resize', handleResize);
     };
   }, []);
 
-  // 处理表格分页变化
+
+  // 初始化列显示状态
+  useEffect(() => {
+    const savedColumns = localStorage.getItem('nodeTableColumns');
+    if (savedColumns) {
+      try {
+        setVisibleColumns(JSON.parse(savedColumns));
+        return
+      } catch (e) {
+        console.error('Failed to parse saved column settings', e);
+      }
+    }
+    // 其他情况，比如首次加载或者配置错误时使用默认设置
+    const initialColumns = {};
+    defaultVisibleColumns.forEach(key => {
+      initialColumns[key] = true;
+    });
+    setVisibleColumns(initialColumns);
+  }, []);
+
+// 处理表格分页变化
   const handleTableChange = (newPagination, newFilters, newSorter) => {
     const sort = newSorter.field ? {
       field: newSorter.field, order: newSorter.order || 'descend',
     } : sorter;
 
-    // 处理筛选条件
-    const filter = {};
-    if (newFilters.status && newFilters.status.length > 0) {
-      filter.status = newFilters.status;
-    }
-
-    // 处理节点类型筛选
-    if (newFilters.type && newFilters.type.length > 0) {
-      filter.type = newFilters.type;
-    }
-
+    // 先更新状态，然后使用最新的状态调用 fetchNodes
     setSorter(sort);
-    setFilters(filter);
-    fetchNodes(newPagination.current, newPagination.pageSize, sort, filter);
+    setFilters(newFilters);
+
+    // 直接使用新的参数值，而不是依赖异步更新的状态
+    fetchNodes(newPagination.current, newPagination.pageSize, sort, newFilters);
   };
 
   // 处理历史记录表格分页变化
@@ -386,19 +453,6 @@ const NodesPage = () => {
       console.error(error);
     }
   };
-
-  useEffect(() => {
-    fetchNodes();
-    fetchNodeTypes();
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth <= 600);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // 查看节点详情
   const handleViewNode = (node) => {
@@ -530,24 +584,6 @@ const NodesPage = () => {
   // 默认显示的列（不可隐藏的列+一些默认显示的可隐藏列）
   const defaultVisibleColumns = ['index', 'subscription_url', 'name', 'address', 'type', 'status', 'ping', 'download_speed', 'upload_speed', 'latest_test_time', 'success_rate', 'action'];
 
-  // 初始化列显示状态
-  useEffect(() => {
-    const savedColumns = localStorage.getItem('nodeTableColumns');
-    if (savedColumns) {
-      try {
-        setVisibleColumns(JSON.parse(savedColumns));
-        return
-      } catch (e) {
-        console.error('Failed to parse saved column settings', e);
-      }
-    }
-    // 其他情况，比如首次加载或者配置错误时使用默认设置
-    const initialColumns = {};
-    defaultVisibleColumns.forEach(key => {
-      initialColumns[key] = true;
-    });
-    setVisibleColumns(initialColumns);
-  }, []);
 
   // 保存列设置到本地存储
   const saveColumnSettings = (newSettings) => {
@@ -644,19 +680,26 @@ const NodesPage = () => {
     width: 80,
     hidden: !visibleColumns['success_rate']
   }, {
-    title: '风险等级',
+    title: <Tooltip
+      title="风险等级由IPV4及IPV6分别计算，优先展示IPV4的风险等级，可能出现筛选低风险但出现高风险情况"><span>风险等级 <InfoCircleOutlined/></span></Tooltip>,
     dataIndex: ['ip_info', 'risk'],
     key: 'risk',
     width: 100,
-    render: (risk) => risk ? risk : "-",
+    render: (risk) => formatRisk(risk),
+    filters: [{text: formatRisk('very_low'), value: 'very_low'}, {text: formatRisk('low'), value: 'low'}, {
+      text: formatRisk('medium'), value: 'medium'
+    }, {text: formatRisk('high'), value: 'high'}, {text: formatRisk('very_high'), value: 'very_high'}],
+    filterMultiple: true,
     hidden: !visibleColumns['risk']
   }, {
     title: '国家/地区',
     dataIndex: ['ip_info', 'country_code'],
     key: 'country',
     width: 100,
-    render: (country) => country ? country : "-", // filters: [{text: '低', value: 1}, {text: '中', value: 2}, {text: '高', value: 3}],
-    // filterMultiple: true,
+    render: (country) => country ? country : "-",
+    filterMode: 'tree',
+    filters: countryCodes.length > 0 ? countryCodes : [],
+    filterMultiple: true,
     hidden: !visibleColumns['country_code']
   }, {
     title: '操作',

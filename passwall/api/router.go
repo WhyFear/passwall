@@ -52,6 +52,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		apiGroup.GET("/scheduler_status", func(c *gin.Context) {
 			c.JSON(200, scheduler.GetStatus())
 		})
+		// IP质量检测API
+		apiGroup.POST("/batch_detect_ip", handler.BatchDetectIPQuality(cfg.IPCheck, services.IPDetectorService))
 	}
 
 	// 添加API路由
@@ -93,6 +95,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		// IP质量检测API
 		webGroup.POST("/detect_ip", handler.DetectIPQuality(cfg.IPCheck, services.IPDetectorService))
 		webGroup.GET("/get_ip_info", handler.GetIPQuality(services.IPDetectorService))
+		webGroup.GET("/get_country_codes", handler.GetCountryCodeList(services.IPDetectorService))
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突
