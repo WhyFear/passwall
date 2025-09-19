@@ -319,7 +319,7 @@ func (s *StatisticsService) cleanNodeName(nodeName string) string {
 	// "[1] - 节点名" -> "[1] - 节点名" (不匹配)
 	// "[节点]自带[]" -> "[节点]自带[]" (保持不变)
 
-	re := regexp.MustCompile(`^\[\d+\]-(.+)$`)
+	re := regexp.MustCompile(`^\[\d+]-(.+)$`)
 	matches := re.FindStringSubmatch(nodeName)
 	if len(matches) == 2 {
 		return strings.TrimSpace(matches[1])
