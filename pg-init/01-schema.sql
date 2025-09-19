@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS speed_test_histories
 
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_proxy_id ON speed_test_histories (proxy_id);
+CREATE INDEX idx_speed_test_histories_proxy_created ON speed_test_histories (proxy_id, created_at DESC);
 
 -- 流量统计表
 CREATE TABLE IF NOT EXISTS traffic_statistics

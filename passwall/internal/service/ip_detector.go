@@ -353,9 +353,13 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 	resp := &IPDetectResp{}
 	proxyIPList, err := i.ProxyIPAddress.FindByProxyID(req.ProxyID)
-	if err != nil || len(proxyIPList) == 0 {
+	if err != nil {
 		log.Errorln("find proxy ip address by proxy id failed, err: %v", err)
 		return nil, err
+	}
+	if len(proxyIPList) == 0 {
+		log.Infoln("ip address is empty, skip..., proxy id: %v", req.ProxyID)
+		return nil, nil
 	}
 	// 优先取IPV4结果
 	var ipAddId uint

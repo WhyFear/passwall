@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"passwall/internal/model"
 	"time"
 
@@ -16,6 +17,7 @@ type SpeedTestHistoryPageResult struct {
 type SpeedTestHistoryRepository interface {
 	FindByID(id uint) (*model.SpeedTestHistory, error)
 	FindByProxyID(proxyID uint, page PageQuery) (SpeedTestHistoryPageResult, error)
+	BatchFindByProxyIDList(proxyIDList []uint) (map[uint][]model.SpeedTestHistory, error)
 	FindByTimeRange(proxyID uint, startTime, endTime time.Time) ([]*model.SpeedTestHistory, error)
 	Create(history *model.SpeedTestHistory) error
 	Delete(id uint) error
@@ -70,6 +72,42 @@ func (r *GormSpeedTestHistoryRepository) FindByProxyID(proxyID uint, page PageQu
 		Total: total,
 		Items: histories,
 	}, nil
+}
+
+func (r *GormSpeedTestHistoryRepository) BatchFindByProxyIDList(proxyIDList []uint) (map[uint][]model.SpeedTestHistory, error) {
+	if len(proxyIDList) == 0 {
+		return nil, fmt.Errorf("proxyIDList is empty")
+	}
+
+	var histories []model.SpeedTestHistory
+
+	err := r.db.Raw(`
+		WITH filtered_histories AS (
+			SELECT *
+			FROM speed_test_histories
+			WHERE proxy_id IN ?
+		),
+		ranked_histories AS (
+			SELECT 
+				*,
+				ROW_NUMBER() OVER (PARTITION BY proxy_id ORDER BY created_at DESC) as rn
+			FROM filtered_histories
+		)
+		SELECT *
+		FROM ranked_histories
+		WHERE rn <= 5
+		ORDER BY proxy_id, created_at DESC
+	`, proxyIDList).Scan(&histories).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[uint][]model.SpeedTestHistory)
+	for _, history := range histories {
+		result[history.ProxyID] = append(result[history.ProxyID], history)
+	}
+	return result, nil
 }
 
 // FindByTimeRange 根据时间范围查找测速历史记录

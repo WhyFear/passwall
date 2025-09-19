@@ -684,7 +684,7 @@ const NodesPage = () => {
       title="风险等级由IPV4及IPV6分别计算，优先展示IPV4的风险等级，可能出现筛选低风险但出现高风险情况"><span>风险等级 <InfoCircleOutlined/></span></Tooltip>,
     dataIndex: ['ip_info', 'risk'],
     key: 'risk',
-    width: 100,
+    width: 110,
     render: (risk) => formatRisk(risk),
     filters: [{text: formatRisk('very_low'), value: 'very_low'}, {text: formatRisk('low'), value: 'low'}, {
       text: formatRisk('medium'), value: 'medium'

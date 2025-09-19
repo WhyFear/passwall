@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"passwall/internal/model"
 	"passwall/internal/repository"
@@ -148,6 +149,17 @@ func (s *StatisticsService) GetTrafficStatistics(proxyId uint) (*model.TrafficSt
 		return nil, err
 	}
 	return traffic, nil
+}
+
+func (s *StatisticsService) BatchGetTrafficStatistics(proxyIdList []uint) (map[uint]*model.TrafficStatistics, error) {
+	if proxyIdList == nil || len(proxyIdList) == 0 {
+		return nil, fmt.Errorf("proxyIdList is empty")
+	}
+	trafficMap, err := s.trafficRepo.FindByProxyIDList(proxyIdList)
+	if err != nil {
+		return nil, err
+	}
+	return trafficMap, nil
 }
 
 // readMessages reads and processes WebSocket messages
@@ -307,7 +319,7 @@ func (s *StatisticsService) cleanNodeName(nodeName string) string {
 	// "[1] - 节点名" -> "[1] - 节点名" (不匹配)
 	// "[节点]自带[]" -> "[节点]自带[]" (保持不变)
 
-	re := regexp.MustCompile(`^\[\d+\]-(.+)$`)
+	re := regexp.MustCompile(`^\[\d+]-(.+)$`)
 	matches := re.FindStringSubmatch(nodeName)
 	if len(matches) == 2 {
 		return strings.TrimSpace(matches[1])

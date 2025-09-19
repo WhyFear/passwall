@@ -2,16 +2,19 @@ package repository
 
 import (
 	"errors"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"fmt"
 	"passwall/internal/model"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // TrafficRepository 流量统计仓库接口
 type TrafficRepository interface {
 	FindByID(id uint) (*model.TrafficStatistics, error)
 	FindByProxyID(proxyID uint) (*model.TrafficStatistics, error)
+	FindByProxyIDList(proxyIDList []uint) (map[uint]*model.TrafficStatistics, error)
 	FindAll() ([]*model.TrafficStatistics, error)
 	Create(traffic *model.TrafficStatistics) error
 	CreateOrUpdate(traffic *model.TrafficStatistics) error
@@ -21,6 +24,25 @@ type TrafficRepository interface {
 // GormTrafficRepository 基于GORM的流量统计仓库实现
 type GormTrafficRepository struct {
 	db *gorm.DB
+}
+
+func (r *GormTrafficRepository) FindByProxyIDList(proxyIDList []uint) (map[uint]*model.TrafficStatistics, error) {
+	if proxyIDList == nil || len(proxyIDList) == 0 {
+		return nil, fmt.Errorf("proxyIDList is empty")
+	}
+
+	var traffics []*model.TrafficStatistics
+	result := r.db.Where("proxy_id IN ?", proxyIDList).Find(&traffics)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	trafficMap := make(map[uint]*model.TrafficStatistics)
+	for _, traffic := range traffics {
+		trafficMap[traffic.ProxyID] = traffic
+	}
+
+	return trafficMap, nil
 }
 
 // NewTrafficRepository 创建流量统计仓库

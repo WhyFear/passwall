@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 )
@@ -8,6 +9,7 @@ import (
 type SpeedTestHistoryService interface {
 	GetSpeedTestHistoryByID(id uint) (*model.SpeedTestHistory, error)
 	GetSpeedTestHistoryByProxyID(proxyID uint, page *repository.PageQuery) (repository.SpeedTestHistoryPageResult, error)
+	BatchGetSpeedTestHistoryByProxyIDList(proxyIDList []uint) (map[uint][]model.SpeedTestHistory, error)
 	SaveSpeedTestHistory(history *model.SpeedTestHistory) (*model.SpeedTestHistory, error)
 }
 
@@ -33,6 +35,17 @@ func (s *DefaultSpeedTestHistoryService) GetSpeedTestHistoryByProxyID(proxyID ui
 	result, err := s.speedtestHistory.FindByProxyID(proxyID, *page)
 	if err != nil {
 		return repository.SpeedTestHistoryPageResult{}, err
+	}
+	return result, nil
+}
+
+func (s *DefaultSpeedTestHistoryService) BatchGetSpeedTestHistoryByProxyIDList(proxyIDList []uint) (map[uint][]model.SpeedTestHistory, error) {
+	if len(proxyIDList) == 0 {
+		return nil, fmt.Errorf("proxyIDList is empty")
+	}
+	result, err := s.speedtestHistory.BatchFindByProxyIDList(proxyIDList)
+	if err != nil {
+		return nil, err
 	}
 	return result, nil
 }
