@@ -14,33 +14,29 @@ import (
 // SetupRouter 设置API路由
 func SetupRouter(cfg *config.Config, services *service.Services, scheduler *scheduler.Scheduler) *gin.Engine {
 	ctx := context.Background()
-	// 将并发数添加到上下文中
 	ctx = context.WithValue(ctx, "concurrent", cfg.Concurrent)
 
 	// 创建Gin路由
 	router := gin.Default()
-
 	// 添加中间件
 	router.Use(middleware.Cors())
 	router.Use(middleware.Recovery())
 
-	// 添加API路由
-	apiGroup := router.Group("/api")
+	openApiGroup := router.Group("/api")
+	openAuthMiddleware := middleware.AuthReq(cfg.Token)
+	openApiGroup.Use(openAuthMiddleware)
+	{
+		openApiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
+	}
 
-	// 认证中间件
+	apiGroup := router.Group("/api/v1")
 	authMiddleware := middleware.Auth(cfg.Token)
-
-	// 公开API
-	apiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
-
-	// 需要认证的API
 	apiGroup.Use(authMiddleware)
 	{
 		// 公开API
 		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService))
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
 		apiGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
-
 		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
 
 		// 添加任务状态API
@@ -56,13 +52,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		apiGroup.POST("/batch_detect_ip", handler.BatchDetectIPQuality(cfg.IPCheck, services.IPDetectorService))
 	}
 
-	// 添加API路由
 	webGroup := router.Group("/web/api")
-
-	// 认证中间件
 	webAuthMiddleware := middleware.Auth(cfg.Token)
-
-	// 需要认证的API
 	webGroup.Use(webAuthMiddleware)
 	{
 		// 新增订阅

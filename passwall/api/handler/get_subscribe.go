@@ -23,15 +23,17 @@ const (
 )
 
 type SubscribeReq struct {
-	Token     string `form:"token" required:"true"`
-	Type      string `form:"type" required:"true"`
-	StatusStr string `form:"status"`
-	ProxyType string `form:"proxy_type"`
-	Sort      string `form:"sort"`
-	SortOrder string `form:"sortOrder"`
-	Limit     int    `form:"limit"`
-	ID        int    `form:"id"`
-	WithIndex bool   `form:"with_index"`
+	Token       string `form:"token" required:"true"`
+	Type        string `form:"type" required:"true"`
+	StatusStr   string `form:"status"`
+	ProxyType   string `form:"proxy_type"`
+	CountryCode string `form:"country_code"`
+	RiskLevel   string `form:"risk_level"`
+	Sort        string `form:"sort"`
+	SortOrder   string `form:"sortOrder"`
+	Limit       int    `form:"limit"`
+	ID          int    `form:"id"`
+	WithIndex   bool   `form:"with_index"`
 }
 
 // GetSubscribe 获取订阅处理器
@@ -67,18 +69,21 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 			}
 			proxies = append(proxies, singleProxy)
 		} else {
-			// 构建过滤条件
 			filters := make(map[string]interface{})
 
-			// 处理状态过滤
 			if req.StatusStr != "" {
 				statusList := strings.Split(req.StatusStr, ",")
 				filters["status"] = statusList
 			}
-			// 和status一样，处理proxy_type
 			if req.ProxyType != "" {
 				proxyTypeList := strings.Split(req.ProxyType, ",")
 				filters["type"] = proxyTypeList
+			}
+			if len(req.CountryCode) > 0 {
+				filters["country_code"] = strings.Split(req.CountryCode, ",")
+			}
+			if len(req.RiskLevel) > 0 {
+				filters["risk_level"] = strings.Split(req.RiskLevel, ",")
 			}
 
 			// 获取所有符合条件的代理
