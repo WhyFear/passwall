@@ -353,6 +353,12 @@ const NodesPage = () => {
       if (filters.type && filters.type.length > 0) {
         params.proxy_type = filters.type.join(',');
       }
+      if (filters.country && filters.country.length > 0) {
+        params.country_code = filters.country.join(',');
+      }
+      if (filters.risk && filters.risk.length > 0) {
+        params.risk_level = filters.risk.join(',');
+      }
       params.token = localStorage.getItem('token');
       params.with_index = 1;
       params.type = 'share_link';
@@ -390,15 +396,19 @@ const NodesPage = () => {
     try {
       const params = {};
 
-      // 检查 filters.status 是否存在且是数组
       if (filters.status && Array.isArray(filters.status) && filters.status.length > 0) {
         params.status = filters.status.join(',');
       }
-
-      // 检查 filters.type 是否存在且是数组
       if (filters.type && Array.isArray(filters.type) && filters.type.length > 0) {
         params.type = filters.type.join(',');
       }
+      if (filters.country && filters.country.length > 0) {
+        params.country_code = filters.country.join(',');
+      }
+      if (filters.risk && filters.risk.length > 0) {
+        params.risk_level = filters.risk.join(',');
+      }
+
       if (nodeId) {
         params.id = nodeId;
       }
