@@ -69,6 +69,16 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 			ipProxy.IPV6 = baseInfo.IPV6
 		}
 	}
+	// 特判，如果ipProxy有ip地址，但是baseInfo没有ip地址，那么就用ipProxy的ip地址
+	if baseInfo == nil {
+		baseInfo = &ipbaseinfo.IPBaseInfo{}
+		if ipProxy.IPV4 != "" {
+			baseInfo.IPV4 = ipProxy.IPV4
+		}
+		if ipProxy.IPV6 != "" {
+			baseInfo.IPV6 = ipProxy.IPV6
+		}
+	}
 
 	// 第二步：并发执行IP信息检测和解锁检测
 	var ipInfoResultMap map[string][]*ipinfo.IPInfoResult

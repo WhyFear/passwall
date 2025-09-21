@@ -207,6 +207,10 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
 	}
+	if resp.BaseInfo != nil {
+		log.Warnln("ip base info is empty, proxy id: %v", req.ProxyID)
+		return nil
+	}
 	// 下面都是保存逻辑
 	ipAddressId4 := uint(0)
 	ipAddressId6 := uint(0)
@@ -259,6 +263,10 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		return nil
 	}
 
+	if resp.IPInfoResultMap == nil {
+		log.Infoln("ip info result map is empty, proxy id: %v", req.ProxyID)
+		return nil
+	}
 	// IPInfoResultMap
 	for ip, ipInfoResultList := range resp.IPInfoResultMap {
 		ipAddressId := uint(0)
