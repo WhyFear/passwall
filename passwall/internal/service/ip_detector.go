@@ -207,7 +207,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
 	}
-	if resp.BaseInfo != nil {
+	if resp.BaseInfo == nil {
 		log.Warnln("ip base info is empty, proxy id: %v", req.ProxyID)
 		return nil
 	}
@@ -366,7 +366,7 @@ func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 		return nil, err
 	}
 	if len(proxyIPList) == 0 {
-		log.Infoln("ip address is empty, skip..., proxy id: %v", req.ProxyID)
+		log.Infoln("get ip address is empty, skip..., proxy id: %v", req.ProxyID)
 		return nil, nil
 	}
 	// 优先取IPV4结果
