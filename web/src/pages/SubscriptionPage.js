@@ -42,6 +42,7 @@ const SubscriptionPage = () => {
   const [pagination, setPagination] = useState({
     current: 1, pageSize: 10, total: 0,
   });
+  const [deletingIds, setDeletingIds] = useState([]);
 
   // 获取订阅列表
   const fetchSubscriptions = async (page = pagination.current, pageSize = pagination.pageSize) => {
@@ -222,6 +223,7 @@ const SubscriptionPage = () => {
 
   async function handleDeleteSubs(id) {
     try {
+      setDeletingIds(prev => [...prev, id]);
       const data = await subscriptionApi.deleteSubscription(id);
       if (data.status_code === 200) {
         message.success('删除订阅成功');
@@ -232,6 +234,8 @@ const SubscriptionPage = () => {
     } catch (error) {
       message.error('删除订阅失败：' + error.message);
       console.error(error);
+    } finally {
+      setDeletingIds(prev => prev.filter(deletingId => deletingId !== id));
     }
   }
 
@@ -293,6 +297,7 @@ const SubscriptionPage = () => {
           type="text"
           icon={<DeleteOutlined/>}
           onClick={() => handleDeleteSubs(record.id)}
+          loading={deletingIds.includes(record.id)}
         >
           删除
         </Button>
