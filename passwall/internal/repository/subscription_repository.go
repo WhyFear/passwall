@@ -49,7 +49,7 @@ func (r *GormSubscriptionRepository) FindByID(id uint) (*model.Subscription, err
 // FindAll 查找所有订阅
 func (r *GormSubscriptionRepository) FindAll() ([]*model.Subscription, error) {
 	var subscriptions []*model.Subscription
-	err := r.db.Order("updated_at desc").Find(&subscriptions).Error
+	err := r.db.Where("status != ?", model.SubscriptionStatusDeleted).Order("updated_at desc").Find(&subscriptions).Error
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +91,11 @@ func (r *GormSubscriptionRepository) FindPage(page SubsPage) ([]*model.Subscript
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	query = query.Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Order("created_at desc")
+	query = query.Where("status != ?", model.SubscriptionStatusDeleted).Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Order("created_at desc")
 	err := query.Find(&subscriptions).Error
+	if err != nil {
+		return nil, 0, err
+	}
 
 	return subscriptions, total, err
 }
@@ -134,5 +137,5 @@ func (r *GormSubscriptionRepository) UpdateStatusAndContent(subscription *model.
 
 // Delete 删除订阅
 func (r *GormSubscriptionRepository) Delete(id uint) error {
-	return r.db.Delete(&model.Subscription{}, id).Error
+	return r.db.Model(&model.Subscription{}).Where("id = ?", id).Update("status", model.SubscriptionStatusDeleted).Error
 }

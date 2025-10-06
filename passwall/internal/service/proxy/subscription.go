@@ -98,7 +98,6 @@ func (s *subscriptionManagerImpl) UpdateSubscriptionStatus(subscription *model.S
 
 // DeleteSubscription 删除订阅
 func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
-	// TODO: 考虑是否需要删除关联的代理服务器
 	return s.subscriptionRepo.Delete(id)
 }
 

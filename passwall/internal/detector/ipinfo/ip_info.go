@@ -14,6 +14,7 @@ const (
 	DetectorScamalytics DetectorName = "scamalytics"
 	DetectorIPAPI       DetectorName = "ipapi"
 	DetectorNodeGet     DetectorName = "nodeget"
+	DetectorDBIP        DetectorName = "db_ip"
 )
 
 type IPRiskType string

@@ -25,8 +25,15 @@ type IPCheckConfig struct {
 	Concurrent int             `yaml:"concurrent"`
 }
 type IPInfoConfig struct {
-	Enable bool `yaml:"enable"`
+	Enable      bool        `yaml:"enable"`
+	Scamalytics Scamalytics `yaml:"scamalytics"`
 }
+type Scamalytics struct {
+	User   string `yaml:"user"`
+	APIKey string `yaml:"api_key"`
+	Host   string `yaml:"host"`
+}
+
 type AppUnlockConfig struct {
 	Enable bool `yaml:"enable"`
 }
@@ -123,6 +130,13 @@ func LoadConfig() (*Config, error) {
 	if config.Server.Address == "" {
 		config.Server.Address = "127.0.0.1:8080"
 	}
+
+	// 写入Scamalytics配置
+	if config.IPCheck.IPInfo.Scamalytics.Host == "" {
+		config.IPCheck.IPInfo.Scamalytics.Host = "https://api11.scamalytics.com/v3/"
+	}
+	config.IPCheck.IPInfo.Scamalytics.User = os.Getenv("SCAMALYTICS_USER")
+	config.IPCheck.IPInfo.Scamalytics.APIKey = os.Getenv("SCAMALYTICS_API_KEY")
 
 	return &config, nil
 }

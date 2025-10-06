@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"passwall/config"
 	"passwall/internal/model"
 	"testing"
 
@@ -8,7 +9,9 @@ import (
 )
 
 func TestNewDetectorManager(t *testing.T) {
-	manager := NewDetectorManager()
+	// 创建一个空的配置用于测试
+	cfg := config.Config{}
+	manager := NewDetectorManager(cfg)
 	assert.NotNil(t, manager)
 	resp, err := manager.DetectAll(model.NewIPProxy(&model.Proxy{
 		Config: "you config here",

@@ -62,7 +62,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 
 	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret, proxyService, repos.Traffic)
 
-	ipDetectorService := NewIPDetector(repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo, taskManager)
+	ipDetectorService := NewIPDetector(*cfg, repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo, taskManager)
 
 	return &Services{
 		SubscriptionManager:     subscriptionManager,

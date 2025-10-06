@@ -2,6 +2,7 @@ package ipinfo
 
 import (
 	"net/http"
+	"passwall/config"
 	"passwall/internal/model"
 	"testing"
 
@@ -9,8 +10,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var scamalyticsConfig = &config.Scamalytics{
+	Host:   "https://api11.scamalytics.com/v3/",
+	APIKey: "test-api-key",
+	User:   "test-user",
+}
+var apiUrl = scamalyticsConfig.Host + "/" + scamalyticsConfig.User + "?key=" + scamalyticsConfig.APIKey + "&ip="
+
 func TestNewScamalyticsRiskDetector(t *testing.T) {
-	scamalyticsDetector := NewScamalyticsRiskDetector()
+	scamalyticsDetector := NewScamalyticsRiskDetector(*scamalyticsConfig)
 	assert.NotNil(t, scamalyticsDetector)
 
 	// 验证返回的是正确的类型
@@ -20,89 +28,90 @@ func TestNewScamalyticsRiskDetector(t *testing.T) {
 
 func TestScamalyticsRiskDetector_Detect_Success(t *testing.T) {
 	httpmock.Activate(t)
-	httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
-		httpmock.NewStringResponder(200, `		<html>
-			<body>
-				<div>Fraud Score: 75</div>
-				<div>Some other content</div>
-			</body>
-		</html>`))
-	scamalyticsDetector := NewScamalyticsRiskDetector()
+	httpmock.RegisterResponder("GET", apiUrl+"1.1.1.1",
+		httpmock.NewStringResponder(200, `{
+  "scamalytics": {
+    "scamalytics_score": 0,
+    "scamalytics_risk": "low"
+  }
+}`))
+	scamalyticsDetector := NewScamalyticsRiskDetector(*scamalyticsConfig)
 	detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
-	assert.Equal(t, 75, detect.Risk.Score)
+	assert.Equal(t, IPRiskTypeLow, detect.Risk.IPRiskType)
 }
 
 func TestScamalyticsRiskDetector_Detect_NoScoreFound(t *testing.T) {
 	httpmock.Activate(t)
-	httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
-		httpmock.NewStringResponder(200, `		<html>
-			<body>
-				<div>No fraud score here</div>
-			</body>
-		</html>`))
-	scamalyticsDetector := NewScamalyticsRiskDetector()
+	httpmock.RegisterResponder("GET", apiUrl+"1.1.1.1",
+		httpmock.NewStringResponder(200, `{
+  "scamalytics": {
+  }
+}`))
+	scamalyticsDetector := NewScamalyticsRiskDetector(*scamalyticsConfig)
 	detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
-	// 当没有分数信息时，应该返回 -1
-	assert.Equal(t, -1, detect.Risk.Score)
+	assert.Equal(t, IPRiskTypeDetectFailed, detect.Risk.IPRiskType)
 }
 
 func TestScamalyticsRiskDetector_Detect_InvalidScore(t *testing.T) {
 	httpmock.Activate(t)
-	httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
-		httpmock.NewStringResponder(200, `		<html>
-			<body>
-				<div>Fraud Score: invalid</div>
-			</body>
-		</html>`))
-	scamalyticsDetector := NewScamalyticsRiskDetector()
+	httpmock.RegisterResponder("GET", apiUrl+"1.1.1.1",
+		httpmock.NewStringResponder(200, `{
+  "scamalytics": {
+    "scamalytics_score": 0,
+    "scamalytics_risk": "lowb"
+  }
+}`))
+	scamalyticsDetector := NewScamalyticsRiskDetector(*scamalyticsConfig)
 	detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 		IP:          "1.1.1.1",
 		ProxyClient: new(http.Client)})
 	assert.NoError(t, err)
-	// 当分数转换失败时，应该返回 -1
-	assert.Equal(t, -1, detect.Risk.Score)
+	assert.Equal(t, IPRiskTypeDetectFailed, detect.Risk.IPRiskType)
 }
 
 func TestScamalyticsRiskDetector_Detect_EdgeCases(t *testing.T) {
 	testCases := []struct {
 		name     string
 		response string
-		expected int
+		expected IPRiskType
 	}{
 		{
-			name:     "高分情况",
-			response: `<div>Fraud Score: 100</div>`,
-			expected: 100,
+			name: "高分情况",
+			response: `{
+  "scamalytics": {
+    "scamalytics_risk": "low"
+  }
+}`,
+			expected: IPRiskTypeLow,
 		},
 		{
-			name:     "低分情况",
-			response: `<div>Fraud Score: 0</div>`,
-			expected: 0,
-		},
-		{
-			name:     "多位数字",
-			response: `<div>Fraud Score: 123</div>`,
-			expected: 123,
+			name: "低分情况",
+			response: `{
+  "scamalytics": {
+    "scamalytics_risk": "high"
+  }
+}`,
+			expected: IPRiskTypeHigh,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			httpmock.Activate(t)
-			httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
+			httpmock.RegisterResponder("GET", apiUrl+"1.1.1.1",
 				httpmock.NewStringResponder(200, tc.response))
-			scamalyticsDetector := NewScamalyticsRiskDetector()
+			scamalyticsDetector := NewScamalyticsRiskDetector(*scamalyticsConfig)
 			detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 				IP:          "1.1.1.1",
 				ProxyClient: new(http.Client)})
 			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, detect.Risk.Score)
+			assert.Equal(t, tc.expected, detect.Risk.IPRiskType)
 		})
 	}
 }
@@ -114,23 +123,35 @@ func TestScamalyticsRiskDetector_Detect_CountryCode(t *testing.T) {
 		expectedCode string
 	}{
 		{
-			name:         "有效的国家代码",
-			response:     `<html><body><div>Fraud Score: 100</div><table><tr><th>Country Code</th><td>US</td></tr></table></body></html>`,
+			name: "有效的国家代码",
+			response: `{
+  "external_datasources": {
+    "ip2proxy_lite": {
+      "ip_country_code": "US"
+    }
+  }
+}`,
 			expectedCode: "US",
 		},
 		{
-			name:         "没有国家代码表格",
-			response:     `<html><body><div>Fraud Score: 100</div><div>No country code here</div></body></html>`,
+			name: "没有国家代码表格",
+			response: `{
+  "external_datasources": {
+    "ip2proxy_lite": {
+    }
+  }
+}`,
 			expectedCode: "",
 		},
 		{
-			name:         "国家代码格式正确但内容为空",
-			response:     `<html><body><div>Fraud Score: 100</div><table><tr><th>Country Code</th><td></td></tr></table></body></html>`,
-			expectedCode: "",
-		},
-		{
-			name:         "小写国家代码,取不到",
-			response:     `<html><body><div>Fraud Score: 100</div><table><tr><th>Country Code</th><td>us</td></tr></table></body></html>`,
+			name: "国家代码格式正确但内容为空",
+			response: `{
+  "external_datasources": {
+    "ip2proxy_lite": {
+      "ip_country_code": ""
+    }
+  }
+}`,
 			expectedCode: "",
 		},
 	}
@@ -138,9 +159,9 @@ func TestScamalyticsRiskDetector_Detect_CountryCode(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			httpmock.Activate(t)
-			httpmock.RegisterResponder("GET", "https://scamalytics.com/ip/1.1.1.1",
+			httpmock.RegisterResponder("GET", apiUrl+"1.1.1.1",
 				httpmock.NewStringResponder(200, tc.response))
-			scamalyticsDetector := NewScamalyticsRiskDetector()
+			scamalyticsDetector := NewScamalyticsRiskDetector(*scamalyticsConfig)
 			detect, err := scamalyticsDetector.Detect(&model.IPProxy{
 				IP:          "1.1.1.1",
 				ProxyClient: new(http.Client)})

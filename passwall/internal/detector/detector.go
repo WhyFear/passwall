@@ -2,6 +2,7 @@ package detector
 
 import (
 	"errors"
+	"passwall/config"
 	"passwall/internal/detector/ipbaseinfo"
 	"passwall/internal/detector/ipinfo"
 	"passwall/internal/detector/unlockchecker"
@@ -22,11 +23,14 @@ type DetectorManager struct {
 	unlockCheckManager *unlockchecker.UnlockCheckManager
 }
 
-func NewDetectorManager() *DetectorManager {
+func NewDetectorManager(cfg config.Config) *DetectorManager {
 	ipInfoFactory := ipinfo.NewRiskFactory()
-	ipInfoFactory.RegisterIPInfoDetector(ipinfo.DetectorScamalytics, ipinfo.NewScamalyticsRiskDetector())
 	ipInfoFactory.RegisterIPInfoDetector(ipinfo.DetectorIPAPI, ipinfo.NewIPAPIRiskDetector())
 	ipInfoFactory.RegisterIPInfoDetector(ipinfo.DetectorNodeGet, ipinfo.NewNodeGetRiskDetector())
+	ipInfoFactory.RegisterIPInfoDetector(ipinfo.DetectorDBIP, ipinfo.NewDBIPRiskDetector())
+	if cfg.IPCheck.IPInfo.Scamalytics.User != "" && cfg.IPCheck.IPInfo.Scamalytics.APIKey != "" {
+		ipInfoFactory.RegisterIPInfoDetector(ipinfo.DetectorScamalytics, ipinfo.NewScamalyticsRiskDetector(cfg.IPCheck.IPInfo.Scamalytics))
+	}
 
 	unlockFactory := unlockchecker.NewUnlockCheckFactory()
 	unlockFactory.RegisterUnlockChecker(unlockchecker.Claude, unlockchecker.NewClaudeChecker())

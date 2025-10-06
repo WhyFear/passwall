@@ -2,19 +2,22 @@ package ipinfo
 
 import (
 	"errors"
+	"passwall/config"
 	"passwall/internal/model"
 	"passwall/internal/util"
-	"regexp"
-	"strconv"
 
 	"github.com/metacubex/mihomo/log"
+	"github.com/tidwall/gjson"
 )
 
 type ScamalyticsRiskDetector struct {
+	Config config.Scamalytics
 }
 
-func NewScamalyticsRiskDetector() IPInfo {
-	return &ScamalyticsRiskDetector{}
+func NewScamalyticsRiskDetector(cfg config.Scamalytics) IPInfo {
+	return &ScamalyticsRiskDetector{
+		Config: cfg,
+	}
 }
 
 func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
@@ -22,46 +25,49 @@ func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult,
 		log.Errorln("ScamalyticsRiskDetector Detect error: ipProxy is nil")
 		return nil, errors.New("ipProxy is nil")
 	}
-	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://scamalytics.com/ip/"+ipProxy.IP)
-	if err != nil {
+
+	// 使用配置中的API信息,URL不通会返回404
+	apiURL := s.Config.Host
+	if s.Config.User != "" && s.Config.APIKey != "" {
+		// 使用付费API
+		apiURL = s.Config.Host + "/" + s.Config.User + "?key=" + s.Config.APIKey + "&ip=" + ipProxy.IP
+	} else {
+		log.Warnln("ScamalyticsRiskDetector Detect warn: user or apiKey is empty")
 		return &IPInfoResult{
 			Detector: DetectorScamalytics,
 			Risk: RiskResult{
-				Score:      -1,
-				IPRiskType: s.GetRiskType(-1),
+				IPRiskType: IPRiskTypeDetectFailed,
 			},
 		}, nil
 	}
-	// 从响应体中正则读取风险分数。local tmpscore=$(echo "$RESPONSE"|grep -oE 'Fraud Score: [0-9]+'|awk -F': ' '{print $2}')
-	score := regexp.MustCompile(`Fraud Score: (\d+)`).FindStringSubmatch(string(resp))
-	if len(score) < 2 {
+
+	resp, err := util.GetUrl(ipProxy.ProxyClient, apiURL)
+	if err != nil {
+		log.Warnln("ScamalyticsRiskDetector Detect error: %v", err)
 		return &IPInfoResult{
 			Detector: DetectorScamalytics,
 			Risk: RiskResult{
-				Score:      -1,
-				IPRiskType: s.GetRiskType(-1),
+				IPRiskType: IPRiskTypeDetectFailed,
 			},
-			Raw: string(resp),
 		}, nil
 	}
-	// 转换分数
-	scoreInt, err := strconv.Atoi(score[1])
-	if err != nil {
-		log.Warnln("Scamalytics ipinfo detector: failed to convert score to int: %v", err)
-		scoreInt = -1
+	scoreInt := gjson.ParseBytes(resp).Get("scamalytics.scamalytics_score").Int()
+	scoreText := gjson.ParseBytes(resp).Get("scamalytics.scamalytics_risk").String()
+	// only ip2proxy_lite,maxmind_geolite2,ipinfo will return countryCode,choose first who not empty
+	countryCode := gjson.ParseBytes(resp).Get("external_datasources.ip2proxy_lite.ip_country_code").String()
+	if countryCode == "" {
+		countryCode = gjson.ParseBytes(resp).Get("external_datasources.maxmind_geolite2.ip_country_code").String()
 	}
-	countryCode := ""
-	countryCodeList := regexp.MustCompile(`<th>Country Code<\/th><td>([A-Z]+)<\/td>`).FindStringSubmatch(string(resp))
-	if len(countryCodeList) > 1 {
-		// 转大写
-		countryCode = countryCodeList[1]
+	if countryCode == "" {
+		countryCode = gjson.ParseBytes(resp).Get("external_datasources.ipinfo.ip_country_code").String()
 	}
 
 	return &IPInfoResult{
 		Detector: DetectorScamalytics,
 		Risk: RiskResult{
-			Score:      scoreInt,
-			IPRiskType: s.GetRiskType(scoreInt),
+			Score:      int(scoreInt),
+			ScoreText:  scoreText,
+			IPRiskType: s.GetRiskType(scoreText),
 		},
 		Geo: IPGeoInfo{
 			CountryCode: countryCode,
@@ -70,18 +76,17 @@ func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult,
 	}, nil
 }
 
-func (s *ScamalyticsRiskDetector) GetRiskType(score int) IPRiskType {
-	if score < 0 {
+func (s *ScamalyticsRiskDetector) GetRiskType(scoreText string) IPRiskType {
+	switch scoreText {
+	case "low":
+		return IPRiskTypeLow
+	case "medium":
+		return IPRiskTypeMedium
+	case "high":
+		return IPRiskTypeHigh
+	case "very high":
+		return IPRiskTypeVeryHigh
+	default:
 		return IPRiskTypeDetectFailed
 	}
-	if score < 25 {
-		return IPRiskTypeLow
-	}
-	if score < 50 {
-		return IPRiskTypeMedium
-	}
-	if score < 75 {
-		return IPRiskTypeHigh
-	}
-	return IPRiskTypeVeryHigh
 }

@@ -33,7 +33,7 @@ func (n *NodeGetRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, err
 			},
 		}, nil
 	}
-	result := gjson.Parse(string(resp))
+	result := gjson.ParseBytes(resp)
 	score := result.Get("ip.riskScore").Int()
 	countryCode := strings.ToUpper(result.Get("ip.location.country").String())
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"passwall/config"
 	"passwall/internal/detector"
 	"passwall/internal/detector/ipinfo"
 	"passwall/internal/model"
@@ -59,7 +60,8 @@ type ipDetectorImpl struct {
 	TaskManager      task.TaskManager
 }
 
-func NewIPDetector(proxyRepo repository.ProxyRepository,
+func NewIPDetector(cfg config.Config,
+	proxyRepo repository.ProxyRepository,
 	proxyIPAddressRepo repository.ProxyIPAddressRepository,
 	ipAddressRepo repository.IPAddressRepository,
 	ipBaseInfoRepo repository.IPBaseInfoRepository,
@@ -68,7 +70,7 @@ func NewIPDetector(proxyRepo repository.ProxyRepository,
 	taskManager task.TaskManager,
 ) IPDetectorService {
 	return &ipDetectorImpl{
-		Detector:         detector.NewDetectorManager(),
+		Detector:         detector.NewDetectorManager(cfg),
 		ProxyRepo:        proxyRepo,
 		ProxyIPAddress:   proxyIPAddressRepo,
 		IPAddressRepo:    ipAddressRepo,

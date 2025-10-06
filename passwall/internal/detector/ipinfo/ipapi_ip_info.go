@@ -36,7 +36,7 @@ func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error
 		}, nil
 	}
 	// 解析响应
-	result := gjson.Parse(string(resp))
+	result := gjson.ParseBytes(resp)
 	// 提取风险分数, 格式为0.0067 (Low)
 	scoreText := result.Get("company.abuser_score").String()
 	if scoreText == "" {

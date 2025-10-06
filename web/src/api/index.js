@@ -73,6 +73,9 @@ export const subscriptionApi = {
   }),
 
   reloadSubs: (params) => api.post('/reload_subscription', params),
+
+  // 删除订阅
+  deleteSubscription: (id) => api.post('/delete_subscription', {id: id}),
 };
 
 // 节点相关API
