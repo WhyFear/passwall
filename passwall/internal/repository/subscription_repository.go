@@ -87,11 +87,11 @@ func (r *GormSubscriptionRepository) FindPage(page SubsPage) ([]*model.Subscript
 	var subscriptions []*model.Subscription
 	var total int64
 
-	query := r.db.Model(&model.Subscription{})
+	query := r.db.Model(&model.Subscription{}).Where("status != ?", model.SubscriptionStatusDeleted)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	query = query.Where("status != ?", model.SubscriptionStatusDeleted).Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Order("created_at desc")
+	query = query.Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Order("created_at desc")
 	err := query.Find(&subscriptions).Error
 	if err != nil {
 		return nil, 0, err
