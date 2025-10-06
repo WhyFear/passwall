@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/metacubex/mihomo/log"
+	"github.com/tidwall/gjson"
 )
 
 type IPBaseInfo struct {
@@ -19,20 +20,28 @@ type IPBaseInfo struct {
 
 // IPService 定义IP获取服务的配置
 type IPService struct {
-	Name string
-	URL  string
+	Name   string
+	URL    string
+	Format *IPFormat
+}
+
+// IPFormat 直接返回string，json、html等格式的IP地址
+type IPFormat struct {
+	Format string // string、json、html
+	IPPath string // 提取IP地址的路径，如"ip.address"
 }
 
 // 定义支持的IP获取服务
 var ipServices = []IPService{
-	{"MyIPCheckPlace", "https://myip.check.place"},
-	{"IPsb", "https://api.ip.sb/ip"},
-	{"Ping0", "https://ping0.cc/ip"},
-	{"ICanHazIP", "https://icanhazip.com"},
-	{"IPify", "https://api64.ipify.org"},
-	{"IfConfig", "https://ifconfig.co/ip"},
-	{"IdentMeV4", "https://4.ident.me"},
-	{"IdentMeV6", "https://6.ident.me"},
+	{"MyIPCheckPlace", "https://myip.check.place", nil},
+	{"IPsb", "https://api.ip.sb/ip", nil},
+	//{"Ping0", "https://ping0.cc/ip", nil},
+	{"ICanHazIP", "https://icanhazip.com", nil},
+	{"IPify", "https://api64.ipify.org", nil},
+	{"IfConfig", "https://ifconfig.co/ip", nil},
+	{"IdentMeV4", "https://4.ident.me", nil},
+	{"IdentMeV6", "https://6.ident.me", nil},
+	{"ITDogV6", "https://ipv6.itdog.cn/", &IPFormat{Format: "json", IPPath: "ip"}},
 }
 
 // GetProxyIP 从多个服务获取代理IP地址
@@ -48,13 +57,12 @@ func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
 		wg.Add(1)
 		go func(svc IPService) {
 			defer wg.Done()
-			ip, err := util.GetUrl(proxyClient, svc.URL)
+			resp, err := util.GetUrl(proxyClient, svc.URL)
 			if err != nil {
 				log.Infoln("IP服务 %s 获取IP失败: %v", svc.Name, err)
 				return
 			}
-			ipStr := strings.TrimSpace(string(ip))
-			ipStr = strings.Replace(ipStr, "\n", "", -1)
+			ipStr := getIPAddress(resp, svc.Format)
 			log.Infoln("IP服务 %s 获取IP成功: %s", svc.Name, ipStr)
 			results <- ipStr
 		}(service)
@@ -94,6 +102,28 @@ func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
 	}
 
 	return ipInfo, nil
+}
+
+func getIPAddress(resp []byte, format *IPFormat) string {
+	if resp == nil || len(resp) == 0 {
+		return ""
+	}
+	if format == nil {
+		format = &IPFormat{Format: "string"}
+	}
+	switch format.Format {
+	case "string":
+		ipStr := strings.TrimSpace(string(resp))
+		ipStr = strings.Replace(ipStr, "\n", "", -1)
+		return ipStr
+	case "json":
+		return gjson.ParseBytes(resp).Get(format.IPPath).String()
+	case "html":
+		// fixme 后续遇到了再加上
+		return strings.TrimSpace(string(resp))
+	default:
+		return string(resp)
+	}
 }
 
 func checkIPV4(ip string) bool {

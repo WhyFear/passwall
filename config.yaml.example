@@ -4,17 +4,24 @@ server:
   address: "0.0.0.0:8080"  # 使用0.0.0.0允许外部访问
 
 database:
-  driver: "sqlite"
-  dsn: "data/passwall.db"  # 将数据库文件存储在data目录下
   # 如果使用PostgreSQL
-  # driver: "postgres" 
-  # dsn: "host=postgres user=passwall password=passwall port=5432 dbname=passwall sslmode=disable TimeZone=Asia/Shanghai"
+  driver: "postgres"
+  dsn: "host=postgres user=passwall password=passwall port=5432 dbname=passwall sslmode=disable TimeZone=Asia/Shanghai"
 
 proxy:
   enabled: false  # 是否启用代理
   url: "socks5://127.0.0.1:7890"  # 代理地址，支持http和socks5
 
-clash_api:  # 支持Clash API，可获取节点消耗流量
+ip_check:
+  enable: true
+  ip_info:
+    enable: true
+    scamalytics:
+      host: "https://api11.scamalytics.com/v3/"
+  app_unlock:
+    enable: true
+
+clash_api: # 支持Clash API，可获取节点消耗流量
   enabled: false
   url: "ws://127.0.0.1:9090"
   secret: ""
