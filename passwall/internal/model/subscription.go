@@ -19,7 +19,7 @@ const (
 	SubscriptionStatusPending SubscriptionStatus = -1 // 待处理
 	SubscriptionStatusOK      SubscriptionStatus = 1  // 正常可拉取
 	SubscriptionStatusInvalid SubscriptionStatus = 2  // 无法处理
-	SubscriptionStatusExpired SubscriptionStatus = 3  // 曾经可处理，现在失效
+	SubscriptionStatusDeleted SubscriptionStatus = 3  // 已删除
 )
 
 // Subscription 订阅源

@@ -14,7 +14,7 @@ services:
       - PASSWALL_TOKEN=your_token_here
       - CONFIG_PATH=/app/config.yaml
       - TZ=Asia/Shanghai
-    #      you can get free user and api key from https://scamalytics.com/ip/api/pricing
+    #      you can get free user and api key from https://scamalytics.com/ip/api/pricing, keep comment if you don't need it
     #      - SCAMALYTICS_USER=your_scamalytics_user_here
     #      - SCAMALYTICS_API_KEY=your_scamalytics_api_key_here
     depends_on:

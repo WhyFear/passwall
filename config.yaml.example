@@ -28,8 +28,8 @@ clash_api: # 支持Clash API，可获取节点消耗流量
 
 # 多个定时任务同时运行的只能有一个，单个定时任务内子任务串行执行
 cron_jobs:
-  - name: "每6小时更新所有订阅并测速"
-    schedule: "0 0 */6 * * *"
+  - name: "每12小时更新所有订阅"
+    schedule: "0 0 6,18 * * *"
     reload_subscribe_config: true
     test_proxy:
       enable: true
@@ -43,18 +43,17 @@ cron_jobs:
       upload_speed_threshold: 0
       ping_threshold: 0
       test_times: 5
-
-  - name: "每6小时更新所有订阅"
-    schedule: "0 0 */6 * * *"
-    reload_subscribe_config: true
-    test_proxy:
-      enable: false
-      # status: 1,2
-      concurrent: 30
-    auto_ban:
-      enable: false
-      success_rate_threshold: 0
-      download_speed_threshold: 0
-      upload_speed_threshold: 0
-      ping_threshold: 0
-      test_times: 5
+    webhook:
+      - name: "clash update subscribe"
+        url: "http://your.clash.server:9090/providers/proxies/%E8%AE%A2%E9%98%85%E4%BA%8C"
+        method: "PUT"
+  - name: "每月刷新一次IP信息"
+    schedule: "0 10 3 1 * *"
+    ip_check:
+      enable: true
+      concurrent: 10
+      ip_info:
+        enable: true
+      app_unlock:
+        enable: true
+      refresh: true

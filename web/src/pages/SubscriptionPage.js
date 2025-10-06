@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Button, Form, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
-import {EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
+import {DeleteOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
 import {subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import SubscriptionForm from '../components/SubscriptionForm';
@@ -220,6 +220,21 @@ const SubscriptionPage = () => {
     }
   };
 
+  async function handleDeleteSubs(id) {
+    try {
+      const data = await subscriptionApi.deleteSubscription(id);
+      if (data.status_code === 200) {
+        message.success('删除订阅成功');
+        await fetchSubscriptions(pagination.current, pagination.pageSize);
+      } else {
+        message.error('删除订阅失败：' + data.result);
+      }
+    } catch (error) {
+      message.error('删除订阅失败：' + error.message);
+      console.error(error);
+    }
+  }
+
   // 表格列配置
   const columns = [{
     title: '序号', key: 'index', width: 80, render: (_, __, index) => index + 1,
@@ -261,7 +276,7 @@ const SubscriptionPage = () => {
           icon={<EyeOutlined/>}
           onClick={() => handleViewSubscription(record)}
         >
-          查看内容
+          查看
         </Button>
       </Tooltip>
       <Tooltip title="刷新订阅">
@@ -270,7 +285,16 @@ const SubscriptionPage = () => {
           icon={<ReloadOutlined/>}
           onClick={() => handleReloadSubs(record.id)}
         >
-          刷新订阅
+          刷新
+        </Button>
+      </Tooltip>
+      <Tooltip title="删除订阅">
+        <Button
+          type="text"
+          icon={<DeleteOutlined/>}
+          onClick={() => handleDeleteSubs(record.id)}
+        >
+          删除
         </Button>
       </Tooltip>
     </div>),
