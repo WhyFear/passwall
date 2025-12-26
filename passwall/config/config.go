@@ -56,7 +56,11 @@ type Proxy struct {
 }
 
 type ClashAPIConfig struct {
-	Enable bool   `yaml:"enable"`
+	Enable  bool             `yaml:"enable"`
+	Clients []ClashAPIClient `yaml:"clients"`
+}
+
+type ClashAPIClient struct {
 	URL    string `yaml:"url"`
 	Secret string `yaml:"secret"`
 }

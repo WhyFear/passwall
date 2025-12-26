@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"passwall/config"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/proxy"
@@ -22,7 +23,6 @@ type Connections struct {
 	Connections   []Connection `json:"connections"`
 	DownloadTotal int64        `json:"downloadTotal"`
 	UploadTotal   int64        `json:"uploadTotal"`
-	//Memory        int64        `json:"memory"`
 }
 
 type Connection struct {
@@ -33,7 +33,6 @@ type Connection struct {
 	Chains      []string  `json:"chains"`
 	Rule        string    `json:"rule"`
 	RulePayload string    `json:"rulePayload"`
-	//MetaData    map[string]interface{} `json:"metadata"`
 }
 
 type NodeTraffic struct {
@@ -41,105 +40,127 @@ type NodeTraffic struct {
 	Upload   int64  `json:"upload"`
 	Download int64  `json:"download"`
 }
-
-// StatisticsService handles WebSocket connection and traffic data processing
 type StatisticsService struct {
-	wsURL        string
-	secret       string
-	historyConns sync.Map // {id: Connection}
-	closeConns   sync.Map // {id: Connection}
-
-	conn              *websocket.Conn
+	clients           []config.ClashAPIClient
+	connections       sync.Map // {clientIndex: *websocket.Conn}
+	historyConnsData  []map[string]Connection
+	closeConnsData    []map[string]Connection
+	mu                sync.Mutex
 	baseRetryInterval time.Duration
 	maxRetryInterval  time.Duration
 	maxRetries        int
-
-	ticker *time.Ticker
-	done   chan struct{}
-
-	proxyService proxy.ProxyService
-	trafficRepo  repository.TrafficRepository
+	ticker            *time.Ticker
+	done              chan struct{}
+	stopChan          chan struct{}
+	stopOnce          sync.Once
+	proxyService      proxy.ProxyService
+	trafficRepo       repository.TrafficRepository
+	cleanNameRegex    *regexp.Regexp
 }
 
-// NewTrafficStatisticsService creates a new traffic statistics service
-func NewTrafficStatisticsService(wsURL string, secret string, proxyService proxy.ProxyService, trafficRepo repository.TrafficRepository) StatisticsService {
+func NewTrafficStatisticsService(clients []config.ClashAPIClient, proxyService proxy.ProxyService, trafficRepo repository.TrafficRepository) StatisticsService {
+	historyConns := make([]map[string]Connection, len(clients))
+	closeConns := make([]map[string]Connection, len(clients))
+	for i := range clients {
+		historyConns[i] = make(map[string]Connection)
+		closeConns[i] = make(map[string]Connection)
+	}
 	return StatisticsService{
-		wsURL:             wsURL,
-		secret:            secret,
+		clients:           clients,
+		historyConnsData:  historyConns,
+		closeConnsData:    closeConns,
 		proxyService:      proxyService,
 		trafficRepo:       trafficRepo,
-		historyConns:      sync.Map{},
-		closeConns:        sync.Map{},
 		baseRetryInterval: 5 * time.Second,
 		maxRetryInterval:  10 * 60 * time.Second,
 		maxRetries:        10,
+		cleanNameRegex:    regexp.MustCompile(`^\[\d+]-(.+)$`),
 	}
 }
 
-// Start starts the WebSocket connection and data processing
 func (s *StatisticsService) Start() error {
 	s.done = make(chan struct{})
+	s.stopChan = make(chan struct{})
 	s.ticker = time.NewTicker(1 * time.Minute)
-
-	// 启动定时处理任务
 	go s.startPeriodicProcessing()
-
-	return s.connectWithRetry()
+	return s.connectAllClients()
 }
 
-// connectWithRetry establishes WebSocket connection with exponential backoff
-func (s *StatisticsService) connectWithRetry() error {
-	retryCount := 0
+func (s *StatisticsService) connectAllClients() error {
+	for i, client := range s.clients {
+		if err := s.connectClient(i, client); err != nil {
+			log.Errorln("Failed to connect to client %d: %v", i, err)
+		}
+	}
+	return nil
+}
 
-	wsURL := s.wsURL + "/connections"
-	if s.secret != "" {
+func (s *StatisticsService) connectClient(clientIndex int, client config.ClashAPIClient) error {
+	wsURL := client.URL + "/connections"
+	if client.Secret != "" {
 		if u, err := url.Parse(wsURL); err == nil {
 			query := u.Query()
-			query.Set("secret", s.secret)
+			query.Set("token", client.Secret)
 			u.RawQuery = query.Encode()
 			wsURL = u.String()
 		} else {
-			// 如果解析失败，回退到简单拼接
-			wsURL += "?secret=" + s.secret
+			wsURL += "?token=" + client.Secret
 		}
 	}
 
-	for {
+	for attempt := 1; attempt <= s.maxRetries; attempt++ {
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err == nil {
-			s.conn = conn
-			go s.readMessages()
+			log.Infoln("WebSocket connection established for client %d", clientIndex)
+			s.connections.Store(clientIndex, conn)
+			go s.readMessages(clientIndex, conn)
 			return nil
 		}
 
-		retryCount++
-		if retryCount >= s.maxRetries {
+		if attempt >= s.maxRetries {
+			log.Errorln("Failed to connect to client %d after %d attempts: %v", clientIndex, s.maxRetries, err)
 			return err
 		}
 
-		// 阶梯式重试间隔
-		interval := s.baseRetryInterval * time.Duration(1<<uint(retryCount-1))
+		interval := s.baseRetryInterval * time.Duration(1<<uint(attempt-1))
 		if interval > s.maxRetryInterval {
 			interval = s.maxRetryInterval
 		}
 
-		log.Errorln("WebSocket connection failed, retrying in %v (attempt %d/%d)",
-			interval, retryCount, s.maxRetries)
+		log.Errorln("WebSocket connection failed for client %d, retrying in %v (attempt %d/%d)",
+			clientIndex, interval, attempt, s.maxRetries)
 		time.Sleep(interval)
 	}
+	return nil
 }
 
-// Stop stops the service
 func (s *StatisticsService) Stop() {
-	if s.conn != nil {
-		_ = s.conn.Close()
-	}
+	s.stopOnce.Do(func() {
+		if s.stopChan != nil {
+			close(s.stopChan)
+		}
+	})
+
+	s.connections.Range(func(key, value interface{}) bool {
+		if conn, ok := value.(*websocket.Conn); ok {
+			conn.Close()
+		}
+		return true
+	})
+
+	s.connections = sync.Map{}
 
 	if s.ticker != nil {
 		s.ticker.Stop()
+		s.ticker = nil
 	}
 	if s.done != nil {
-		<-s.done
+		select {
+		case <-s.done:
+		case <-time.After(5 * time.Second):
+			log.Errorln("Stop timeout: periodic processing did not finish in time")
+		}
+		s.done = nil
 	}
 }
 
@@ -162,97 +183,122 @@ func (s *StatisticsService) BatchGetTrafficStatistics(proxyIdList []uint) (map[u
 	return trafficMap, nil
 }
 
-// readMessages reads and processes WebSocket messages
-func (s *StatisticsService) readMessages() {
-	defer func(conn *websocket.Conn) {
-		err := conn.Close()
-		if err != nil {
+func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) {
+	defer func() {
+		s.connections.Delete(clientIndex)
+		conn.Close()
+		log.Infoln("Traffic statistics service stopped for client %d", clientIndex)
+	}()
 
-		}
-	}(s.conn)
-
-	log.Infoln("Traffic statistics service started")
+	log.Infoln("Traffic statistics service started for client %d", clientIndex)
 	for {
-		_, message, err := s.conn.ReadMessage()
-		if err != nil {
-			log.Errorln("WebSocket read error: %v", err)
+		select {
+		case <-s.stopChan:
+			log.Infoln("Stop signal received, exiting readMessages for client %d", clientIndex)
+			return
+		default:
+		}
 
-			// 连接断开时自动重连
-			go func() {
-				time.Sleep(s.baseRetryInterval)
-				_ = s.connectWithRetry()
-			}()
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Errorln("WebSocket read error for client %d: %v", clientIndex, err)
+			select {
+			case <-s.stopChan:
+				log.Infoln("Stop signal received, skipping reconnect for client %d", clientIndex)
+				return
+			default:
+				go func() {
+					time.Sleep(s.baseRetryInterval)
+					select {
+					case <-s.stopChan:
+						log.Infoln("Stop signal received during reconnect delay for client %d", clientIndex)
+						return
+					default:
+						client := s.clients[clientIndex]
+						_ = s.connectClient(clientIndex, client)
+					}
+				}()
+			}
 			return
 		}
 
 		var traffic Connections
 		if err := json.Unmarshal(message, &traffic); err != nil {
-			log.Errorln("Failed to unmarshal traffic data: %v", err)
+			log.Errorln("Failed to unmarshal traffic data for client %d: %v", clientIndex, err)
 			continue
 		}
-		log.Debugln("traffic: %v", traffic)
+		log.Debugln("Client %d traffic: %v", clientIndex, traffic)
 
-		s.processTrafficData(traffic)
+		s.processTrafficData(clientIndex, traffic)
 	}
 }
 
-// processTrafficData 与历史数据进行对比，如果有id本次未返回，则认为链接已断开，可以统计到总计流量中去
-func (s *StatisticsService) processTrafficData(traffic Connections) {
+func (s *StatisticsService) processTrafficData(clientIndex int, traffic Connections) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	historyConns := s.historyConnsData[clientIndex]
+	closeConns := s.closeConnsData[clientIndex]
+
 	if traffic.Connections == nil || len(traffic.Connections) == 0 {
-		// 无数据返回，历史数据全部统计到closeConns中
-		s.historyConns.Range(func(id, conn interface{}) bool {
-			s.closeConns.Store(id, conn)
-			s.historyConns.Delete(id)
-			return true
-		})
+		for id, conn := range historyConns {
+			closeConns[id] = conn
+			delete(historyConns, id)
+		}
 	} else {
-		// 首先计算historyConns和本次的差异，然后将historyConns中多出的数据统计到closeConns中
 		currentConnections := make(map[string]Connection, len(traffic.Connections))
 		for _, conn := range traffic.Connections {
 			currentConnections[conn.ID] = conn
 		}
 
-		s.historyConns.Range(func(id, conn interface{}) bool {
-			idStr := id.(string)
-			_, exists := currentConnections[idStr]
-			if !exists {
-				s.closeConns.Store(idStr, conn)
+		for id, conn := range historyConns {
+			if _, exists := currentConnections[id]; !exists {
+				closeConns[id] = conn
 			}
-			s.historyConns.Delete(idStr)
-			return true
-		})
-		// 再将本次的conn更新或添加到historyConns中
+			delete(historyConns, id)
+		}
+
 		for _, conn := range traffic.Connections {
-			s.historyConns.Store(conn.ID, conn)
+			historyConns[conn.ID] = conn
 		}
 	}
+
+	s.historyConnsData[clientIndex] = historyConns
+	s.closeConnsData[clientIndex] = closeConns
 }
 
-// 处理closeConns中的数据，id维度变成节点维度，需要统计每个节点的流量
 func (s *StatisticsService) processCloseConns() {
+	s.mu.Lock()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("处理关闭连接时发生panic: %v", r)
+			log.Errorln("堆栈信息: %s", debug.Stack())
+		}
+		s.mu.Unlock()
+	}()
+
 	var nodeTrafficMap = make(map[string]*NodeTraffic)
-	s.closeConns.Range(func(id, conn any) bool {
-		connection, ok := conn.(Connection) // 注意去掉指针类型
-		if !ok {
-			log.Errorln("类型断言失败，预期类型 Connection，实际值: %v", conn)
-			return true
-		}
-		for _, chain := range connection.Chains {
-			nodeTraffic, exists := nodeTrafficMap[chain]
-			if !exists {
-				nodeTraffic = &NodeTraffic{
-					NodeName: chain,
-					Upload:   connection.Upload,
-					Download: connection.Download,
+	for clientIndex := range s.closeConnsData {
+		closeConns := s.closeConnsData[clientIndex]
+		for id, connection := range closeConns {
+			for _, chain := range connection.Chains {
+				nodeTraffic, exists := nodeTrafficMap[chain]
+				if !exists {
+					nodeTraffic = &NodeTraffic{
+						NodeName: chain,
+						Upload:   connection.Upload,
+						Download: connection.Download,
+					}
+					nodeTrafficMap[chain] = nodeTraffic
+				} else {
+					nodeTraffic.Upload += connection.Upload
+					nodeTraffic.Download += connection.Download
 				}
-				nodeTrafficMap[chain] = nodeTraffic
-			} else {
-				nodeTraffic.Upload += connection.Upload
-				nodeTraffic.Download += connection.Download
 			}
+			delete(closeConns, id)
 		}
-		return true
-	})
+	}
+
 	if len(nodeTrafficMap) == 0 {
 		log.Infoln("当前无节点流量数据")
 		return
@@ -307,9 +353,6 @@ func (s *StatisticsService) processCloseConns() {
 		}
 	}
 	log.Infoln("处理完成，处理了 %v 个节点流量数据", len(nodeTrafficMap))
-
-	// 处理完成后清空closeConns，避免重复统计
-	s.closeConns = sync.Map{}
 }
 
 // cleanNodeName 清理节点名称，移除前面的序号前缀如"[1]-"
@@ -319,8 +362,7 @@ func (s *StatisticsService) cleanNodeName(nodeName string) string {
 	// "[1] - 节点名" -> "[1] - 节点名" (不匹配)
 	// "[节点]自带[]" -> "[节点]自带[]" (保持不变)
 
-	re := regexp.MustCompile(`^\[\d+]-(.+)$`)
-	matches := re.FindStringSubmatch(nodeName)
+	matches := s.cleanNameRegex.FindStringSubmatch(nodeName)
 	if len(matches) == 2 {
 		return strings.TrimSpace(matches[1])
 	}

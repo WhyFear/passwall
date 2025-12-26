@@ -60,7 +60,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager)
 	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
 
-	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.URL, cfg.ClashAPI.Secret, proxyService, repos.Traffic)
+	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.Clients, proxyService, repos.Traffic)
 
 	ipDetectorService := NewIPDetector(*cfg, repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo, taskManager)
 

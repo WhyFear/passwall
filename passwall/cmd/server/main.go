@@ -68,6 +68,9 @@ func main() {
 
 	// 停止调度器
 	newScheduler.Stop()
+	if cfg.ClashAPI.Enable {
+		services.StatisticsService.Stop()
+	}
 
 	log.Println("Server exiting")
 }
