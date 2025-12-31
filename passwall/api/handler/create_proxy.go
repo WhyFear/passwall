@@ -1,8 +1,8 @@
 package handler
 
 import (
+	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -19,277 +19,189 @@ import (
 
 // CreateProxyRequest 创建代理请求
 type CreateProxyRequest struct {
-	URL  string `form:"url" json:"url"`
-	Type string `form:"type" json:"type" binding:"required"`
+	URL     string   `form:"url" json:"url"`
+	URLList []string `form:"url_list" json:"url_list"`
+	Type    string   `form:"type" json:"type" binding:"required"`
+}
+
+// subProcessor 封装订阅处理的核心上下文
+type subProcessor struct {
+	proxyService        proxy.ProxyService
+	subscriptionManager proxy.SubscriptionManager
+	parserFactory       parser.ParserFactory
+	proxyTester         service.ProxyTester
+	ipDetectorService   service.IPDetectorService
+	cfg                 *config.Config
+}
+
+// run 核心流水线：解析器 -> 查重 -> 创建订阅 -> 解析节点 -> 节点入库 -> 触发后续
+func (p *subProcessor) run(url, reqType string, content []byte) (*model.Subscription, int, error) {
+	// 1. 获取解析器
+	psr, err := p.parserFactory.GetParser(reqType, content)
+	if err != nil {
+		return nil, 0, fmt.Errorf("不支持的解析类型: %w", err)
+	}
+
+	// 2. 查重处理
+	if existing, err := p.subscriptionManager.GetSubscriptionByURL(url); err == nil && existing != nil {
+		return existing, 0, fmt.Errorf("订阅已存在(ID:%d)", existing.ID)
+	}
+
+	// 3. 订阅源初始化入库
+	sub := &model.Subscription{
+		URL:     url,
+		Content: string(content),
+		Type:    psr.GetType(),
+		Status:  model.SubscriptionStatusPending,
+	}
+	if err := p.subscriptionManager.CreateSubscription(sub); err != nil {
+		return nil, 0, fmt.Errorf("保存订阅失败: %w", err)
+	}
+
+	// 4. 解析代理节点
+	proxies, err := psr.Parse(content)
+	if err != nil {
+		sub.Status = model.SubscriptionStatusInvalid
+		_ = p.subscriptionManager.UpdateSubscriptionStatus(sub)
+		return sub, 0, fmt.Errorf("解析节点失败: %w", err)
+	}
+
+	// 5. 节点批量入库
+	if len(proxies) > 0 {
+		for _, node := range proxies {
+			node.SubscriptionID = &sub.ID
+			node.Status = model.ProxyStatusPending
+		}
+		if err := p.proxyService.BatchCreateProxies(proxies); err != nil {
+			log.Errorln("[%s] 节点入库异常: %v", url, err)
+		}
+	}
+
+	// 6. 更新订阅状态为完成
+	sub.Status = model.SubscriptionStatusOK
+	_ = p.subscriptionManager.UpdateSubscriptionStatus(sub)
+
+	// 7. 触发自动化后续任务（测试、IP检测）
+	p.dispatchTasks(sub.ID, proxies)
+
+	return sub, len(proxies), nil
+}
+
+// dispatchTasks 统一分发节点测试和 IP 归属地检测任务
+func (p *subProcessor) dispatchTasks(subID uint, proxies []*model.Proxy) {
+	if len(proxies) == 0 {
+		return
+	}
+
+	// 提取 ID 列表，避免并发引用问题
+	ids := make([]uint, len(proxies))
+	for i, n := range proxies {
+		ids[i] = n.ID
+	}
+
+	// 异步延迟测试
+	go func() {
+		concurrent := 1
+		if p.cfg != nil {
+			concurrent = p.cfg.Concurrent
+		}
+		log.Infoln("开始对订阅[ID:%d]进行延迟测试...", subID)
+		_ = p.proxyTester.TestProxies(&service.TestProxyRequest{TestNew: true, Concurrent: concurrent}, true)
+	}()
+
+	// 异步 IP 详细检测
+	go func() {
+		if p.cfg == nil || !p.cfg.IPCheck.Enable {
+			return
+		}
+		log.Infoln("开始对订阅[ID:%d]进行 IP 归属地及流媒体检测...", subID)
+		_ = p.ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
+			ProxyIDList:     ids,
+			Enabled:         true,
+			IPInfoEnable:    p.cfg.IPCheck.IPInfo.Enable,
+			APPUnlockEnable: p.cfg.IPCheck.IPInfo.Enable,
+			Concurrent:      p.cfg.IPCheck.Concurrent,
+		})
+	}()
+}
+
+// download 处理网络资源下载
+func (p *subProcessor) download(u string) ([]byte, error) {
+	if strings.Contains(u, "://") && !strings.HasPrefix(u, "http") {
+		return []byte(u), nil
+	}
+	opts := &util.DownloadOptions{
+		Timeout:     util.DefaultDownloadOptions.Timeout,
+		MaxFileSize: util.DefaultDownloadOptions.MaxFileSize,
+	}
+	if p.cfg != nil && p.cfg.Proxy.Enabled {
+		opts.ProxyURL = p.cfg.Proxy.URL
+	}
+	return util.DownloadFromURL(u, opts)
 }
 
 // CreateProxy 创建代理处理器
 func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
-	// 加载配置
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		log.Errorln("Failed to load config: %v", err)
+	cfg, _ := config.LoadConfig()
+	proc := &subProcessor{
+		proxyService:        proxyService,
+		subscriptionManager: subscriptionManager,
+		parserFactory:       parserFactory,
+		proxyTester:         proxyTester,
+		ipDetectorService:   ipDetectorService,
+		cfg:                 cfg,
 	}
 
 	return func(c *gin.Context) {
 		var req CreateProxyRequest
-
-		// 绑定请求参数
 		if err := c.ShouldBind(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusBadRequest,
-				"status_msg":  "Invalid request parameters",
-			})
+			c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "请求参数无效"})
 			return
 		}
 
-		// 处理文件上传或URL
-		var content []byte
-		var subscriptionURL string
-		var err error
-
-		// 检查URL是否为空字符串
-		if req.URL != "" {
-			// 处理URL (去除两端空白)
-			req.URL = strings.TrimSpace(req.URL)
-			if req.URL == "" {
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusBadRequest,
-					"status_msg":  "URL cannot be empty",
-				})
+		// 分支 1: URLList 批量导入 (后台异步)
+		if len(req.URLList) > 0 {
+			if len(req.URLList) > 50 {
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "单次最多支持 50 个订阅链接"})
 				return
 			}
-
-			subscriptionURL = req.URL
-
-			// 判断是否为代理协议URL（如vmess://、ss://等）或普通HTTP/HTTPS链接
-			if strings.Contains(req.URL, "://") && !strings.HasPrefix(req.URL, "http") {
-				// 对于代理协议URL，直接使用URL作为内容
-				content = []byte(req.URL)
-			} else {
-				// 设置下载选项，包括代理
-				downloadOptions := &util.DownloadOptions{
-					Timeout:     util.DefaultDownloadOptions.Timeout,
-					MaxFileSize: util.DefaultDownloadOptions.MaxFileSize,
+			go func() {
+				for _, u := range req.URLList {
+					if content, err := proc.download(u); err == nil {
+						_, _, _ = proc.run(u, req.Type, content)
+					} else {
+						log.Errorln("批量下载失败 [%s]: %v", u, err)
+					}
 				}
-
-				// 如果配置了代理并启用，则使用配置的代理
-				if cfg != nil && cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
-					downloadOptions.ProxyURL = cfg.Proxy.URL
-					log.Infoln("Using proxy for download: %v", cfg.Proxy.URL)
-				}
-
-				// 对于HTTP/HTTPS链接，下载内容
-				content, err = util.DownloadFromURL(req.URL, downloadOptions)
-				if err != nil {
-					log.Errorln("下载订阅内容失败: %v", err)
-					c.JSON(http.StatusOK, gin.H{
-						"result":      "fail",
-						"status_code": http.StatusBadRequest,
-						"status_msg":  "Failed to download from URL: " + err.Error(),
-					})
-					return
-				}
-			}
-		} else if c.Request.MultipartForm != nil {
-			// 处理文件上传
-			file, fileHeader, err := c.Request.FormFile("file")
+			}()
+			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "status_msg": "批量任务已提交后台处理"})
+			return
+		} else if req.URL != "" { // 分支 2: 单个 URL 导入 (同步)
+			content, err := proc.download(req.URL)
 			if err != nil {
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusBadRequest,
-					"status_msg":  "Missing URL or file",
-				})
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅下载失败: " + err.Error()})
 				return
 			}
-			defer func(file multipart.File) {
-				err := file.Close()
-				if err != nil {
-					log.Errorln("关闭上传文件失败: %v", err)
-				}
-			}(file)
-
-			// 检查文件大小
-			if fileHeader.Size == 0 {
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusBadRequest,
-					"status_msg":  "File cannot be empty",
-				})
+			sub, count, err := proc.run(req.URL, req.Type, content)
+			if err != nil && sub == nil {
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": err.Error()})
 				return
 			}
-
-			// 限制文件大小
-			if fileHeader.Size > 10*1024*1024 { // 10MB
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusBadRequest,
-					"status_msg":  "File too large, max 10MB",
-				})
+			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
+			return
+		} else if file, _, err := c.Request.FormFile("file"); err == nil { // 分支 3: 文件上传导入 (同步)
+			defer file.Close()
+			content, _ := io.ReadAll(io.LimitReader(file, 10*1024*1024))
+			pseudoURL := util.MD5(string(content))[:20]
+			sub, count, err := proc.run(pseudoURL, req.Type, content)
+			if err != nil && sub == nil {
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": err.Error()})
 				return
 			}
-
-			content, err = io.ReadAll(io.LimitReader(file, 10*1024*1024)) // 限制读取大小
-			if err != nil {
-				log.Errorln("读取上传文件失败: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusInternalServerError,
-					"status_msg":  "Failed to read file: " + err.Error(),
-				})
-				return
-			}
-
-			// 检查读取的内容是否为空
-			if len(content) == 0 {
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusBadRequest,
-					"status_msg":  "File content cannot be empty",
-				})
-				return
-			}
-
-			// 对于文件上传，使用截取的md5作为订阅URL
-			subscriptionURL = util.MD5(string(content))[:20]
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusBadRequest,
-				"status_msg":  "Missing URL or file",
-			})
-		}
-
-		// 获取解析器
-		p, err := parserFactory.GetParser(req.Type, content)
-		if err != nil {
-			log.Errorln("不支持的代理类型: %v", req.Type)
-			c.JSON(http.StatusOK, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusBadRequest,
-				"status_msg":  "Unsupported proxy type: " + req.Type,
-			})
+			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
 			return
 		}
 
-		// 检查URL是否已存在
-		existingSub, err := subscriptionManager.GetSubscriptionByURL(subscriptionURL)
-		if err == nil && existingSub != nil {
-			// URL已存在，返回现有订阅ID
-			log.Infoln("订阅配置已存在: %v", subscriptionURL)
-			c.JSON(http.StatusOK, gin.H{
-				"result":          "fail",
-				"status_code":     http.StatusOK,
-				"status_msg":      "订阅配置已存在",
-				"subscription_id": existingSub.ID,
-			})
-			return
-		}
-
-		subscription := &model.Subscription{
-			URL:     subscriptionURL,
-			Content: string(content), // 保存原始内容
-			Type:    p.GetType(),
-			Status:  model.SubscriptionStatusPending,
-		}
-
-		// 先落库
-		if err := subscriptionManager.CreateSubscription(subscription); err != nil {
-			// 检查是否是唯一键冲突错误
-			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-				log.Infoln("订阅配置已存在(创建时检测): %v", subscriptionURL)
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusOK,
-					"status_msg":  "订阅配置已存在",
-				})
-				return
-			}
-
-			// 其他错误
-			log.Errorln("保存订阅配置失败: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusInternalServerError,
-				"status_msg":  "Failed to save subscription: " + err.Error(),
-			})
-			return
-		}
-
-		// 解析配置
-		proxies, err := p.Parse(content)
-		if err != nil {
-			log.Errorln("解析订阅配置失败: %v", err.Error())
-			// 更新订阅状态为无法处理
-			subscription.Status = model.SubscriptionStatusInvalid
-			_ = subscriptionManager.UpdateSubscriptionStatus(subscription)
-			c.JSON(http.StatusOK, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusBadRequest,
-				"status_msg":  "Failed to parse subscription: " + err.Error(),
-			})
-			return
-		}
-
-		if len(proxies) > 0 {
-			// 保存解析出的代理服务器
-			for _, singleProxy := range proxies {
-				// 设置订阅ID
-				singleProxy.SubscriptionID = &subscription.ID
-				singleProxy.Status = model.ProxyStatusPending
-			}
-			// 保存代理服务器
-			if err := proxyService.BatchCreateProxies(proxies); err != nil {
-				log.Errorln("保存代理服务器失败: %v", err)
-			}
-		}
-
-		// 更新订阅状态为正常
-		subscription.Status = model.SubscriptionStatusOK
-		err = subscriptionManager.UpdateSubscriptionStatus(subscription)
-		if err != nil {
-			log.Errorln("更新订阅[id=%v]状态失败: %v", subscription.ID, err)
-		}
-
-		log.Infoln("成功保存 %d 个代理服务器", len(proxies))
-
-		// 异步处理解析
-		go func() {
-			log.Infoln("开始测试代理...")
-			if err := proxyTester.TestProxies(&service.TestProxyRequest{
-				TestNew:    true,
-				Concurrent: cfg.Concurrent,
-			}, true); err != nil {
-				log.Errorln("测试代理失败: %v", err)
-			}
-		}()
-
-		go func() {
-			log.Infoln("开始检测IP...")
-			proxyIdList := make([]uint, len(proxies))
-			for i, singleProxy := range proxies {
-				proxyIdList[i] = singleProxy.ID
-			}
-			if err := ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
-				ProxyIDList:     proxyIdList,
-				Enabled:         cfg.IPCheck.Enable,
-				IPInfoEnable:    cfg.IPCheck.IPInfo.Enable,
-				APPUnlockEnable: cfg.IPCheck.IPInfo.Enable,
-				Refresh:         false,
-				Concurrent:      cfg.IPCheck.Concurrent,
-			}); err != nil {
-				log.Errorln("检测IP失败: %v", err)
-			}
-		}()
-
-		c.JSON(http.StatusOK, gin.H{
-			"result":          "success",
-			"status_code":     http.StatusOK,
-			"status_msg":      "订阅配置已接收，正在异步处理",
-			"subscription_id": subscription.ID,
-			"proxy_count":     len(proxies),
-		})
+		c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "未识别到有效的订阅来源"})
 	}
 }

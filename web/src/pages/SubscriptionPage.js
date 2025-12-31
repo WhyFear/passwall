@@ -195,6 +195,30 @@ const SubscriptionPage = () => {
         formData.append('file', contentBlob, 'subscription.txt');
 
         data = await subscriptionApi.createProxyWithFormData(formData);
+      } else if (values.upload_type === 'url_list' && values.url_list_text) {
+        // 处理批量URL列表
+        const urlList = values.url_list_text
+          .split('\n')
+          .map(url => url.trim())
+          .filter(url => url !== '');
+
+        if (urlList.length === 0) {
+          message.error('请输入有效的链接');
+          setLoading(false);
+          return;
+        }
+
+        if (urlList.length > 50) {
+          message.error('单次最多支持 50 个订阅链接，请分批导入');
+          setLoading(false);
+          return;
+        }
+
+        data = await subscriptionApi.createProxy({
+          type: values.type,
+          upload_type: values.upload_type,
+          url_list: urlList
+        });
       } else {
         // 处理URL提交
         data = await subscriptionApi.createProxy({
@@ -206,7 +230,8 @@ const SubscriptionPage = () => {
         return;
       }
 
-      message.success('添加订阅成功');
+      const successMsg = values.upload_type === 'url_list' ? '批量导入任务已启动' : '添加订阅成功';
+      message.success(successMsg);
       setModalVisible(false);
       await fetchSubscriptions(pagination.current, pagination.pageSize);
     } catch (error) {
