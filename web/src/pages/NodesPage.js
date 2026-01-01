@@ -774,15 +774,15 @@ const NodesPage = () => {
       onChange={setActiveTab}
       tabBarExtraContent={<div className="tab-bar-extra"
                                style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
-        {taskStatus && taskStatus.State === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+        {taskStatus && taskStatus.state === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
-            percent={Math.round((taskStatus.Completed / taskStatus.Total) * 100)}
+            percent={Math.round((taskStatus.completed / taskStatus.total) * 100)}
             size="small"
             style={{marginRight: 8}}
           />
           <span style={{marginRight: 8}}>
-            测速进行中: {taskStatus.Completed}/{taskStatus.Total}
+            测速进行中: {taskStatus.completed}/{taskStatus.total}
           </span>
           <Button
             type="primary"
@@ -856,7 +856,8 @@ const NodesPage = () => {
       onCancel={() => setModalVisible(false)}
       footer={[<Button key="close" type="primary" onClick={() => setModalVisible(false)}>
         关闭
-      </Button>,]}
+      </Button>,
+      ]}
       width={800}
     >
       {currentNode && (<div>
