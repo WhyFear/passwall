@@ -80,24 +80,28 @@ func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	// 3. 处理 Cron 任务
 	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
 
-	// 先移除旧任务（如果存在）
 	s.jobMutex.Lock()
+	defer s.jobMutex.Unlock()
+
+	// 先移除旧任务（如果存在）
 	if entryID, exists := s.jobIDs[jobName]; exists {
 		s.cron.Remove(entryID)
 		delete(s.jobIDs, jobName)
 		log.Infoln("Removed custom subscription update job %s", jobName)
 	}
-	s.jobMutex.Unlock()
 
 	// 如果有自定义配置且开启了自动更新，添加新任务
 	if subscriptionConfig != nil && subscriptionConfig.AutoUpdate && subscriptionConfig.UpdateInterval != "" {
-		s.addCustomSubJob(subID, subscriptionConfig, s.sysConfig.Proxy)
+		s.addCustomSubJobLocked(subID, subscriptionConfig, s.sysConfig.Proxy)
 	}
 	return nil
 }
 
 // Init 启动调度器
 func (s *Scheduler) Init(sysConfig config.Config) error {
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
+
 	s.jobMutex.Lock()
 	defer s.jobMutex.Unlock()
 
@@ -141,25 +145,26 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 		log.Errorln("Failed to get subscription configs: %v", err)
 	}
 
-	s.configMutex.Lock()
 	s.customConfigs = make(map[uint]*model.SubscriptionConfig)
 	for _, cfg := range customConfigs {
+		// 验证该配置对应的订阅是否未被删除
+		sub, err := s.subsManager.GetSubscriptionByID(cfg.SubscriptionID)
+		if err != nil || sub == nil || sub.Status == model.SubscriptionStatusDeleted {
+			continue
+		}
 		s.customConfigs[cfg.SubscriptionID] = cfg
 	}
-	s.configMutex.Unlock()
 
 	// 2. 注册有个性化配置的任务
-	s.configMutex.RLock()
 	// 注意：这里我们只处理 Init 时的状态。UpdateSubscriptionJob 会处理运行时的变化。
 	// 为了复用代码，UpdateSubscriptionJob 需要能够创建任务。
 	// 但 Init 这里有 sysConfig 上下文。
 
 	for subID, subCfg := range s.customConfigs {
 		if subCfg.AutoUpdate && subCfg.UpdateInterval != "" {
-			s.addCustomSubJob(subID, subCfg, sysConfig.Proxy)
+			s.addCustomSubJobLocked(subID, subCfg, sysConfig.Proxy)
 		}
 	}
-	s.configMutex.RUnlock()
 
 	// 3. 处理默认订阅更新任务（针对没有自定义配置的订阅）
 	if sysConfig.DefaultSub.AutoUpdate && sysConfig.DefaultSub.Interval != "" {
@@ -215,6 +220,12 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 
 // addCustomSubJob 辅助方法：添加自定义订阅任务
 func (s *Scheduler) addCustomSubJob(subID uint, subCfg *model.SubscriptionConfig, proxyConfig config.Proxy) {
+	s.jobMutex.Lock()
+	defer s.jobMutex.Unlock()
+	s.addCustomSubJobLocked(subID, subCfg, proxyConfig)
+}
+
+func (s *Scheduler) addCustomSubJobLocked(subID uint, subCfg *model.SubscriptionConfig, proxyConfig config.Proxy) {
 	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
 
 	// 使用闭包捕获
@@ -237,9 +248,7 @@ func (s *Scheduler) addCustomSubJob(subID uint, subCfg *model.SubscriptionConfig
 	if err != nil {
 		log.Infoln("Failed to add custom job %s: %v", jobName, err)
 	} else {
-		s.jobMutex.Lock()
 		s.jobIDs[jobName] = entryID
-		s.jobMutex.Unlock()
 		log.Infoln("Added custom subscription update job %s with schedule %s", jobName, subCfg.UpdateInterval)
 	}
 }

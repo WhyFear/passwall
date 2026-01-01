@@ -378,6 +378,27 @@ func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subsc
 		return err
 	}
 
+	// 自动触发对新节点的测速
+	log.Infoln("开始自动测试新获取的代理节点...")
+	// 获取并发配置
+	concurrent := 5
+	if cfg, err := s.configProvider.GetConfig(); err == nil && cfg.Concurrent > 0 {
+		concurrent = cfg.Concurrent
+	}
+
+	testReq := &TestRequest{
+		Filters: &ProxyFilter{
+			Status: []model.ProxyStatus{model.ProxyStatusPending},
+		},
+		Concurrent: concurrent,
+	}
+	// 异步执行测速，不阻塞订阅刷新主流程
+	go func() {
+		if err := s.proxyTester.TestProxies(context.Background(), testReq, false); err != nil {
+			log.Errorln("自动测试代理失败: %v", err)
+		}
+	}()
+
 	s.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
 	return nil
 }
@@ -501,22 +522,6 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	}
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理，去重后%d个", subscription.URL, len(newProxies), len(uniqueProxies))
-
-	// 自动触发对新节点的测速
-	if len(toCreate) > 0 || len(toUpdate) > 0 {
-		log.Infoln("开始自动测试新获取的代理节点...")
-		testReq := &TestRequest{
-			Filters: &ProxyFilter{
-				Status: []model.ProxyStatus{model.ProxyStatusPending},
-			},
-		}
-		// 异步执行测速，不阻塞订阅刷新主流程
-		go func() {
-			if err := s.proxyTester.TestProxies(context.Background(), testReq, false); err != nil {
-				log.Errorln("自动测试代理失败: %v", err)
-			}
-		}()
-	}
 
 	return nil
 }

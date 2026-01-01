@@ -63,7 +63,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		// 刷新订阅
 		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager, services.ConfigService))
 		// 删除订阅
-		webGroup.POST("/delete_subscription", handler.DeleteSubscription(ctx, services.SubscriptionManager))
+		webGroup.POST("/delete_subscription", handler.DeleteSubscription(ctx, services.SubscriptionManager, scheduler))
 		// 获取订阅配置
 		webGroup.GET("/subscription/:id/config", handler.GetSubscriptionConfig(services.SubscriptionManager))
 		// 保存订阅配置
