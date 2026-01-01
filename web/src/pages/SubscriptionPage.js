@@ -367,7 +367,7 @@ const SubscriptionPage = () => {
   }, {
     title: '添加时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (text) => formatDate(text),
   }, {
-    title: '操作', key: 'action', width: 350, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
+    title: '操作', key: 'action', width: 360, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
       <Tooltip title="查看内容">
         <Button
           type="text"
