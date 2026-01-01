@@ -101,4 +101,11 @@ export const taskApi = {
   // 获取任务状态
   getTaskStatus: (taskType) => api.get('/get_task_status', {params: {task_type: taskType}}), // 停止任务
   stopTask: (taskType) => api.post('/stop_task', {task_type: taskType}),
-}; 
+};
+
+// 系统配置API
+export const configApi = {
+  getConfig: () => api.get('/config'),
+  updateConfig: (data) => api.post('/config', data),
+};
+   

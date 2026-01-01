@@ -15,6 +15,7 @@ type Repositories struct {
 	IPInfo           IPInfoRepository
 	IPBaseInfo       IPBaseInfoRepository
 	IPUnlockInfo     IPUnlockInfoRepository
+	SystemConfig     SystemConfigRepository
 }
 
 // NewRepositories 创建所有仓库的集合
@@ -29,5 +30,6 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		IPInfo:           NewIPInfoRepository(db),
 		IPBaseInfo:       NewIPBaseInfoRepository(db),
 		IPUnlockInfo:     NewIPUnlockInfoRepository(db),
+		SystemConfig:     NewSystemConfigRepository(db),
 	}
 }

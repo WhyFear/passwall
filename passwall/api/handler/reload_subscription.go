@@ -6,7 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"passwall/internal/service"
 	"passwall/internal/service/proxy"
+	"passwall/internal/util"
 )
 
 // ReloadSubscriptionRequest 重新加载订阅请求
@@ -15,7 +17,7 @@ type ReloadSubscriptionRequest struct {
 }
 
 // ReloadSubscription 重新加载订阅处理器
-func ReloadSubscription(ctx context.Context, subscriptionManager proxy.SubscriptionManager) gin.HandlerFunc {
+func ReloadSubscription(ctx context.Context, subscriptionManager proxy.SubscriptionManager, configService service.ConfigService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ReloadSubscriptionRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -27,13 +29,21 @@ func ReloadSubscription(ctx context.Context, subscriptionManager proxy.Subscript
 			return
 		}
 
-		var err error
+		// 获取当前配置以检查是否使用代理
+		cfg, err := configService.GetConfig()
+		var downloadOptions *util.DownloadOptions
+		if err == nil && cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
+			downloadOptions = &util.DownloadOptions{
+				ProxyURL: cfg.Proxy.URL,
+			}
+		}
+
 		if req.ID > 0 {
 			// 刷新单个订阅
-			err = subscriptionManager.RefreshSubscriptionAsync(ctx, req.ID)
+			err = subscriptionManager.RefreshSubscriptionAsync(ctx, req.ID, downloadOptions)
 		} else {
 			// 刷新所有订阅
-			err = subscriptionManager.RefreshAllSubscriptions(ctx, true)
+			err = subscriptionManager.RefreshAllSubscriptions(ctx, true, downloadOptions)
 		}
 
 		if err != nil {

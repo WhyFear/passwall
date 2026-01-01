@@ -79,7 +79,7 @@ func (s *Scheduler) Init(config config.Config) error {
 		// 创建任务闭包
 		jobConfig := job // 创建副本避免闭包问题
 		entryID, err := s.cron.AddFunc(jobConfig.Schedule, func() {
-			s.executeJob(jobConfig, config.IPCheck)
+			s.executeJob(jobConfig, config.IPCheck, config.Proxy)
 		})
 
 		if err != nil {
@@ -90,6 +90,39 @@ func (s *Scheduler) Init(config config.Config) error {
 		// 存储任务ID
 		s.jobIDs[job.Name] = entryID
 		log.Infoln("Added job %s with schedule %s", job.Name, job.Schedule)
+	}
+
+	// 处理默认订阅更新任务
+
+	if config.DefaultSub.AutoUpdate && config.DefaultSub.Interval != "" {
+
+		entryID, err := s.cron.AddFunc(config.DefaultSub.Interval, func() {
+
+			ctx := context.Background()
+
+			log.Infoln("Executing default subscription update job")
+
+			// 构造下载选项
+
+			var opts *util.DownloadOptions
+			if config.DefaultSub.UseProxy && config.Proxy.Enabled && config.Proxy.URL != "" {
+				opts = &util.DownloadOptions{
+					ProxyURL: config.Proxy.URL,
+				}
+				log.Infoln("Default subscription update using proxy: %s", config.Proxy.URL)
+			}
+
+			if err := s.subsManager.RefreshAllSubscriptions(ctx, false, opts); err != nil {
+				log.Errorln("Default subscription update failed: %v", err)
+			}
+		})
+
+		if err != nil {
+			log.Infoln("Failed to add default subscription update job: %v", err)
+		} else {
+			s.jobIDs["default_sub_update"] = entryID
+			log.Infoln("Added default subscription update job with schedule %s", config.DefaultSub.Interval)
+		}
 	}
 
 	// 启动cron
@@ -112,7 +145,7 @@ func (s *Scheduler) Stop() {
 }
 
 // executeJob 执行定时任务
-func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckConfig) {
+func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckConfig, proxyConfig config.Proxy) {
 	log.Infoln("Executing job: %s", job.Name)
 
 	defer func() {
@@ -138,18 +171,9 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 
 	ctx := context.Background()
 
-	// 步骤 1: 如果配置了刷新订阅，则串行执行
-	if job.ReloadSubscribeConfig {
-		log.Infoln("reload subscribe Job '%s': Start to refresh subscriptions.", job.Name)
-		if err := s.subsManager.RefreshAllSubscriptions(ctx, false); err != nil {
-			log.Infoln("Job '%s': Failed to refresh subscriptions, stopping job. Error: %v", job.Name, err)
-			return // 如果刷新失败，则终止当前任务
-		}
-		log.Infoln("Job '%s': Subscription refresh finished.", job.Name)
-	}
-
-	// 步骤 2: 执行节点测试
+	// 步骤 1: 执行节点测试
 	if job.TestProxy.Enable {
+		// ... (此处省略后续 TestProxy, AutoBan 等逻辑，仅移除 ReloadSubscribeConfig 相关代码)
 		log.Infoln("Job '%s': Start to test proxy.", job.Name)
 		filter := &proxy.ProxyFilter{}
 		if job.TestProxy.Status != "" {
@@ -200,32 +224,8 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 			PingThreshold:          job.AutoBan.PingThreshold,
 			TestTimes:              testTimes,
 		}
-		err := s.proxyService.BanProxy(ctx, serviceReq)
-		if err != nil {
+		if err := s.proxyService.BanProxy(ctx, serviceReq); err != nil {
 			log.Errorln("Job '%s': Failed to ban proxy: %v", job.Name, err)
-		}
-	}
-
-	if job.ReloadSubscribeConfig && checkConfig.Enable {
-		log.Infoln("reload subscribe Job '%s': Start to check ip quality.", job.Name)
-		// 查所有没有检查记录的节点
-		proxyIDs, err := s.ipDetectService.GetProxyIDsNotInIPAddress()
-		if err != nil {
-			log.Errorln("Job '%s': Failed to get proxy ids not in ip address: %v", job.Name, err)
-			return
-		}
-		if len(proxyIDs) > 0 {
-			err = s.ipDetectService.BatchDetect(&service.BatchIPDetectorReq{
-				ProxyIDList:     proxyIDs,
-				Enabled:         true,
-				IPInfoEnable:    checkConfig.IPInfo.Enable,
-				APPUnlockEnable: checkConfig.AppUnlock.Enable,
-				Refresh:         false,
-				Concurrent:      checkConfig.Concurrent,
-			})
-			if err != nil {
-				log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
-			}
 		}
 	}
 
@@ -235,7 +235,7 @@ func (s *Scheduler) executeJob(job config.CronJob, checkConfig config.IPCheckCon
 		if err != nil {
 			log.Errorln("Job '%s': Failed to get proxies: %v", job.Name, err)
 		}
-		proxyIdList := make([]uint, len(proxies))
+		proxyIdList := make([]uint, 0, len(proxies))
 		for _, singleProxy := range proxies {
 			proxyIdList = append(proxyIdList, singleProxy.ID)
 		}

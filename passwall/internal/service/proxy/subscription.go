@@ -9,16 +9,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/metacubex/mihomo/log"
-
-	"github.com/google/go-cmp/cmp"
-
-	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 	"passwall/internal/util"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/metacubex/mihomo/log"
 )
 
 type SubsPage struct {
@@ -37,8 +35,8 @@ type SubscriptionManager interface {
 	DeleteSubscription(id uint) error
 
 	// 刷新操作
-	RefreshSubscriptionAsync(ctx context.Context, subID uint) error
-	RefreshAllSubscriptions(ctx context.Context, async bool) error
+	RefreshSubscriptionAsync(ctx context.Context, subID uint, options *util.DownloadOptions) error
+	RefreshAllSubscriptions(ctx context.Context, async bool, options *util.DownloadOptions) error
 
 	// 解析和保存
 	ParseAndSaveProxies(ctx context.Context, subscription *model.Subscription, content []byte) error
@@ -102,7 +100,7 @@ func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
 }
 
 // RefreshSubscriptionAsync 刷新单个订阅
-func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, subID uint) error {
+func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, subID uint, options *util.DownloadOptions) error {
 	// 获取订阅信息
 	subscription, err := s.subscriptionRepo.FindByID(subID)
 	if err != nil {
@@ -113,23 +111,27 @@ func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, 
 		return fmt.Errorf("订阅不存在")
 	}
 
-	// 启动任务
+	// 尝试启动任务（仅用于 UI 进度展示，失败不影响后台刷新）
 	taskType := task.TaskTypeReloadSubs
-	ctx, started := s.taskManager.StartTask(ctx, taskType, 1)
+	taskCtx, started := s.taskManager.StartTask(ctx, taskType, 1)
 	if !started {
-		return fmt.Errorf("已有任务正在运行")
+		taskCtx = ctx
 	}
 
 	// 异步刷新订阅
 	go func() {
-		defer s.taskManager.FinishTask(taskType, "")
+		if started {
+			defer s.taskManager.FinishTask(taskType, "")
+		}
 
-		err := s.refreshSubscription(ctx, subscription)
-		if err != nil {
-			log.Errorln("刷新订阅失败: %v", err)
-			s.taskManager.UpdateProgress(taskType, 1, err.Error())
-		} else {
-			s.taskManager.UpdateProgress(taskType, 1, "")
+		err := s.refreshSubscription(taskCtx, subscription, options)
+		if started {
+			if err != nil {
+				log.Errorln("刷新订阅失败: %v", err)
+				s.taskManager.UpdateProgress(taskType, 1, err.Error())
+			} else {
+				s.taskManager.UpdateProgress(taskType, 1, "")
+			}
 		}
 	}()
 
@@ -137,12 +139,7 @@ func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, 
 }
 
 // RefreshAllSubscriptions 异步刷新所有订阅
-func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, async bool) error {
-	// 如果已有任务在运行，返回错误
-	if s.taskManager.IsRunning(task.TaskTypeReloadSubs) {
-		return fmt.Errorf("已有其他任务正在运行")
-	}
-
+func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, async bool, options *util.DownloadOptions) error {
 	// 获取所有订阅
 	subscriptions, err := s.subscriptionRepo.FindAll()
 	if err != nil {
@@ -154,24 +151,24 @@ func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, a
 		return nil
 	}
 
-	// 启动任务
+	// 尝试启动任务（仅用于 UI 进度展示，失败不影响后台刷新）
 	taskType := task.TaskTypeReloadSubs
-	ctx, started := s.taskManager.StartTask(ctx, taskType, len(subscriptions))
+	taskCtx, started := s.taskManager.StartTask(ctx, taskType, len(subscriptions))
 	if !started {
-		return fmt.Errorf("启动任务失败")
+		taskCtx = ctx
 	}
 
 	if async {
-		go s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+		go s.refreshAllSubscriptions(taskCtx, taskType, subscriptions, options, started)
 	} else {
-		s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+		s.refreshAllSubscriptions(taskCtx, taskType, subscriptions, options, started)
 	}
 
 	return nil
 }
 
 // refreshAllSubscriptions 刷新所有订阅
-func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription) {
+func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription, options *util.DownloadOptions, updateTask bool) {
 	// 用于跟踪任务是否已经完成的标志
 	var finished bool
 	var finishMessage string
@@ -179,6 +176,9 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 
 	// 确保任务最终会被标记为完成，并处理可能的panic
 	defer func() {
+		if !updateTask {
+			return
+		}
 		finishMutex.Lock()
 		defer finishMutex.Unlock()
 
@@ -218,7 +218,7 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 			// 继续执行
 		}
 
-		err := s.refreshSubscription(ctx, subscription)
+		err := s.refreshSubscription(ctx, subscription, options)
 		if err != nil {
 			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
 			lastError = err
@@ -229,7 +229,9 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 		completed++
 		doneMutex.Unlock()
 
-		s.taskManager.UpdateProgress(taskType, completed, "")
+		if updateTask {
+			s.taskManager.UpdateProgress(taskType, completed, "")
+		}
 	}
 
 	// 设置完成消息
@@ -244,19 +246,39 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 	}
 
 	// 标记任务完成（正常流程）
-	finishMutex.Lock()
-	finished = true
-	s.taskManager.FinishTask(taskType, finishMessage)
-	finishMutex.Unlock()
+	if updateTask {
+		finishMutex.Lock()
+		finished = true
+		s.taskManager.FinishTask(taskType, finishMessage)
+		finishMutex.Unlock()
+	}
 
 	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 错误: %v", jobsTotal, jobsDone, lastError)
 }
 
 // refreshSubscription 刷新单个订阅
-func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subscription *model.Subscription) error {
+func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) error {
+	taskType := task.TaskTypeReloadSubs
+	// 尝试在 TaskManager 中锁定该资源
+	taskCtx, started := s.taskManager.StartResourceTask(ctx, taskType, subscription.ID, 1)
+	if !started {
+		log.Infoln("订阅[ID:%d]正在刷新中，本次跳过", subscription.ID)
+		return nil
+	}
+
+	var err error
+	defer func() {
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		}
+		s.taskManager.FinishResourceTask(taskType, subscription.ID, errMsg)
+	}()
+
 	log.Infoln("开始刷新订阅: %s", subscription.URL)
 	if subscription.URL == "" {
-		return fmt.Errorf("订阅为空")
+		err = fmt.Errorf("订阅为空")
+		return err
 	}
 	if !strings.HasPrefix(subscription.URL, "http") {
 		log.Infoln("非下载链接，无需刷新")
@@ -268,39 +290,42 @@ func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subsc
 		Timeout:     util.DefaultDownloadOptions.Timeout,
 		MaxFileSize: util.DefaultDownloadOptions.MaxFileSize,
 	}
+	if options != nil {
+		downloadOptions.ProxyURL = options.ProxyURL
+		if options.Timeout > 0 {
+			downloadOptions.Timeout = options.Timeout
+		}
+	}
 
-	// 加载配置
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		log.Errorln("加载配置失败: %v", err)
-	} else if cfg != nil && cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
-		downloadOptions.ProxyURL = cfg.Proxy.URL
-		log.Infoln("使用代理下载: %s", cfg.Proxy.URL)
+	if downloadOptions.ProxyURL != "" {
+		log.Infoln("使用代理下载: %s", downloadOptions.ProxyURL)
 	}
 
 	// 下载订阅内容
-	content, err := util.DownloadFromURL(subscription.URL, downloadOptions)
+	var content []byte
+	content, err = util.DownloadFromURL(subscription.URL, downloadOptions)
 	if err != nil {
 		log.Errorln("下载订阅内容失败: %v", err)
 
 		subscription.Status = model.SubscriptionStatusInvalid
-		if err := s.subscriptionRepo.UpdateStatus(subscription); err != nil {
-			log.Errorln("更新订阅状态失败: %v", err)
+		if updateErr := s.subscriptionRepo.UpdateStatus(subscription); updateErr != nil {
+			log.Errorln("更新订阅状态失败: %v", updateErr)
 		}
 		return fmt.Errorf("下载订阅内容失败: %w", err)
 	}
 
 	// 解析并保存代理
-	if err := s.ParseAndSaveProxies(ctx, subscription, content); err != nil {
+	if err = s.ParseAndSaveProxies(taskCtx, subscription, content); err != nil {
 		log.Errorln("解析订阅内容失败: %v", err)
 
 		subscription.Status = model.SubscriptionStatusInvalid
-		if err := s.subscriptionRepo.UpdateStatus(subscription); err != nil {
-			log.Errorln("更新订阅状态失败: %v", err)
+		if updateErr := s.subscriptionRepo.UpdateStatus(subscription); updateErr != nil {
+			log.Errorln("更新订阅状态失败: %v", updateErr)
 		}
 		return err
 	}
 
+	s.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
 	return nil
 }
 

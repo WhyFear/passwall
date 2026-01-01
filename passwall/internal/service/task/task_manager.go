@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -26,45 +27,53 @@ const (
 
 // TaskManager 任务管理器接口
 type TaskManager interface {
-	// StartTask 开始一个新任务，返回任务上下文和是否成功
-	// 如果同类型任务已在运行，则返回(nil, false)
+	// StartTask 开始一个新任务（全局任务，ResourceID 为 0）
 	StartTask(ctx context.Context, taskType TaskType, total int) (context.Context, bool)
+
+	// StartResourceTask 开始一个针对特定资源的任务
+	StartResourceTask(ctx context.Context, taskType TaskType, resourceID uint, total int) (context.Context, bool)
 
 	// UpdateProgress 更新任务进度
 	UpdateProgress(taskType TaskType, completed int, errMsg string)
+	// UpdateResourceProgress 更新特定资源任务的进度
+	UpdateResourceProgress(taskType TaskType, resourceID uint, completed int, errMsg string)
 
 	// UpdateTotal 更新任务总数量
 	UpdateTotal(taskType TaskType, total int)
 
-	// FinishTask 完成任务
+	// FinishTask 完成任务（全局任务）
 	FinishTask(taskType TaskType, errMsg string)
+	// FinishResourceTask 完成特定资源任务
+	FinishResourceTask(taskType TaskType, resourceID uint, errMsg string)
 
-	// CancelTask 取消任务，如果wait为true则等待任务完成
-	// 返回是否成功取消和是否因等待超时
+	// CancelTask 取消任务
 	CancelTask(taskType TaskType, wait bool) (bool, bool)
 
-	// IsRunning 检查指定类型的任务是否正在运行
+	// IsRunning 检查指定类型的全局任务是否正在运行
 	IsRunning(taskType TaskType) bool
+	// IsResourceRunning 检查特定资源任务是否正在运行
+	IsResourceRunning(taskType TaskType, resourceID uint) bool
 
 	// IsAnyRunning 检查是否有任何任务正在运行
 	IsAnyRunning() bool
 
 	// GetStatus 获取任务状态
 	GetStatus(taskType TaskType) *TaskStatus
-
-	GetAllStatus() map[TaskType]*TaskStatus
+	// GetAllStatus 获取所有活跃和最近完成的任务状态
+	GetAllStatus() []*TaskStatus
 }
 
 // TaskStatus 任务状态
 type TaskStatus struct {
-	Type       TaskType   // 任务类型
-	State      TaskState  // 任务状态
-	StartTime  time.Time  // 开始时间
-	FinishTime *time.Time // 完成时间
-	Progress   int        // 进度(0-100)
-	Total      int        // 总任务数
-	Completed  int        // 已完成任务数
-	Error      string     // 错误信息
+	Type       TaskType   `json:"type"`        // 任务类型
+	ResourceID uint       `json:"resource_id"` // 资源ID (可选)
+	State      TaskState  `json:"state"`       // 任务状态
+	StartTime  time.Time  `json:"start_time"`  // 开始时间
+	FinishTime *time.Time `json:"finish_time"` // 完成时间
+	Progress   int        `json:"progress"`    // 进度(0-100)
+	Total      int        `json:"total"`       // 总任务数
+	Completed  int        `json:"completed"`   // 已完成任务数
+	Error      string     `json:"error"`       // 错误信息
 }
 
 // 内部任务结构
@@ -78,23 +87,37 @@ type taskInfo struct {
 // defaultTaskManager 默认任务管理器实现
 type defaultTaskManager struct {
 	mu    sync.RWMutex
-	tasks map[TaskType]*taskInfo
+	tasks map[string]*taskInfo // key: taskType or taskType:resourceID
 }
 
 // NewTaskManager 创建任务管理器
 func NewTaskManager() TaskManager {
 	return &defaultTaskManager{
-		tasks: make(map[TaskType]*taskInfo),
+		tasks: make(map[string]*taskInfo),
 	}
+}
+
+func (m *defaultTaskManager) getTaskKey(taskType TaskType, resourceID uint) string {
+	if resourceID == 0 {
+		return string(taskType)
+	}
+	return fmt.Sprintf("%s:%d", taskType, resourceID)
 }
 
 // StartTask 开始一个新任务
 func (m *defaultTaskManager) StartTask(ctx context.Context, taskType TaskType, total int) (context.Context, bool) {
+	return m.StartResourceTask(ctx, taskType, 0, total)
+}
+
+// StartResourceTask 开始一个针对特定资源的任务
+func (m *defaultTaskManager) StartResourceTask(ctx context.Context, taskType TaskType, resourceID uint, total int) (context.Context, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 检查是否有同类型任务正在运行
-	if task, exists := m.tasks[taskType]; exists && task.status.State == TaskStateRunning {
+	key := m.getTaskKey(taskType, resourceID)
+
+	// 检查是否有同类型同资源任务正在运行
+	if t, exists := m.tasks[key]; exists && t.status.State == TaskStateRunning {
 		return nil, false
 	}
 
@@ -102,75 +125,87 @@ func (m *defaultTaskManager) StartTask(ctx context.Context, taskType TaskType, t
 	ctx, cancelFunc := context.WithCancel(ctx)
 
 	// 创建任务信息
-	task := &taskInfo{
+	t := &taskInfo{
 		status: TaskStatus{
-			Type:      taskType,
-			State:     TaskStateRunning,
-			StartTime: time.Now(),
-			Total:     total,
+			Type:       taskType,
+			ResourceID: resourceID,
+			State:      TaskStateRunning,
+			StartTime:  time.Now(),
+			Total:      total,
 		},
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
 		doneChan:   make(chan struct{}),
 	}
 
-	m.tasks[taskType] = task
+	m.tasks[key] = t
 	return ctx, true
 }
 
 // UpdateProgress 更新任务进度
 func (m *defaultTaskManager) UpdateProgress(taskType TaskType, completed int, errMsg string) {
+	m.UpdateResourceProgress(taskType, 0, completed, errMsg)
+}
+
+func (m *defaultTaskManager) UpdateResourceProgress(taskType TaskType, resourceID uint, completed int, errMsg string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	task, exists := m.tasks[taskType]
-	if !exists || task.status.State != TaskStateRunning {
+	key := m.getTaskKey(taskType, resourceID)
+	t, exists := m.tasks[key]
+	if !exists || t.status.State != TaskStateRunning {
 		return
 	}
 
-	task.status.Completed = completed
-	if task.status.Total > 0 {
-		task.status.Progress = completed * 100 / task.status.Total
+	t.status.Completed = completed
+	if t.status.Total > 0 {
+		t.status.Progress = completed * 100 / t.status.Total
 	}
-	task.status.Error = errMsg
+	t.status.Error = errMsg
 }
 
 func (m *defaultTaskManager) UpdateTotal(taskType TaskType, total int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	task, exists := m.tasks[taskType]
-	if !exists || task.status.State != TaskStateRunning {
+	key := m.getTaskKey(taskType, 0)
+	t, exists := m.tasks[key]
+	if !exists || t.status.State != TaskStateRunning {
 		return
 	}
-	if task.status.Completed >= total {
-		task.status.Total = task.status.Completed
+	if t.status.Completed >= total {
+		t.status.Total = t.status.Completed
 		return
 	}
-	task.status.Total = total
+	t.status.Total = total
 }
 
 // FinishTask 完成任务
 func (m *defaultTaskManager) FinishTask(taskType TaskType, errMsg string) {
+	m.FinishResourceTask(taskType, 0, errMsg)
+}
+
+func (m *defaultTaskManager) FinishResourceTask(taskType TaskType, resourceID uint, errMsg string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	task, exists := m.tasks[taskType]
+	key := m.getTaskKey(taskType, resourceID)
+	t, exists := m.tasks[key]
 	if !exists {
 		return
 	}
 
-	if task.status.State == TaskStateRunning {
+	if t.status.State == TaskStateRunning {
 		now := time.Now()
-		task.status.FinishTime = &now
-		task.status.State = TaskStateFinished
-		task.status.Progress = 100
-		task.status.Error = errMsg
+		t.status.FinishTime = &now
+		t.status.State = TaskStateFinished
+		t.status.Progress = 100
+		t.status.Error = errMsg
 
 		// 通知任务已完成
 		select {
-		case <-task.doneChan: // 已关闭
+		case <-t.doneChan: // 已关闭
 		default:
-			close(task.doneChan)
+			close(t.doneChan)
 		}
 	}
 }
@@ -179,17 +214,18 @@ func (m *defaultTaskManager) FinishTask(taskType TaskType, errMsg string) {
 func (m *defaultTaskManager) CancelTask(taskType TaskType, wait bool) (bool, bool) {
 	m.mu.Lock()
 
-	task, exists := m.tasks[taskType]
-	if !exists || task.status.State != TaskStateRunning {
+	key := m.getTaskKey(taskType, 0)
+	t, exists := m.tasks[key]
+	if !exists || t.status.State != TaskStateRunning {
 		m.mu.Unlock()
 		return false, false
 	}
 
 	// 取消任务上下文
-	task.cancelFunc()
+	t.cancelFunc()
 
 	// 获取done通道的引用
-	doneChan := task.doneChan
+	doneChan := t.doneChan
 
 	m.mu.Unlock()
 
@@ -215,11 +251,16 @@ func (m *defaultTaskManager) CancelTask(taskType TaskType, wait bool) (bool, boo
 
 // IsRunning 检查指定类型的任务是否正在运行
 func (m *defaultTaskManager) IsRunning(taskType TaskType) bool {
+	return m.IsResourceRunning(taskType, 0)
+}
+
+func (m *defaultTaskManager) IsResourceRunning(taskType TaskType, resourceID uint) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	task, exists := m.tasks[taskType]
-	return exists && task.status.State == TaskStateRunning
+	key := m.getTaskKey(taskType, resourceID)
+	t, exists := m.tasks[key]
+	return exists && t.status.State == TaskStateRunning
 }
 
 // IsAnyRunning 检查是否有任何任务正在运行
@@ -227,8 +268,8 @@ func (m *defaultTaskManager) IsAnyRunning() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	for _, task := range m.tasks {
-		if task.status.State == TaskStateRunning {
+	for _, t := range m.tasks {
+		if t.status.State == TaskStateRunning {
 			return true
 		}
 	}
@@ -240,22 +281,24 @@ func (m *defaultTaskManager) GetStatus(taskType TaskType) *TaskStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	task, exists := m.tasks[taskType]
+	key := m.getTaskKey(taskType, 0)
+	t, exists := m.tasks[key]
 	if !exists {
 		return nil
 	}
 
 	// 返回状态副本
-	status := task.status
+	status := t.status
 	return &status
 }
 
-func (m *defaultTaskManager) GetAllStatus() map[TaskType]*TaskStatus {
+func (m *defaultTaskManager) GetAllStatus() []*TaskStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	statusMap := make(map[TaskType]*TaskStatus)
-	for taskType, task := range m.tasks {
-		statusMap[taskType] = &task.status
+	var statuses []*TaskStatus
+	for _, t := range m.tasks {
+		statusCopy := t.status
+		statuses = append(statuses, &statusCopy)
 	}
-	return statusMap
+	return statuses
 }

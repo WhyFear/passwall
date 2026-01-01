@@ -141,18 +141,19 @@ func (p *subProcessor) download(u string) ([]byte, error) {
 }
 
 // CreateProxy 创建代理处理器
-func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
-	cfg, _ := config.LoadConfig()
-	proc := &subProcessor{
-		proxyService:        proxyService,
-		subscriptionManager: subscriptionManager,
-		parserFactory:       parserFactory,
-		proxyTester:         proxyTester,
-		ipDetectorService:   ipDetectorService,
-		cfg:                 cfg,
-	}
-
+func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester, ipDetectorService service.IPDetectorService, configService service.ConfigService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 每次请求都重新获取配置并创建独立的处理器，避免并发竞态
+		cfg, _ := configService.GetConfig()
+		proc := &subProcessor{
+			proxyService:        proxyService,
+			subscriptionManager: subscriptionManager,
+			parserFactory:       parserFactory,
+			proxyTester:         proxyTester,
+			ipDetectorService:   ipDetectorService,
+			cfg:                 cfg,
+		}
+
 		var req CreateProxyRequest
 		if err := c.ShouldBind(&req); err != nil {
 			c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "请求参数无效"})

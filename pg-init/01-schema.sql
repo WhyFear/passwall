@@ -152,3 +152,12 @@ CREATE TABLE IF NOT EXISTS ip_unlock_infos
 );
 
 CREATE INDEX IF NOT EXISTS idx_ip_unlock_infos_ip_addresses_id ON ip_unlock_infos (ip_addresses_id);
+
+-- 系统配置表
+CREATE TABLE IF NOT EXISTS system_configs
+(
+    key        VARCHAR(255) PRIMARY KEY,
+    value      TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
