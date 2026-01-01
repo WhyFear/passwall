@@ -16,20 +16,22 @@ type Repositories struct {
 	IPBaseInfo       IPBaseInfoRepository
 	IPUnlockInfo     IPUnlockInfoRepository
 	SystemConfig     SystemConfigRepository
+	SubscriptionConfig SubscriptionConfigRepository
 }
 
 // NewRepositories 创建所有仓库的集合
 func NewRepositories(db *gorm.DB) *Repositories {
 	return &Repositories{
-		Proxy:            NewProxyRepository(db),
-		Subscription:     NewSubscriptionRepository(db),
-		SpeedTestHistory: NewSpeedTestHistoryRepository(db),
-		Traffic:          NewTrafficRepository(db),
-		IPAddress:        NewIPAddressRepository(db),
-		ProxyIPAddress:   NewProxyIPAddressRepository(db),
-		IPInfo:           NewIPInfoRepository(db),
-		IPBaseInfo:       NewIPBaseInfoRepository(db),
-		IPUnlockInfo:     NewIPUnlockInfoRepository(db),
-		SystemConfig:     NewSystemConfigRepository(db),
+		Proxy:              NewProxyRepository(db),
+		Subscription:       NewSubscriptionRepository(db),
+		SpeedTestHistory:   NewSpeedTestHistoryRepository(db),
+		Traffic:            NewTrafficRepository(db),
+		IPAddress:          NewIPAddressRepository(db),
+		ProxyIPAddress:     NewProxyIPAddressRepository(db),
+		IPInfo:             NewIPInfoRepository(db),
+		IPBaseInfo:         NewIPBaseInfoRepository(db),
+		IPUnlockInfo:       NewIPUnlockInfoRepository(db),
+		SystemConfig:       NewSystemConfigRepository(db),
+		SubscriptionConfig: NewSubscriptionConfigRepository(db),
 	}
 }

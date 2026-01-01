@@ -72,10 +72,17 @@ export const subscriptionApi = {
     },
   }),
 
+  // 刷新订阅
   reloadSubs: (params) => api.post('/reload_subscription', params),
 
   // 删除订阅
   deleteSubscription: (id) => api.post('/delete_subscription', {id: id}),
+
+  // 获取订阅配置
+  getSubscriptionConfig: (id) => api.get(`/subscription/${id}/config`),
+
+  // 保存订阅配置
+  saveSubscriptionConfig: (id, data) => api.post(`/subscription/${id}/config`, data),
 };
 
 // 节点相关API

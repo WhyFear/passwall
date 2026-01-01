@@ -29,14 +29,19 @@ type Scheduler struct {
 	proxyService    proxy.ProxyService
 	ipDetectService service.IPDetectorService
 	jobIDs          map[string]cron.EntryID // 存储任务ID，用于更新
+
+	configMutex   sync.RWMutex
+	customConfigs map[uint]*model.SubscriptionConfig
+	sysConfig     config.Config
 }
 
 // NewScheduler 创建调度器
 func NewScheduler() *Scheduler {
 	return &Scheduler{
-		cron:      cron.New(cron.WithSeconds(), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger))),
-		isRunning: false,
-		jobIDs:    make(map[string]cron.EntryID),
+		cron:          cron.New(cron.WithSeconds(), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger))),
+		isRunning:     false,
+		jobIDs:        make(map[string]cron.EntryID),
+		customConfigs: make(map[uint]*model.SubscriptionConfig),
 	}
 }
 
@@ -54,8 +59,45 @@ func (s *Scheduler) SetServices(taskManager task.TaskManager,
 	s.ipDetectService = ipDetectService
 }
 
+// UpdateSubscriptionJob 更新订阅任务
+func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
+
+	// 1. 获取最新配置
+	config, err := s.subsManager.GetSubscriptionConfig(subID)
+	if err != nil {
+		return err
+	}
+
+	// 2. 更新内存映射
+	if config != nil {
+		s.customConfigs[subID] = config
+	} else {
+		delete(s.customConfigs, subID)
+	}
+
+	// 3. 处理 Cron 任务
+	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
+
+	// 先移除旧任务（如果存在）
+	s.jobMutex.Lock()
+	if entryID, exists := s.jobIDs[jobName]; exists {
+		s.cron.Remove(entryID)
+		delete(s.jobIDs, jobName)
+		log.Infoln("Removed custom subscription update job %s", jobName)
+	}
+	s.jobMutex.Unlock()
+
+	// 如果有自定义配置且开启了自动更新，添加新任务
+	if config != nil && config.AutoUpdate && config.UpdateInterval != "" {
+		s.addCustomSubJob(subID, config, s.sysConfig.Proxy)
+	}
+	return nil
+}
+
 // Init 启动调度器
-func (s *Scheduler) Init(config config.Config) error {
+func (s *Scheduler) Init(sysConfig config.Config) error {
 	s.jobMutex.Lock()
 	defer s.jobMutex.Unlock()
 
@@ -69,7 +111,7 @@ func (s *Scheduler) Init(config config.Config) error {
 	s.jobIDs = make(map[string]cron.EntryID)
 
 	// 添加任务
-	for _, job := range config.CronJobs {
+	for _, job := range sysConfig.CronJobs {
 		// 检查任务配置是否有效
 		if job.Schedule == "" {
 			log.Infoln("Job %s has invalid schedule, skipping", job.Name)
@@ -79,7 +121,7 @@ func (s *Scheduler) Init(config config.Config) error {
 		// 创建任务闭包
 		jobConfig := job // 创建副本避免闭包问题
 		entryID, err := s.cron.AddFunc(jobConfig.Schedule, func() {
-			s.executeJob(jobConfig, config.IPCheck, config.Proxy)
+			s.executeJob(jobConfig, sysConfig.IPCheck, sysConfig.Proxy)
 		})
 
 		if err != nil {
@@ -92,28 +134,64 @@ func (s *Scheduler) Init(config config.Config) error {
 		log.Infoln("Added job %s with schedule %s", job.Name, job.Schedule)
 	}
 
-	// 处理默认订阅更新任务
+	// 处理订阅更新任务
+	// 1. 获取所有订阅自定义配置
+	customConfigs, err := s.subsManager.GetAllSubscriptionConfigs()
+	if err != nil {
+		log.Errorln("Failed to get subscription configs: %v", err)
+	}
 
-	if config.DefaultSub.AutoUpdate && config.DefaultSub.Interval != "" {
+	s.configMutex.Lock()
+	s.customConfigs = make(map[uint]*model.SubscriptionConfig)
+	for _, cfg := range customConfigs {
+		s.customConfigs[cfg.SubscriptionID] = cfg
+	}
+	s.configMutex.Unlock()
 
-		entryID, err := s.cron.AddFunc(config.DefaultSub.Interval, func() {
+	// 2. 注册有个性化配置的任务
+	s.configMutex.RLock()
+	// 注意：这里我们只处理 Init 时的状态。UpdateSubscriptionJob 会处理运行时的变化。
+	// 为了复用代码，UpdateSubscriptionJob 需要能够创建任务。
+	// 但 Init 这里有 sysConfig 上下文。
+	
+	for subID, subCfg := range s.customConfigs {
+		if subCfg.AutoUpdate && subCfg.UpdateInterval != "" {
+			s.addCustomSubJob(subID, subCfg, sysConfig.Proxy)
+		}
+	}
+	s.configMutex.RUnlock()
 
+	// 3. 处理默认订阅更新任务（针对没有自定义配置的订阅）
+	if sysConfig.DefaultSub.AutoUpdate && sysConfig.DefaultSub.Interval != "" {
+		entryID, err := s.cron.AddFunc(sysConfig.DefaultSub.Interval, func() {
 			ctx := context.Background()
-
-			log.Infoln("Executing default subscription update job")
+			log.Infoln("Executing default subscription update job (filtered)")
 
 			// 构造下载选项
-
 			var opts *util.DownloadOptions
-			if config.DefaultSub.UseProxy && config.Proxy.Enabled && config.Proxy.URL != "" {
+			if sysConfig.DefaultSub.UseProxy && sysConfig.Proxy.Enabled && sysConfig.Proxy.URL != "" {
 				opts = &util.DownloadOptions{
-					ProxyURL: config.Proxy.URL,
+					ProxyURL: sysConfig.Proxy.URL,
 				}
-				log.Infoln("Default subscription update using proxy: %s", config.Proxy.URL)
 			}
 
-			if err := s.subsManager.RefreshAllSubscriptions(ctx, false, opts); err != nil {
-				log.Errorln("Default subscription update failed: %v", err)
+			// 找出所有需要按默认配置更新的订阅
+			allSubs, _, err := s.subsManager.GetSubscriptionsPage(proxy.SubsPage{Page: 1, PageSize: 100000})
+			if err != nil {
+				log.Errorln("Failed to get all subscriptions for default update: %v", err)
+				return
+			}
+
+			s.configMutex.RLock()
+			defer s.configMutex.RUnlock()
+			
+			for _, sub := range allSubs {
+				// 如果该订阅没有自定义配置，则由全局任务负责
+				if _, hasCustom := s.customConfigs[sub.ID]; !hasCustom {
+					if err := s.subsManager.RefreshSubscriptionAsync(ctx, sub.ID, opts); err != nil {
+						log.Errorln("Default subscription update failed for sub %d: %v", sub.ID, err)
+					}
+				}
 			}
 		})
 
@@ -121,15 +199,49 @@ func (s *Scheduler) Init(config config.Config) error {
 			log.Infoln("Failed to add default subscription update job: %v", err)
 		} else {
 			s.jobIDs["default_sub_update"] = entryID
-			log.Infoln("Added default subscription update job with schedule %s", config.DefaultSub.Interval)
+			log.Infoln("Added filtered default subscription update job with schedule %s", sysConfig.DefaultSub.Interval)
 		}
 	}
+
+	// 保存 sysConfig 以便后续使用 (需要修改 Struct)
+	s.sysConfig = sysConfig
 
 	// 启动cron
 	s.cron.Start()
 	s.isRunning = true
 
 	return nil
+}
+
+// addCustomSubJob 辅助方法：添加自定义订阅任务
+func (s *Scheduler) addCustomSubJob(subID uint, subCfg *model.SubscriptionConfig, proxyConfig config.Proxy) {
+	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
+
+	// 使用闭包捕获
+	entryID, err := s.cron.AddFunc(subCfg.UpdateInterval, func() {
+		ctx := context.Background()
+		log.Infoln("Executing custom subscription update job for sub %d", subID)
+
+		var opts *util.DownloadOptions
+		if subCfg.UseProxy && proxyConfig.Enabled && proxyConfig.URL != "" {
+			opts = &util.DownloadOptions{
+				ProxyURL: proxyConfig.URL,
+			}
+		}
+
+		if err := s.subsManager.RefreshSubscriptionAsync(ctx, subID, opts); err != nil {
+			log.Errorln("Custom subscription update failed for sub %d: %v", subID, err)
+		}
+	})
+
+	if err != nil {
+		log.Infoln("Failed to add custom job %s: %v", jobName, err)
+	} else {
+		s.jobMutex.Lock()
+		s.jobIDs[jobName] = entryID
+		s.jobMutex.Unlock()
+		log.Infoln("Added custom subscription update job %s with schedule %s", jobName, subCfg.UpdateInterval)
+	}
 }
 
 // Stop 停止调度器

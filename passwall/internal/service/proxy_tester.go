@@ -53,20 +53,13 @@ func NewProxyTester(
 	parserFactory parser.ParserFactory,
 	taskManager task.TaskManager,
 	configService ConfigService,
+	subscriptionManager proxy.SubscriptionManager,
 ) ProxyTester {
 	// 创建代理测试器
 	proxyTester := proxy.NewTester(
 		proxyRepo,
 		speedTestHistoryRepo,
 		speedTesterFactory,
-		taskManager,
-	)
-
-	// 创建订阅管理器
-	subscriptionManager := proxy.NewSubscriptionManager(
-		subscriptionRepo,
-		proxyRepo,
-		parserFactory,
 		taskManager,
 	)
 

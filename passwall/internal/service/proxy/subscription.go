@@ -15,6 +15,8 @@ import (
 	"passwall/internal/service/task"
 	"passwall/internal/util"
 
+	"passwall/config"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/metacubex/mihomo/log"
 )
@@ -22,6 +24,11 @@ import (
 type SubsPage struct {
 	Page     int
 	PageSize int
+}
+
+// SystemConfigProvider 定义获取系统配置的接口，用于打破循环依赖
+type SystemConfigProvider interface {
+	GetConfig() (*config.Config, error)
 }
 
 // SubscriptionManager 订阅管理服务
@@ -34,6 +41,11 @@ type SubscriptionManager interface {
 	UpdateSubscriptionStatus(subscription *model.Subscription) error
 	DeleteSubscription(id uint) error
 
+	// 配置操作
+	GetSubscriptionConfig(id uint) (*model.SubscriptionConfig, error)
+	GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error)
+	SaveSubscriptionConfig(config *model.SubscriptionConfig) error
+
 	// 刷新操作
 	RefreshSubscriptionAsync(ctx context.Context, subID uint, options *util.DownloadOptions) error
 	RefreshAllSubscriptions(ctx context.Context, async bool, options *util.DownloadOptions) error
@@ -44,25 +56,66 @@ type SubscriptionManager interface {
 
 // subscriptionManagerImpl 订阅管理服务实现
 type subscriptionManagerImpl struct {
-	subscriptionRepo repository.SubscriptionRepository
-	proxyRepo        repository.ProxyRepository
-	parserFactory    parser.ParserFactory
-	taskManager      task.TaskManager
+	subscriptionRepo       repository.SubscriptionRepository
+	subscriptionConfigRepo repository.SubscriptionConfigRepository
+	proxyRepo              repository.ProxyRepository
+	parserFactory          parser.ParserFactory
+	taskManager            task.TaskManager
+	configProvider         SystemConfigProvider
+	proxyTester            Tester
 }
 
 // NewSubscriptionManager 创建订阅管理服务
 func NewSubscriptionManager(
 	subscriptionRepo repository.SubscriptionRepository,
+	subscriptionConfigRepo repository.SubscriptionConfigRepository,
 	proxyRepo repository.ProxyRepository,
 	parserFactory parser.ParserFactory,
 	taskManager task.TaskManager,
+	configProvider SystemConfigProvider,
+	proxyTester Tester,
 ) SubscriptionManager {
 	return &subscriptionManagerImpl{
-		subscriptionRepo: subscriptionRepo,
-		proxyRepo:        proxyRepo,
-		parserFactory:    parserFactory,
-		taskManager:      taskManager,
+		subscriptionRepo:       subscriptionRepo,
+		subscriptionConfigRepo: subscriptionConfigRepo,
+		proxyRepo:              proxyRepo,
+		parserFactory:          parserFactory,
+		taskManager:            taskManager,
+		configProvider:         configProvider,
+		proxyTester:            proxyTester,
 	}
+}
+
+// GetSubscriptionConfig 获取订阅自定义配置
+func (s *subscriptionManagerImpl) GetSubscriptionConfig(id uint) (*model.SubscriptionConfig, error) {
+	return s.subscriptionConfigRepo.FindByID(id)
+}
+
+// GetAllSubscriptionConfigs 获取所有自定义配置
+func (s *subscriptionManagerImpl) GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error) {
+	return s.subscriptionConfigRepo.FindAll()
+}
+
+// SaveSubscriptionConfig 保存订阅自定义配置
+func (s *subscriptionManagerImpl) SaveSubscriptionConfig(subConfig *model.SubscriptionConfig) error {
+	// 获取系统默认配置
+	sysCfg, err := s.configProvider.GetConfig()
+	if err != nil {
+		return fmt.Errorf("获取系统配置失败: %w", err)
+	}
+
+	// 比较是否与默认配置一致
+	isSameAsDefault := subConfig.AutoUpdate == sysCfg.DefaultSub.AutoUpdate &&
+		subConfig.UpdateInterval == sysCfg.DefaultSub.Interval &&
+		subConfig.UseProxy == sysCfg.DefaultSub.UseProxy
+
+	if isSameAsDefault {
+		// 如果一致，删除自定义配置
+		return s.subscriptionConfigRepo.Delete(subConfig.SubscriptionID)
+	}
+
+	// 如果不一致，保存自定义配置
+	return s.subscriptionConfigRepo.Save(subConfig)
 }
 
 // GetSubscriptionByID 根据ID获取订阅
@@ -448,6 +501,23 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	}
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理，去重后%d个", subscription.URL, len(newProxies), len(uniqueProxies))
+
+	// 自动触发对新节点的测速
+	if len(toCreate) > 0 || len(toUpdate) > 0 {
+		log.Infoln("开始自动测试新获取的代理节点...")
+		testReq := &TestRequest{
+			Filters: &ProxyFilter{
+				Status: []model.ProxyStatus{model.ProxyStatusPending},
+			},
+		}
+		// 异步执行测速，不阻塞订阅刷新主流程
+		go func() {
+			if err := s.proxyTester.TestProxies(context.Background(), testReq, false); err != nil {
+				log.Errorln("自动测试代理失败: %v", err)
+			}
+		}()
+	}
+
 	return nil
 }
 

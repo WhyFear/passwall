@@ -270,7 +270,7 @@ func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 			exist[key] = true
 			uniqueProxies = append(uniqueProxies, proxy)
 		} else {
-			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password))
+			log.Infoln("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password)
 		}
 	}
 
@@ -455,7 +455,7 @@ func (r *GormProxyRepository) BatchUpdateProxyConfig(proxies []*model.Proxy) err
 					"status":          proxy.Status,
 					"updated_at":      time.Now(),
 				}).Error; err != nil {
-				log.Errorln(fmt.Sprintf("事务中更新代理 %d 配置失败: %v", proxy.ID, err))
+				log.Errorln("事务中更新代理 %d 配置失败: %v", proxy.ID, err)
 				continue
 			}
 		}

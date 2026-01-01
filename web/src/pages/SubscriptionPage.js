@@ -1,31 +1,20 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Button, Form, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
-import {DeleteOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined} from '@ant-design/icons';
-import {subscriptionApi} from '../api';
+import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip,} from 'antd';
+import {
+  DeleteOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SettingOutlined,
+  StopOutlined
+} from '@ant-design/icons';
+import {configApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import SubscriptionForm from '../components/SubscriptionForm';
+import StatusTag from '../components/StatusTag';
+import IntervalSelector from '../components/IntervalSelector';
+import {parseCronToSimple} from '../utils/cronUtils';
 import {formatDate} from "../utils/timeUtils";
-
-const StatusTag = ({status}) => {
-  let color = 'default';
-  let text = '未知';
-
-  if (status === -1) {
-    color = 'default';
-    text = '新订阅';
-  } else if (status === 1) {
-    color = 'success';
-    text = '拉取成功';
-  } else if (status === 2) {
-    color = 'error';
-    text = '拉取失败';
-  } else if (status === 3) {
-    color = 'warning';
-    text = '未知错误';
-  }
-
-  return <Tag color={color}>{text}</Tag>;
-};
 
 const SubscriptionPage = () => {
   const [subscriptions, setSubscriptions] = useState([]);
@@ -43,6 +32,11 @@ const SubscriptionPage = () => {
     current: 1, pageSize: 10, total: 0,
   });
   const [deletingIds, setDeletingIds] = useState([]);
+  const [configModalVisible, setConfigModalVisible] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configForm] = Form.useForm();
+  const [isCustomConfig, setIsCustomConfig] = useState(false);
+  const [intervalMode, setIntervalMode] = useState('simple'); // 'simple' or 'advanced'
 
   // 获取订阅列表
   const fetchSubscriptions = async (page = pagination.current, pageSize = pagination.pageSize) => {
@@ -102,6 +96,83 @@ const SubscriptionPage = () => {
   // 停止任务
   const handleStopTask = async () => {
     await stopTask("reload_subs", setTaskStatus);
+  };
+
+  // 打开配置弹窗
+  const handleOpenConfig = async (record) => {
+    setCurrentSubscription(record);
+    setConfigLoading(true);
+    try {
+      const data = await subscriptionApi.getSubscriptionConfig(record.id);
+      let interval = "";
+      if (data.is_custom) {
+        configForm.setFieldsValue({
+          auto_update: data.auto_update, update_interval: data.update_interval, use_proxy: data.use_proxy,
+        });
+        interval = data.update_interval;
+        setIsCustomConfig(true);
+      } else {
+        // 如果不是自定义配置，拉取全局默认配置
+        const globalConfig = await configApi.getConfig();
+        const defaultSub = globalConfig.default_sub || {};
+        configForm.setFieldsValue({
+          auto_update: defaultSub.auto_update, update_interval: defaultSub.interval, use_proxy: defaultSub.use_proxy,
+        });
+        interval = defaultSub.interval;
+        setIsCustomConfig(false);
+      }
+
+      const {mode, value, unit} = parseCronToSimple(interval);
+      setIntervalMode(mode);
+      configForm.setFieldsValue({
+        simple_interval_value: value, simple_interval_unit: unit
+      });
+
+      setConfigModalVisible(true);
+    } catch (error) {
+      message.error('获取配置失败: ' + error.message);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  // 保存配置
+  const handleSaveConfig = async () => {
+    try {
+      const values = await configForm.validateFields();
+      setConfigLoading(true);
+      await subscriptionApi.saveSubscriptionConfig(currentSubscription.id, values);
+      message.success('配置已保存');
+      setConfigModalVisible(false);
+    } catch (error) {
+      if (!error.errorFields) {
+        message.error('保存配置失败: ' + error.message);
+      }
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  // 恢复默认配置
+  const handleRestoreDefault = async () => {
+    try {
+      setConfigLoading(true);
+      // 获取全局配置
+      const globalConfig = await configApi.getConfig();
+      const defaultSub = globalConfig.default_sub || {};
+
+      const values = {
+        auto_update: defaultSub.auto_update, update_interval: defaultSub.interval, use_proxy: defaultSub.use_proxy,
+      };
+
+      await subscriptionApi.saveSubscriptionConfig(currentSubscription.id, values);
+      message.success('已恢复为默认配置');
+      setConfigModalVisible(false);
+    } catch (error) {
+      message.error('恢复默认配置失败: ' + error.message);
+    } finally {
+      setConfigLoading(false);
+    }
   };
 
   // 测试代理
@@ -215,9 +286,7 @@ const SubscriptionPage = () => {
         }
 
         data = await subscriptionApi.createProxy({
-          type: values.type,
-          upload_type: values.upload_type,
-          url_list: urlList
+          type: values.type, upload_type: values.upload_type, url_list: urlList
         });
       } else {
         // 处理URL提交
@@ -298,7 +367,7 @@ const SubscriptionPage = () => {
   }, {
     title: '添加时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (text) => formatDate(text),
   }, {
-    title: '操作', key: 'action', width: 260, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
+    title: '操作', key: 'action', width: 350, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
       <Tooltip title="查看内容">
         <Button
           type="text"
@@ -315,6 +384,16 @@ const SubscriptionPage = () => {
           onClick={() => handleReloadSubs(record.id)}
         >
           刷新
+        </Button>
+      </Tooltip>
+      <Tooltip title="自定义更新配置">
+        <Button
+          type="text"
+          icon={<SettingOutlined/>}
+          disabled={!record.url || !record.url.startsWith('http')}
+          onClick={() => handleOpenConfig(record)}
+        >
+          配置
         </Button>
       </Tooltip>
       <Tooltip title="删除订阅">
@@ -423,6 +502,66 @@ const SubscriptionPage = () => {
         currentSubscription={currentSubscription}
         onValuesChange={handleFormValuesChange}
       />
+    </Modal>
+
+    {/* 订阅更新配置弹窗 */}
+    <Modal
+      title="订阅更新配置"
+      open={configModalVisible}
+      onCancel={() => setConfigModalVisible(false)}
+      onOk={handleSaveConfig}
+      confirmLoading={configLoading}
+      destroyOnClose
+    >
+      <div style={{marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+        <Tag color={isCustomConfig ? "blue" : "default"}>
+          {isCustomConfig ? "当前使用：自定义配置" : "当前使用：系统默认配置"}
+        </Tag>
+        {isCustomConfig && (<Button
+          type="link"
+          size="small"
+          onClick={handleRestoreDefault}
+          loading={configLoading}
+        >
+          恢复默认
+        </Button>)}
+      </div>
+      <Form
+        form={configForm}
+        layout="vertical"
+        initialValues={{
+          simple_interval_value: 1, simple_interval_unit: 'hours'
+        }}
+      >
+        <Form.Item
+          name="auto_update"
+          label="自动更新"
+          valuePropName="checked"
+        >
+          <Switch checkedChildren="开启" unCheckedChildren="关闭"/>
+        </Form.Item>
+
+        <Form.Item
+          noStyle
+          shouldUpdate={(prev, current) => prev.auto_update !== current.auto_update}
+        >
+          {({getFieldValue}) => getFieldValue('auto_update') && (<IntervalSelector
+            form={configForm}
+            fieldName="update_interval"
+            mode={intervalMode}
+            setMode={setIntervalMode}
+          />)}
+        </Form.Item>
+
+        <Form.Item
+          name="use_proxy"
+          label="使用代理更新"
+          valuePropName="checked"
+          extra="更新此订阅时是否使用系统设置的代理"
+        >
+          <Switch checkedChildren="开启" unCheckedChildren="关闭"/>
+        </Form.Item>
+      </Form>
     </Modal>
   </div>);
 };

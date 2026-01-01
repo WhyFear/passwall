@@ -64,6 +64,10 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager, services.ConfigService))
 		// 删除订阅
 		webGroup.POST("/delete_subscription", handler.DeleteSubscription(ctx, services.SubscriptionManager))
+		// 获取订阅配置
+		webGroup.GET("/subscription/:id/config", handler.GetSubscriptionConfig(services.SubscriptionManager))
+		// 保存订阅配置
+		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager, scheduler))
 
 		// 获取代理信息
 		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService, services.IPDetectorService))
