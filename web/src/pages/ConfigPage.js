@@ -126,7 +126,7 @@ const ConfigPage = () => {
         </div>}
       >
         <TabPane tab="通用设置" key="1">
-          <Card title="基础设置" bordered={false} style={{marginBottom: 16}}>
+          <Card title="基础设置" variant={"borderless"} style={{marginBottom: 16}}>
             <Form.Item
               label="并发数"
               name="concurrent"
@@ -137,7 +137,7 @@ const ConfigPage = () => {
             </Form.Item>
           </Card>
 
-          <Card title="全局代理" bordered={false} style={{marginBottom: 16}}>
+          <Card title="全局代理" variant={"borderless"} style={{marginBottom: 16}}>
             <Form.Item name={['proxy', 'enabled']} valuePropName="checked" label="启用代理">
               <Switch/>
             </Form.Item>
@@ -158,7 +158,7 @@ const ConfigPage = () => {
         </TabPane>
 
         <TabPane tab="IP检测" key="2">
-          <Card title="IP检测配置" bordered={false}>
+          <Card title="IP检测配置" variant={"borderless"}>
             <Form.Item name={['ip_check', 'enable']} valuePropName="checked" label="启用IP检测">
               <Switch/>
             </Form.Item>
@@ -182,7 +182,7 @@ const ConfigPage = () => {
         </TabPane>
 
         <TabPane tab="Clash API" key="3">
-          <Card title="Clash API 设置" bordered={false}>
+          <Card title="Clash API 设置" variant={"borderless"}>
             <Form.Item name={['clash_api', 'enable']} valuePropName="checked" label="启用 Clash API">
               <Switch/>
             </Form.Item>
@@ -217,7 +217,7 @@ const ConfigPage = () => {
         </TabPane>
 
         <TabPane tab="定时任务" key="4">
-          <Card title="默认订阅更新配置" bordered={false} style={{marginBottom: 16}}>
+          <Card title="默认订阅更新配置" variant={"borderless"} style={{marginBottom: 16}}>
             <Form.Item name={['default_sub', 'auto_update']} valuePropName="checked" label="自动更新订阅">
               <Switch/>
             </Form.Item>
@@ -248,7 +248,7 @@ const ConfigPage = () => {
             </Form.Item>
           </Card>
 
-          <Card title="自定义 Cron 任务" bordered={false}>
+          <Card title="自定义 Cron 任务" variant={"borderless"}>
             <Form.List name="cron_jobs">
               {(fields, {add, remove}) => (<>
                 {fields.map(({key, name, ...restField}) => (<Card key={key} size="small" style={{marginBottom: 16}}

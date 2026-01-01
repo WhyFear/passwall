@@ -104,7 +104,7 @@ const SubscriptionPage = () => {
     setConfigLoading(true);
     try {
       const data = await subscriptionApi.getSubscriptionConfig(record.id);
-      let interval = "";
+      let interval;
       if (data.is_custom) {
         configForm.setFieldsValue({
           auto_update: data.auto_update, update_interval: data.update_interval, use_proxy: data.use_proxy,
@@ -511,7 +511,7 @@ const SubscriptionPage = () => {
       onCancel={() => setConfigModalVisible(false)}
       onOk={handleSaveConfig}
       confirmLoading={configLoading}
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
         <Tag color={isCustomConfig ? "blue" : "default"}>

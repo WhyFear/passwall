@@ -65,14 +65,14 @@ func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	defer s.configMutex.Unlock()
 
 	// 1. 获取最新配置
-	config, err := s.subsManager.GetSubscriptionConfig(subID)
+	subscriptionConfig, err := s.subsManager.GetSubscriptionConfig(subID)
 	if err != nil {
 		return err
 	}
 
 	// 2. 更新内存映射
-	if config != nil {
-		s.customConfigs[subID] = config
+	if subscriptionConfig != nil {
+		s.customConfigs[subID] = subscriptionConfig
 	} else {
 		delete(s.customConfigs, subID)
 	}
@@ -90,8 +90,8 @@ func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	s.jobMutex.Unlock()
 
 	// 如果有自定义配置且开启了自动更新，添加新任务
-	if config != nil && config.AutoUpdate && config.UpdateInterval != "" {
-		s.addCustomSubJob(subID, config, s.sysConfig.Proxy)
+	if subscriptionConfig != nil && subscriptionConfig.AutoUpdate && subscriptionConfig.UpdateInterval != "" {
+		s.addCustomSubJob(subID, subscriptionConfig, s.sysConfig.Proxy)
 	}
 	return nil
 }
@@ -153,7 +153,7 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 	// 注意：这里我们只处理 Init 时的状态。UpdateSubscriptionJob 会处理运行时的变化。
 	// 为了复用代码，UpdateSubscriptionJob 需要能够创建任务。
 	// 但 Init 这里有 sysConfig 上下文。
-	
+
 	for subID, subCfg := range s.customConfigs {
 		if subCfg.AutoUpdate && subCfg.UpdateInterval != "" {
 			s.addCustomSubJob(subID, subCfg, sysConfig.Proxy)
@@ -184,7 +184,7 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 
 			s.configMutex.RLock()
 			defer s.configMutex.RUnlock()
-			
+
 			for _, sub := range allSubs {
 				// 如果该订阅没有自定义配置，则由全局任务负责
 				if _, hasCustom := s.customConfigs[sub.ID]; !hasCustom {
