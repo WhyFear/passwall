@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"passwall/config"
 	"passwall/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +19,7 @@ type BatchIPDetectRequest struct {
 }
 
 // DetectIPQuality 检测IP质量
-func DetectIPQuality(config config.IPCheckConfig, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
+func DetectIPQuality(configService service.ConfigService, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req IPDetectRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -39,11 +38,19 @@ func DetectIPQuality(config config.IPCheckConfig, ipDetectorService service.IPDe
 					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 				}
 			}()
+
+			cfg, err := configService.GetConfig()
+			if err != nil {
+				log.Errorln("get config failed: %v", err)
+				return
+			}
+			ipCheckConfig := cfg.IPCheck
+
 			_ = ipDetectorService.Detect(&service.IPDetectorReq{
 				ProxyID:         req.ProxyID,
-				Enabled:         config.Enable,
-				IPInfoEnable:    config.IPInfo.Enable,
-				APPUnlockEnable: config.AppUnlock.Enable,
+				Enabled:         ipCheckConfig.Enable,
+				IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
+				APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
 				Refresh:         true,
 			})
 		}()
@@ -57,7 +64,7 @@ func DetectIPQuality(config config.IPCheckConfig, ipDetectorService service.IPDe
 }
 
 // BatchDetectIPQuality 检测IP质量
-func BatchDetectIPQuality(config config.IPCheckConfig, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
+func BatchDetectIPQuality(configService service.ConfigService, ipDetectorService service.IPDetectorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req BatchIPDetectRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -76,13 +83,21 @@ func BatchDetectIPQuality(config config.IPCheckConfig, ipDetectorService service
 					log.Errorln("batch detect proxy ip failed, proxy id list: %v, err: %v", req.ProxyIDList, err)
 				}
 			}()
+
+			cfg, err := configService.GetConfig()
+			if err != nil {
+				log.Errorln("get config failed: %v", err)
+				return
+			}
+			ipCheckConfig := cfg.IPCheck
+
 			_ = ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
 				ProxyIDList:     req.ProxyIDList,
-				Enabled:         config.Enable,
-				IPInfoEnable:    config.IPInfo.Enable,
-				APPUnlockEnable: config.AppUnlock.Enable,
+				Enabled:         ipCheckConfig.Enable,
+				IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
+				APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
 				Refresh:         true,
-				Concurrent:      config.Concurrent,
+				Concurrent:      ipCheckConfig.Concurrent,
 			})
 		}()
 

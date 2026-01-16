@@ -83,18 +83,18 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 		for _, subscription := range subscriptions {
 			OKProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false, true)
 			if err != nil {
-				log.Infoln("Failed to get proxy num:", err)
+				log.Infoln("Failed to get proxy num: %v", err)
 				OKProxyNum = 0
 			}
 			// 获取代理数量
 			validProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, true, false)
 			if err != nil {
-				log.Infoln("Failed to get proxy num:", err)
+				log.Infoln("Failed to get proxy num: %v", err)
 				validProxyNum = 0
 			}
 			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false, false)
 			if err != nil {
-				log.Infoln("Failed to get proxy num:", err)
+				log.Infoln("Failed to get proxy num: %v", err)
 				proxyNum = 0
 			}
 			tempSubscription := SubscriptionResp{

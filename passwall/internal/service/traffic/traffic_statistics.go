@@ -9,7 +9,6 @@ import (
 	"passwall/internal/repository"
 	"passwall/internal/service/proxy"
 	"regexp"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -40,12 +39,29 @@ type NodeTraffic struct {
 	Upload   int64  `json:"upload"`
 	Download int64  `json:"download"`
 }
+
+type ClashConfigProvider interface {
+	GetClashClients() ([]config.ClashAPIClient, bool)
+}
+
+// trackedValue 用于记录连接上次的累计值，以便计算差值
+type trackedValue struct {
+	LastUpload   int64
+	LastDownload int64
+}
+
 type StatisticsService struct {
-	clients           []config.ClashAPIClient
-	connections       sync.Map // {clientIndex: *websocket.Conn}
-	historyConnsData  []map[string]Connection
-	closeConnsData    []map[string]Connection
+	configProvider ClashConfigProvider
+	connections    sync.Map // {clientIndex: *websocket.Conn}
+
+	// key: clientIndex, value: map[connID]trackedValue
+	lastValues []map[string]trackedValue
+
+	// 暂存尚未写入数据库的增量流量数据 key: nodeName
+	pendingTraffic map[string]*NodeTraffic
+
 	mu                sync.Mutex
+	startTime         time.Time
 	baseRetryInterval time.Duration
 	maxRetryInterval  time.Duration
 	maxRetries        int
@@ -58,17 +74,10 @@ type StatisticsService struct {
 	cleanNameRegex    *regexp.Regexp
 }
 
-func NewTrafficStatisticsService(clients []config.ClashAPIClient, proxyService proxy.ProxyService, trafficRepo repository.TrafficRepository) StatisticsService {
-	historyConns := make([]map[string]Connection, len(clients))
-	closeConns := make([]map[string]Connection, len(clients))
-	for i := range clients {
-		historyConns[i] = make(map[string]Connection)
-		closeConns[i] = make(map[string]Connection)
-	}
+func NewTrafficStatisticsService(configProvider ClashConfigProvider, proxyService proxy.ProxyService, trafficRepo repository.TrafficRepository) StatisticsService {
 	return StatisticsService{
-		clients:           clients,
-		historyConnsData:  historyConns,
-		closeConnsData:    closeConns,
+		configProvider:    configProvider,
+		pendingTraffic:    make(map[string]*NodeTraffic),
 		proxyService:      proxyService,
 		trafficRepo:       trafficRepo,
 		baseRetryInterval: 5 * time.Second,
@@ -79,15 +88,29 @@ func NewTrafficStatisticsService(clients []config.ClashAPIClient, proxyService p
 }
 
 func (s *StatisticsService) Start() error {
+	clients, enabled := s.configProvider.GetClashClients()
+	if !enabled {
+		return nil
+	}
+
+	s.mu.Lock()
+	s.startTime = time.Now()
+	s.lastValues = make([]map[string]trackedValue, len(clients))
+	for i := range clients {
+		s.lastValues[i] = make(map[string]trackedValue)
+	}
+	s.pendingTraffic = make(map[string]*NodeTraffic)
+	s.mu.Unlock()
+
 	s.done = make(chan struct{})
 	s.stopChan = make(chan struct{})
 	s.ticker = time.NewTicker(1 * time.Minute)
 	go s.startPeriodicProcessing()
-	return s.connectAllClients()
+	return s.connectAllClients(clients)
 }
 
-func (s *StatisticsService) connectAllClients() error {
-	for i, client := range s.clients {
+func (s *StatisticsService) connectAllClients(clients []config.ClashAPIClient) error {
+	for i, client := range clients {
 		if err := s.connectClient(i, client); err != nil {
 			log.Errorln("Failed to connect to client %d: %v", i, err)
 		}
@@ -154,6 +177,11 @@ func (s *StatisticsService) Stop() {
 		s.ticker.Stop()
 		s.ticker = nil
 	}
+
+	// 在停止前最后结算一次流量
+	log.Infoln("Statistics service stopping, performing final traffic flush...")
+	s.flushTrafficToDB()
+
 	if s.done != nil {
 		select {
 		case <-s.done:
@@ -162,25 +190,7 @@ func (s *StatisticsService) Stop() {
 		}
 		s.done = nil
 	}
-}
-
-func (s *StatisticsService) GetTrafficStatistics(proxyId uint) (*model.TrafficStatistics, error) {
-	traffic, err := s.trafficRepo.FindByProxyID(proxyId)
-	if err != nil {
-		return nil, err
-	}
-	return traffic, nil
-}
-
-func (s *StatisticsService) BatchGetTrafficStatistics(proxyIdList []uint) (map[uint]*model.TrafficStatistics, error) {
-	if proxyIdList == nil || len(proxyIdList) == 0 {
-		return nil, fmt.Errorf("proxyIdList is empty")
-	}
-	trafficMap, err := s.trafficRepo.FindByProxyIDList(proxyIdList)
-	if err != nil {
-		return nil, err
-	}
-	return trafficMap, nil
+	s.stopOnce = sync.Once{}
 }
 
 func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) {
@@ -190,11 +200,9 @@ func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) 
 		log.Infoln("Traffic statistics service stopped for client %d", clientIndex)
 	}()
 
-	log.Infoln("Traffic statistics service started for client %d", clientIndex)
 	for {
 		select {
 		case <-s.stopChan:
-			log.Infoln("Stop signal received, exiting readMessages for client %d", clientIndex)
 			return
 		default:
 		}
@@ -204,194 +212,164 @@ func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) 
 			log.Errorln("WebSocket read error for client %d: %v", clientIndex, err)
 			select {
 			case <-s.stopChan:
-				log.Infoln("Stop signal received, skipping reconnect for client %d", clientIndex)
 				return
 			default:
 				go func() {
 					time.Sleep(s.baseRetryInterval)
 					select {
 					case <-s.stopChan:
-						log.Infoln("Stop signal received during reconnect delay for client %d", clientIndex)
 						return
 					default:
-						client := s.clients[clientIndex]
-						_ = s.connectClient(clientIndex, client)
+						clients, _ := s.configProvider.GetClashClients()
+						if clientIndex < len(clients) {
+							_ = s.connectClient(clientIndex, clients[clientIndex])
+						}
 					}
 				}()
 			}
 			return
 		}
 
-		var traffic Connections
-		if err := json.Unmarshal(message, &traffic); err != nil {
-			log.Errorln("Failed to unmarshal traffic data for client %d: %v", clientIndex, err)
+		var data Connections
+		if err := json.Unmarshal(message, &data); err != nil {
 			continue
 		}
-		log.Debugln("Client %d traffic: %v", clientIndex, traffic)
 
-		s.processTrafficData(clientIndex, traffic)
+		s.processTrafficDelta(clientIndex, data)
 	}
 }
 
-func (s *StatisticsService) processTrafficData(clientIndex int, traffic Connections) {
+// processTrafficDelta 计算本次接收到的数据与上次的增量
+func (s *StatisticsService) processTrafficDelta(clientIndex int, data Connections) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	historyConns := s.historyConnsData[clientIndex]
-	closeConns := s.closeConnsData[clientIndex]
+	clientLastValues := s.lastValues[clientIndex]
+	currentConnIDs := make(map[string]bool)
 
-	if traffic.Connections == nil || len(traffic.Connections) == 0 {
-		for id, conn := range historyConns {
-			closeConns[id] = conn
-			delete(historyConns, id)
-		}
-	} else {
-		currentConnections := make(map[string]Connection, len(traffic.Connections))
-		for _, conn := range traffic.Connections {
-			currentConnections[conn.ID] = conn
-		}
+	for _, conn := range data.Connections {
+		currentConnIDs[conn.ID] = true
 
-		for id, conn := range historyConns {
-			if _, exists := currentConnections[id]; !exists {
-				closeConns[id] = conn
+		last, exists := clientLastValues[conn.ID]
+		if !exists {
+			// 重启保护：如果连接是在服务启动前建立的，初始值设为当前值，增量设为0
+			if conn.Start.Before(s.startTime) {
+				last = trackedValue{
+					LastUpload:   conn.Upload,
+					LastDownload: conn.Download,
+				}
+			} else {
+				last = trackedValue{0, 0}
 			}
-			delete(historyConns, id)
 		}
 
-		for _, conn := range traffic.Connections {
-			historyConns[conn.ID] = conn
+		deltaUp := conn.Upload - last.LastUpload
+		deltaDown := conn.Download - last.LastDownload
+
+		// 如果增量为正，记录到暂存区
+		if deltaUp > 0 || deltaDown > 0 {
+			for _, nodeName := range conn.Chains {
+				node, ok := s.pendingTraffic[nodeName]
+				if !ok {
+					node = &NodeTraffic{NodeName: nodeName}
+					s.pendingTraffic[nodeName] = node
+				}
+				node.Upload += deltaUp
+				node.Download += deltaDown
+			}
+		}
+
+		// 更新快照
+		clientLastValues[conn.ID] = trackedValue{
+			LastUpload:   conn.Upload,
+			LastDownload: conn.Download,
 		}
 	}
 
-	s.historyConnsData[clientIndex] = historyConns
-	s.closeConnsData[clientIndex] = closeConns
+	// 清理已经关闭的连接 ID
+	for id := range clientLastValues {
+		if !currentConnIDs[id] {
+			delete(clientLastValues, id)
+		}
+	}
 }
 
-func (s *StatisticsService) processCloseConns() {
+func (s *StatisticsService) flushTrafficToDB() {
 	s.mu.Lock()
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorln("处理关闭连接时发生panic: %v", r)
-			log.Errorln("堆栈信息: %s", debug.Stack())
-		}
+	if len(s.pendingTraffic) == 0 {
 		s.mu.Unlock()
-	}()
-
-	var nodeTrafficMap = make(map[string]*NodeTraffic)
-	for clientIndex := range s.closeConnsData {
-		closeConns := s.closeConnsData[clientIndex]
-		for id, connection := range closeConns {
-			for _, chain := range connection.Chains {
-				nodeTraffic, exists := nodeTrafficMap[chain]
-				if !exists {
-					nodeTraffic = &NodeTraffic{
-						NodeName: chain,
-						Upload:   connection.Upload,
-						Download: connection.Download,
-					}
-					nodeTrafficMap[chain] = nodeTraffic
-				} else {
-					nodeTraffic.Upload += connection.Upload
-					nodeTraffic.Download += connection.Download
-				}
-			}
-			delete(closeConns, id)
-		}
-	}
-
-	if len(nodeTrafficMap) == 0 {
-		log.Infoln("当前无节点流量数据")
 		return
 	}
-	// 处理节点名称并查找对应的代理
-	for _, node := range nodeTrafficMap {
+	// 拷贝一份数据并清空暂存区，然后解锁执行慢速的 DB 操作
+	workData := s.pendingTraffic
+	s.pendingTraffic = make(map[string]*NodeTraffic)
+	s.mu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("Flush traffic panic: %v", r)
+		}
+	}()
+
+	for _, node := range workData {
 		nodeProxy, err := s.proxyService.GetProxyByName(node.NodeName)
 		if err != nil {
-			log.Errorln("获取节点信息失败，节点名称: %s, 错误: %v", node.NodeName, err)
 			continue
 		}
 		if nodeProxy == nil && strings.HasPrefix(node.NodeName, "[") {
 			cleanName := s.cleanNodeName(node.NodeName)
-			nodeProxy, err = s.proxyService.GetProxyByName(cleanName)
-			if err != nil {
-				log.Errorln("获取节点信息失败，节点名称: %s, 错误: %v", cleanName, err)
-				continue
-			}
+			nodeProxy, _ = s.proxyService.GetProxyByName(cleanName)
 		}
+
 		if nodeProxy != nil {
-			// 判断traffic里是否有这个节点数据，如果有，则更新，否则新增
-			log.Infoln("找到节点: %s, 本次上传流量: %d, 下载流量: %d", node.NodeName, node.Upload, node.Download)
-			trafficStatistics, err := s.trafficRepo.FindByProxyID(nodeProxy.ID)
+			traffic, err := s.trafficRepo.FindByProxyID(nodeProxy.ID)
 			if err != nil {
-				log.Errorln("获取节点流量失败，节点名称: %s, 错误: %v", node.NodeName, err)
 				continue
 			}
-			if trafficStatistics == nil {
-				trafficStatistics = &model.TrafficStatistics{
+			if traffic == nil {
+				traffic = &model.TrafficStatistics{
 					ProxyID:       nodeProxy.ID,
 					UploadTotal:   node.Upload,
 					DownloadTotal: node.Download,
 				}
-				err := s.trafficRepo.Create(trafficStatistics)
-				if err != nil {
-					log.Errorln("创建节点流量失败，节点信息: %v, 错误: %v", node, err)
-					continue
-				}
-				log.Infoln("创建节点流量成功，节点信息: %v", trafficStatistics)
+				_ = s.trafficRepo.Create(traffic)
 			} else {
-				trafficStatistics.UploadTotal += node.Upload
-				trafficStatistics.DownloadTotal += node.Download
-				err := s.trafficRepo.UpdateTrafficByProxyID(trafficStatistics)
-				if err != nil {
-					log.Errorln("更新节点流量失败，节点信息: %v, 错误: %v", trafficStatistics, err)
-					continue
-				}
-				log.Infoln("更新节点流量成功，节点信息: %v", trafficStatistics)
+				traffic.UploadTotal += node.Upload
+				traffic.DownloadTotal += node.Download
+				_ = s.trafficRepo.UpdateTrafficByProxyID(traffic)
 			}
-		} else {
-			log.Infoln("未找到节点: %s", node.NodeName)
 		}
 	}
-	log.Infoln("处理完成，处理了 %v 个节点流量数据", len(nodeTrafficMap))
 }
 
 // cleanNodeName 清理节点名称，移除前面的序号前缀如"[1]-"
 func (s *StatisticsService) cleanNodeName(nodeName string) string {
-	// 匹配模式: [数字]- (严格匹配，不考虑空格)
-	// 例如: "[1]-节点名" -> "节点名"
-	// "[1] - 节点名" -> "[1] - 节点名" (不匹配)
-	// "[节点]自带[]" -> "[节点]自带[]" (保持不变)
-
 	matches := s.cleanNameRegex.FindStringSubmatch(nodeName)
 	if len(matches) == 2 {
 		return strings.TrimSpace(matches[1])
 	}
-
-	// 不匹配则返回原名称
 	return nodeName
 }
 
-// startPeriodicProcessing 启动定时处理任务
 func (s *StatisticsService) startPeriodicProcessing() {
-	defer close(s.done) // 添加关闭通知
-
+	defer close(s.done)
 	for {
 		select {
 		case <-s.ticker.C:
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorln("处理流量统计时发生panic: %v", r)
-						log.Errorln("堆栈信息: %s", debug.Stack())
-					}
-				}()
-
-				log.Debugln("执行定时流量统计处理...")
-				s.processCloseConns()
-			}()
+			s.flushTrafficToDB()
 		case <-s.done:
-			s.ticker.Stop()
 			return
 		}
 	}
+}
+
+func (s *StatisticsService) GetTrafficStatistics(proxyId uint) (*model.TrafficStatistics, error) {
+	return s.trafficRepo.FindByProxyID(proxyId)
+}
+
+func (s *StatisticsService) BatchGetTrafficStatistics(proxyIdList []uint) (map[uint]*model.TrafficStatistics, error) {
+	if len(proxyIdList) == 0 {
+		return nil, fmt.Errorf("proxyIdList is empty")
+	}
+	return s.trafficRepo.FindByProxyIDList(proxyIdList)
 }

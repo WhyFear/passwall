@@ -4,6 +4,7 @@ import {Button, Dropdown, Layout, Menu, message} from 'antd';
 import {LinkOutlined, LogoutOutlined, NodeIndexOutlined, SettingOutlined} from '@ant-design/icons';
 import SubscriptionPage from './pages/SubscriptionPage';
 import NodesPage from './pages/NodesPage';
+import ConfigPage from './pages/ConfigPage';
 import TokenModal from './components/TokenModal';
 import {clearToken, hasToken} from './utils/tokenUtils';
 import './App.css';
@@ -38,6 +39,8 @@ function App() {
   useEffect(() => {
     if (location.pathname === '/nodes') {
       setSelectedKey('2');
+    } else if (location.pathname === '/config') {
+      setSelectedKey('3');
     } else {
       setSelectedKey('1');
     }
@@ -121,6 +124,9 @@ function App() {
           <Menu.Item key="2" icon={<NodeIndexOutlined/>}>
             <Link to="/nodes">所有节点</Link>
           </Menu.Item>
+          <Menu.Item key="3" icon={<SettingOutlined/>}>
+            <Link to="/config">系统配置</Link>
+          </Menu.Item>
         </Menu>
       </Sider>
       <Layout style={{padding: 0}}>
@@ -133,6 +139,7 @@ function App() {
           <Routes>
             <Route path="/" element={<SubscriptionPage/>}/>
             <Route path="/nodes" element={<NodesPage/>}/>
+            <Route path="/config" element={<ConfigPage/>}/>
           </Routes>
         </Content>
       </Layout>

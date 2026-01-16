@@ -34,10 +34,10 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	apiGroup.Use(authMiddleware)
 	{
 		// 公开API
-		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService))
+		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))
 		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
 		apiGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
-		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
+		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager, services.ConfigService))
 
 		// 添加任务状态API
 		apiGroup.GET("/task_all_status", func(c *gin.Context) {
@@ -49,7 +49,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 			c.JSON(200, scheduler.GetStatus())
 		})
 		// IP质量检测API
-		apiGroup.POST("/batch_detect_ip", handler.BatchDetectIPQuality(cfg.IPCheck, services.IPDetectorService))
+		apiGroup.POST("/batch_detect_ip", handler.BatchDetectIPQuality(services.ConfigService, services.IPDetectorService))
 	}
 
 	webGroup := router.Group("/web/api")
@@ -57,13 +57,17 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	webGroup.Use(webAuthMiddleware)
 	{
 		// 新增订阅
-		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService))
+		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))
 		// 获取订阅链接
 		webGroup.GET("/subscriptions", handler.GetSubscriptions(services.SubscriptionManager, services.ProxyService))
 		// 刷新订阅
-		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager))
+		webGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager, services.ConfigService))
 		// 删除订阅
-		webGroup.POST("/delete_subscription", handler.DeleteSubscription(ctx, services.SubscriptionManager))
+		webGroup.POST("/delete_subscription", handler.DeleteSubscription(ctx, services.SubscriptionManager, scheduler))
+		// 获取订阅配置
+		webGroup.GET("/subscription/:id/config", handler.GetSubscriptionConfig(services.SubscriptionManager))
+		// 保存订阅配置
+		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager, scheduler))
 
 		// 获取代理信息
 		webGroup.GET("/get_proxies", handler.GetProxies(services.ProxyService, services.SubscriptionManager, services.SpeedTestHistoryService, services.StatisticsService, services.IPDetectorService))
@@ -86,9 +90,14 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 
 		// IP质量检测API
-		webGroup.POST("/detect_ip", handler.DetectIPQuality(cfg.IPCheck, services.IPDetectorService))
+		webGroup.POST("/detect_ip", handler.DetectIPQuality(services.ConfigService, services.IPDetectorService))
 		webGroup.GET("/get_ip_info", handler.GetIPQuality(services.IPDetectorService))
 		webGroup.GET("/get_country_codes", handler.GetCountryCodeList(services.IPDetectorService))
+
+		// 系统配置API
+		configHandler := handler.NewConfigHandler(services.ConfigService)
+		webGroup.GET("/config", configHandler.GetConfig)
+		webGroup.POST("/config", configHandler.UpdateConfig)
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

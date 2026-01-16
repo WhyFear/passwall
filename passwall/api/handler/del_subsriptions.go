@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"passwall/internal/scheduler"
 	"passwall/internal/service/proxy"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +13,7 @@ type DeleteSubscriptionReq struct {
 	ID uint `form:"id"`
 }
 
-func DeleteSubscription(ctx context.Context, service proxy.SubscriptionManager) gin.HandlerFunc {
+func DeleteSubscription(ctx context.Context, service proxy.SubscriptionManager, scheduler *scheduler.Scheduler) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req DeleteSubscriptionReq
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -41,6 +42,9 @@ func DeleteSubscription(ctx context.Context, service proxy.SubscriptionManager) 
 			})
 			return
 		}
+
+		// 通知调度器移除任务
+		_ = scheduler.UpdateSubscriptionJob(req.ID)
 
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "Subscription deleted successfully",

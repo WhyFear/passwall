@@ -72,10 +72,17 @@ export const subscriptionApi = {
     },
   }),
 
+  // 刷新订阅
   reloadSubs: (params) => api.post('/reload_subscription', params),
 
   // 删除订阅
   deleteSubscription: (id) => api.post('/delete_subscription', {id: id}),
+
+  // 获取订阅配置
+  getSubscriptionConfig: (id) => api.get(`/subscription/${id}/config`),
+
+  // 保存订阅配置
+  saveSubscriptionConfig: (id, data) => api.post(`/subscription/${id}/config`, data),
 };
 
 // 节点相关API
@@ -101,4 +108,11 @@ export const taskApi = {
   // 获取任务状态
   getTaskStatus: (taskType) => api.get('/get_task_status', {params: {task_type: taskType}}), // 停止任务
   stopTask: (taskType) => api.post('/stop_task', {task_type: taskType}),
-}; 
+};
+
+// 系统配置API
+export const configApi = {
+  getConfig: () => api.get('/config'),
+  updateConfig: (data) => api.post('/config', data),
+};
+   

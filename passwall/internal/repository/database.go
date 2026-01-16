@@ -62,18 +62,28 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 		err = DB.AutoMigrate(
 			&model.Proxy{},
 			&model.Subscription{},
+			&model.SubscriptionConfig{},
 			&model.SpeedTestHistory{},
 			&model.IPAddress{},
 			&model.ProxyIPAddress{},
 			&model.IPInfo{},
 			&model.IPBaseInfo{},
 			&model.IPUnlockInfo{},
+			&model.SystemConfig{},
 		)
 		if err != nil {
 			return nil, err
 		}
 	} else if dbConfig.Driver == "postgres" {
-		log.Println("使用PostgreSQL数据库，表结构应通过初始化脚本创建")
+		log.Println("使用PostgreSQL数据库，仅针对配置表执行自动迁移，避免干扰已有表结构...")
+		// 仅迁移新增的或需要由GORM管理的配置类表
+		err = DB.AutoMigrate(
+			&model.SubscriptionConfig{},
+			&model.SystemConfig{},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	log.Println("数据库初始化成功")

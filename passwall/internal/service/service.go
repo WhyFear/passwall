@@ -27,6 +27,7 @@ type Services struct {
 	SpeedTesterFactory      speedtester.SpeedTesterFactory
 	StatisticsService       *traffic.StatisticsService
 	IPDetectorService       IPDetectorService
+	ConfigService           ConfigService
 }
 
 // NewServices 初始化所有服务
@@ -51,18 +52,23 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 	// 创建任务管理器
 	taskManager := task.NewTaskManager()
 
+	// 创建配置服务
+	configService := NewConfigService(repos.SystemConfig)
+
+	// 创建测试服务
+	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
+
 	// 创建服务
-	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.Proxy, parserFactory, taskManager)
+	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.SubscriptionConfig, repos.Proxy, parserFactory, taskManager, configService, newTester)
 	proxyService := proxy.NewProxyService(repos.Proxy, repos.SpeedTestHistory, taskManager)
 	speedTestHistoryService := NewSpeedTestHistoryService(repos.SpeedTestHistory)
 
 	// 创建代理测试服务
-	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager)
-	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
+	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager, configService, subscriptionManager)
 
-	statisticsService := traffic.NewTrafficStatisticsService(cfg.ClashAPI.Clients, proxyService, repos.Traffic)
+	statisticsService := traffic.NewTrafficStatisticsService(configService, proxyService, repos.Traffic)
 
-	ipDetectorService := NewIPDetector(*cfg, repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo, taskManager)
+	ipDetectorService := NewIPDetector(configService, repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo, taskManager)
 
 	return &Services{
 		SubscriptionManager:     subscriptionManager,
@@ -76,5 +82,6 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 		GeneratorFactory:        generatorFactory,
 		StatisticsService:       &statisticsService,
 		IPDetectorService:       ipDetectorService,
+		ConfigService:           configService,
 	}
 }
