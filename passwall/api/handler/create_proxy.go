@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -119,7 +120,7 @@ func (p *subProcessor) dispatchTasks(subID uint, proxies []*model.Proxy) {
 			ProxyIDList:     ids,
 			Enabled:         true,
 			IPInfoEnable:    p.cfg.IPCheck.IPInfo.Enable,
-			APPUnlockEnable: p.cfg.IPCheck.IPInfo.Enable,
+			APPUnlockEnable: p.cfg.IPCheck.AppUnlock.Enable,
 			Concurrent:      p.cfg.IPCheck.Concurrent,
 		})
 	}()
@@ -191,7 +192,9 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
 			return
 		} else if file, _, err := c.Request.FormFile("file"); err == nil { // 分支 3: 文件上传导入 (同步)
-			defer file.Close()
+			defer func(file multipart.File) {
+				_ = file.Close()
+			}(file)
 			content, _ := io.ReadAll(io.LimitReader(file, 10*1024*1024))
 			pseudoURL := util.MD5(string(content))[:20]
 			sub, count, err := proc.run(pseudoURL, req.Type, content)

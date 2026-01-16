@@ -108,7 +108,13 @@ const ConfigPage = () => {
       initialValues={{
         concurrent: 5,
         proxy: {enabled: false},
-        ip_check: {enable: false},
+        ip_check: {
+          enable: false,
+          concurrent: 10,
+          refresh: false,
+          app_unlock: {enable: false},
+          ip_info: {enable: false}
+        },
         clash_api: {enable: false, clients: []},
         cron_jobs: [],
         default_sub: {auto_update: false, interval: "0 0 4 * * *", use_proxy: false},
@@ -162,10 +168,13 @@ const ConfigPage = () => {
             <Form.Item name={['ip_check', 'enable']} valuePropName="checked" label="启用IP检测">
               <Switch/>
             </Form.Item>
+            <Form.Item name={['ip_check', 'ip_info', 'enable']} valuePropName="checked" label="启用IP风险、地区信息检测">
+              <Switch/>
+            </Form.Item>
             <Row gutter={16}>
               <Col span={8}>
                 <Form.Item name={['ip_check', 'concurrent']} label="检测并发数">
-                  <InputNumber min={1} max={50}/>
+                  <InputNumber min={1} max={100}/>
                 </Form.Item>
               </Col>
               <Col span={8}>
