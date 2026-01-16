@@ -32,3 +32,17 @@ type Subscription struct {
 	CreatedAt time.Time          `json:"created_at"`
 	UpdatedAt time.Time          `json:"updated_at"`
 }
+
+// SubscriptionConfig 订阅自定义配置
+type SubscriptionConfig struct {
+	SubscriptionID uint      `json:"subscription_id" gorm:"primaryKey"`
+	AutoUpdate     bool      `json:"auto_update"`
+	UpdateInterval string    `json:"update_interval"`
+	UseProxy       bool      `json:"use_proxy"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (SubscriptionConfig) TableName() string {
+	return "subscription_configs"
+}

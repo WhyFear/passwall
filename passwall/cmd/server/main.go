@@ -31,20 +31,36 @@ func main() {
 
 	// 3. 初始化服务
 	services := service.NewServices(db, cfg)
-	if cfg.ClashAPI.Enable {
+
+	// 获取合并后的配置（数据库覆盖文件配置）
+	mergedConfig, err := services.ConfigService.GetConfig()
+	if err != nil {
+		log.Printf("Failed to get merged config, using file config: %v", err)
+		mergedConfig = cfg
+	}
+	// 确保 token 和 database 等关键信息存在 (虽然 ConfigService 应该已经处理了，但为了安全起见)
+	if mergedConfig.Token == "" {
+		mergedConfig.Token = cfg.Token
+	}
+
+	if mergedConfig.ClashAPI.Enable {
 		_ = services.StatisticsService.Start()
 	}
 
 	// 4. 初始化调度器
 	newScheduler := scheduler.NewScheduler()
 	newScheduler.SetServices(services.TaskManager, services.NewTester, services.SubscriptionManager, services.ProxyService, services.IPDetectorService)
-	err = newScheduler.Init(*cfg)
+	err = newScheduler.Init(*mergedConfig)
 	if err != nil {
 		log.Fatalf("Failed to start scheduler: %v", err)
 	}
 
+	// 将调度器注入到 ConfigService，以便后续更新配置时能重载调度器
+	services.ConfigService.SetScheduler(newScheduler)
+	services.ConfigService.SetStatisticsService(services.StatisticsService)
+
 	// 5. 启动HTTP服务器
-	router := api.SetupRouter(cfg, services, newScheduler)
+	router := api.SetupRouter(mergedConfig, services, newScheduler)
 
 	// 创建HTTP服务器
 	server := &http.Server{

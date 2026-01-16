@@ -153,7 +153,7 @@ func GetProxies(proxyService proxy.ProxyService, subscriptionManager proxy.Subsc
 				ProxyID: singleProxy.ID,
 			})
 			if err != nil {
-				log.Infoln("获取代理 %s 的IP信息失败: %v", singleProxy.ID, err)
+				log.Infoln("获取代理 %d 的IP信息失败: %v", singleProxy.ID, err)
 			}
 
 			tempProxy := ProxyResp{

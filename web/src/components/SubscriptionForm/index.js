@@ -43,28 +43,49 @@ const SubscriptionForm = ({
     >
       <Radio.Group>
         <Radio value="url">链接</Radio>
+        <Radio value="url_list">批量链接</Radio>
         <Radio value="file">上传</Radio>
       </Radio.Group>
     </Form.Item>
 
     {/* 动态表单项 */}
     {!isViewMode ? (// 添加模式
-      uploadType === 'url' ? (<Form.Item
-        name="url"
-        label="订阅链接"
-        rules={[{required: true, message: '请输入订阅链接'}]}
-      >
-        <Input placeholder="请输入订阅链接"/>
-      </Form.Item>) : (<Form.Item
-        name="content"
-        label="订阅内容"
-        rules={[{required: true, message: '请输入订阅内容'}]}
-      >
-        <Input.TextArea
-          placeholder="请粘贴订阅内容"
-          autoSize={{minRows: 3, maxRows: 10}}
-        />
-      </Form.Item>)) : (// 查看模式
+      <>
+        {uploadType === 'url' && (
+          <Form.Item
+            name="url"
+            label="订阅链接"
+            rules={[{required: true, message: '请输入订阅链接'}]}
+          >
+            <Input placeholder="请输入订阅链接"/>
+          </Form.Item>
+        )}
+        {uploadType === 'url_list' && (
+          <Form.Item
+            name="url_list_text"
+            label="批量链接"
+            rules={[{required: true, message: '请输入批量订阅链接'}]}
+          >
+            <Input.TextArea
+              placeholder="请输入订阅链接，一行一个"
+              autoSize={{minRows: 3, maxRows: 10}}
+            />
+          </Form.Item>
+        )}
+        {uploadType === 'file' && (
+          <Form.Item
+            name="content"
+            label="订阅内容"
+            rules={[{required: true, message: '请输入订阅内容'}]}
+          >
+            <Input.TextArea
+              placeholder="请粘贴订阅内容"
+              autoSize={{minRows: 3, maxRows: 10}}
+            />
+          </Form.Item>
+        )}
+      </>
+    ) : (// 查看模式
       <>
         <Form.Item
           name="url"

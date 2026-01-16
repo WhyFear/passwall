@@ -9,21 +9,26 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/metacubex/mihomo/log"
-
-	"github.com/google/go-cmp/cmp"
-
-	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 	"passwall/internal/util"
+
+	"passwall/config"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/metacubex/mihomo/log"
 )
 
 type SubsPage struct {
 	Page     int
 	PageSize int
+}
+
+// SystemConfigProvider 定义获取系统配置的接口，用于打破循环依赖
+type SystemConfigProvider interface {
+	GetConfig() (*config.Config, error)
 }
 
 // SubscriptionManager 订阅管理服务
@@ -36,9 +41,14 @@ type SubscriptionManager interface {
 	UpdateSubscriptionStatus(subscription *model.Subscription) error
 	DeleteSubscription(id uint) error
 
+	// 配置操作
+	GetSubscriptionConfig(id uint) (*model.SubscriptionConfig, error)
+	GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error)
+	SaveSubscriptionConfig(config *model.SubscriptionConfig) error
+
 	// 刷新操作
-	RefreshSubscriptionAsync(ctx context.Context, subID uint) error
-	RefreshAllSubscriptions(ctx context.Context, async bool) error
+	RefreshSubscriptionAsync(ctx context.Context, subID uint, options *util.DownloadOptions) error
+	RefreshAllSubscriptions(ctx context.Context, async bool, options *util.DownloadOptions) error
 
 	// 解析和保存
 	ParseAndSaveProxies(ctx context.Context, subscription *model.Subscription, content []byte) error
@@ -46,25 +56,66 @@ type SubscriptionManager interface {
 
 // subscriptionManagerImpl 订阅管理服务实现
 type subscriptionManagerImpl struct {
-	subscriptionRepo repository.SubscriptionRepository
-	proxyRepo        repository.ProxyRepository
-	parserFactory    parser.ParserFactory
-	taskManager      task.TaskManager
+	subscriptionRepo       repository.SubscriptionRepository
+	subscriptionConfigRepo repository.SubscriptionConfigRepository
+	proxyRepo              repository.ProxyRepository
+	parserFactory          parser.ParserFactory
+	taskManager            task.TaskManager
+	configProvider         SystemConfigProvider
+	proxyTester            Tester
 }
 
 // NewSubscriptionManager 创建订阅管理服务
 func NewSubscriptionManager(
 	subscriptionRepo repository.SubscriptionRepository,
+	subscriptionConfigRepo repository.SubscriptionConfigRepository,
 	proxyRepo repository.ProxyRepository,
 	parserFactory parser.ParserFactory,
 	taskManager task.TaskManager,
+	configProvider SystemConfigProvider,
+	proxyTester Tester,
 ) SubscriptionManager {
 	return &subscriptionManagerImpl{
-		subscriptionRepo: subscriptionRepo,
-		proxyRepo:        proxyRepo,
-		parserFactory:    parserFactory,
-		taskManager:      taskManager,
+		subscriptionRepo:       subscriptionRepo,
+		subscriptionConfigRepo: subscriptionConfigRepo,
+		proxyRepo:              proxyRepo,
+		parserFactory:          parserFactory,
+		taskManager:            taskManager,
+		configProvider:         configProvider,
+		proxyTester:            proxyTester,
 	}
+}
+
+// GetSubscriptionConfig 获取订阅自定义配置
+func (s *subscriptionManagerImpl) GetSubscriptionConfig(id uint) (*model.SubscriptionConfig, error) {
+	return s.subscriptionConfigRepo.FindByID(id)
+}
+
+// GetAllSubscriptionConfigs 获取所有自定义配置
+func (s *subscriptionManagerImpl) GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error) {
+	return s.subscriptionConfigRepo.FindAll()
+}
+
+// SaveSubscriptionConfig 保存订阅自定义配置
+func (s *subscriptionManagerImpl) SaveSubscriptionConfig(subConfig *model.SubscriptionConfig) error {
+	// 获取系统默认配置
+	sysCfg, err := s.configProvider.GetConfig()
+	if err != nil {
+		return fmt.Errorf("获取系统配置失败: %w", err)
+	}
+
+	// 比较是否与默认配置一致
+	isSameAsDefault := subConfig.AutoUpdate == sysCfg.DefaultSub.AutoUpdate &&
+		subConfig.UpdateInterval == sysCfg.DefaultSub.Interval &&
+		subConfig.UseProxy == sysCfg.DefaultSub.UseProxy
+
+	if isSameAsDefault {
+		// 如果一致，删除自定义配置
+		return s.subscriptionConfigRepo.Delete(subConfig.SubscriptionID)
+	}
+
+	// 如果不一致，保存自定义配置
+	return s.subscriptionConfigRepo.Save(subConfig)
 }
 
 // GetSubscriptionByID 根据ID获取订阅
@@ -102,7 +153,7 @@ func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
 }
 
 // RefreshSubscriptionAsync 刷新单个订阅
-func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, subID uint) error {
+func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, subID uint, options *util.DownloadOptions) error {
 	// 获取订阅信息
 	subscription, err := s.subscriptionRepo.FindByID(subID)
 	if err != nil {
@@ -113,23 +164,27 @@ func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, 
 		return fmt.Errorf("订阅不存在")
 	}
 
-	// 启动任务
+	// 尝试启动任务（仅用于 UI 进度展示，失败不影响后台刷新）
 	taskType := task.TaskTypeReloadSubs
-	ctx, started := s.taskManager.StartTask(ctx, taskType, 1)
+	taskCtx, started := s.taskManager.StartTask(ctx, taskType, 1)
 	if !started {
-		return fmt.Errorf("已有任务正在运行")
+		taskCtx = ctx
 	}
 
 	// 异步刷新订阅
 	go func() {
-		defer s.taskManager.FinishTask(taskType, "")
+		if started {
+			defer s.taskManager.FinishTask(taskType, "")
+		}
 
-		err := s.refreshSubscription(ctx, subscription)
-		if err != nil {
-			log.Errorln("刷新订阅失败: %v", err)
-			s.taskManager.UpdateProgress(taskType, 1, err.Error())
-		} else {
-			s.taskManager.UpdateProgress(taskType, 1, "")
+		err := s.refreshSubscription(taskCtx, subscription, options)
+		if started {
+			if err != nil {
+				log.Errorln("刷新订阅失败: %v", err)
+				s.taskManager.UpdateProgress(taskType, 1, err.Error())
+			} else {
+				s.taskManager.UpdateProgress(taskType, 1, "")
+			}
 		}
 	}()
 
@@ -137,12 +192,7 @@ func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, 
 }
 
 // RefreshAllSubscriptions 异步刷新所有订阅
-func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, async bool) error {
-	// 如果已有任务在运行，返回错误
-	if s.taskManager.IsRunning(task.TaskTypeReloadSubs) {
-		return fmt.Errorf("已有其他任务正在运行")
-	}
-
+func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, async bool, options *util.DownloadOptions) error {
 	// 获取所有订阅
 	subscriptions, err := s.subscriptionRepo.FindAll()
 	if err != nil {
@@ -154,24 +204,24 @@ func (s *subscriptionManagerImpl) RefreshAllSubscriptions(ctx context.Context, a
 		return nil
 	}
 
-	// 启动任务
+	// 尝试启动任务（仅用于 UI 进度展示，失败不影响后台刷新）
 	taskType := task.TaskTypeReloadSubs
-	ctx, started := s.taskManager.StartTask(ctx, taskType, len(subscriptions))
+	taskCtx, started := s.taskManager.StartTask(ctx, taskType, len(subscriptions))
 	if !started {
-		return fmt.Errorf("启动任务失败")
+		taskCtx = ctx
 	}
 
 	if async {
-		go s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+		go s.refreshAllSubscriptions(taskCtx, taskType, subscriptions, options, started)
 	} else {
-		s.refreshAllSubscriptions(ctx, taskType, subscriptions)
+		s.refreshAllSubscriptions(taskCtx, taskType, subscriptions, options, started)
 	}
 
 	return nil
 }
 
 // refreshAllSubscriptions 刷新所有订阅
-func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription) {
+func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, taskType task.TaskType, subscriptions []*model.Subscription, options *util.DownloadOptions, updateTask bool) {
 	// 用于跟踪任务是否已经完成的标志
 	var finished bool
 	var finishMessage string
@@ -179,6 +229,9 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 
 	// 确保任务最终会被标记为完成，并处理可能的panic
 	defer func() {
+		if !updateTask {
+			return
+		}
 		finishMutex.Lock()
 		defer finishMutex.Unlock()
 
@@ -218,7 +271,7 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 			// 继续执行
 		}
 
-		err := s.refreshSubscription(ctx, subscription)
+		err := s.refreshSubscription(ctx, subscription, options)
 		if err != nil {
 			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
 			lastError = err
@@ -229,7 +282,9 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 		completed++
 		doneMutex.Unlock()
 
-		s.taskManager.UpdateProgress(taskType, completed, "")
+		if updateTask {
+			s.taskManager.UpdateProgress(taskType, completed, "")
+		}
 	}
 
 	// 设置完成消息
@@ -244,19 +299,39 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 	}
 
 	// 标记任务完成（正常流程）
-	finishMutex.Lock()
-	finished = true
-	s.taskManager.FinishTask(taskType, finishMessage)
-	finishMutex.Unlock()
+	if updateTask {
+		finishMutex.Lock()
+		finished = true
+		s.taskManager.FinishTask(taskType, finishMessage)
+		finishMutex.Unlock()
+	}
 
 	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 错误: %v", jobsTotal, jobsDone, lastError)
 }
 
 // refreshSubscription 刷新单个订阅
-func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subscription *model.Subscription) error {
+func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) error {
+	taskType := task.TaskTypeReloadSubs
+	// 尝试在 TaskManager 中锁定该资源
+	taskCtx, started := s.taskManager.StartResourceTask(ctx, taskType, subscription.ID, 1)
+	if !started {
+		log.Infoln("订阅[ID:%d]正在刷新中，本次跳过", subscription.ID)
+		return nil
+	}
+
+	var err error
+	defer func() {
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		}
+		s.taskManager.FinishResourceTask(taskType, subscription.ID, errMsg)
+	}()
+
 	log.Infoln("开始刷新订阅: %s", subscription.URL)
 	if subscription.URL == "" {
-		return fmt.Errorf("订阅为空")
+		err = fmt.Errorf("订阅为空")
+		return err
 	}
 	if !strings.HasPrefix(subscription.URL, "http") {
 		log.Infoln("非下载链接，无需刷新")
@@ -268,39 +343,63 @@ func (s *subscriptionManagerImpl) refreshSubscription(ctx context.Context, subsc
 		Timeout:     util.DefaultDownloadOptions.Timeout,
 		MaxFileSize: util.DefaultDownloadOptions.MaxFileSize,
 	}
+	if options != nil {
+		downloadOptions.ProxyURL = options.ProxyURL
+		if options.Timeout > 0 {
+			downloadOptions.Timeout = options.Timeout
+		}
+	}
 
-	// 加载配置
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		log.Errorln("加载配置失败: %v", err)
-	} else if cfg != nil && cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
-		downloadOptions.ProxyURL = cfg.Proxy.URL
-		log.Infoln("使用代理下载: %s", cfg.Proxy.URL)
+	if downloadOptions.ProxyURL != "" {
+		log.Infoln("使用代理下载: %s", downloadOptions.ProxyURL)
 	}
 
 	// 下载订阅内容
-	content, err := util.DownloadFromURL(subscription.URL, downloadOptions)
+	var content []byte
+	content, err = util.DownloadFromURL(subscription.URL, downloadOptions)
 	if err != nil {
 		log.Errorln("下载订阅内容失败: %v", err)
 
 		subscription.Status = model.SubscriptionStatusInvalid
-		if err := s.subscriptionRepo.UpdateStatus(subscription); err != nil {
-			log.Errorln("更新订阅状态失败: %v", err)
+		if updateErr := s.subscriptionRepo.UpdateStatus(subscription); updateErr != nil {
+			log.Errorln("更新订阅状态失败: %v", updateErr)
 		}
 		return fmt.Errorf("下载订阅内容失败: %w", err)
 	}
 
 	// 解析并保存代理
-	if err := s.ParseAndSaveProxies(ctx, subscription, content); err != nil {
+	if err = s.ParseAndSaveProxies(taskCtx, subscription, content); err != nil {
 		log.Errorln("解析订阅内容失败: %v", err)
 
 		subscription.Status = model.SubscriptionStatusInvalid
-		if err := s.subscriptionRepo.UpdateStatus(subscription); err != nil {
-			log.Errorln("更新订阅状态失败: %v", err)
+		if updateErr := s.subscriptionRepo.UpdateStatus(subscription); updateErr != nil {
+			log.Errorln("更新订阅状态失败: %v", updateErr)
 		}
 		return err
 	}
 
+	// 自动触发对新节点的测速
+	log.Infoln("开始自动测试新获取的代理节点...")
+	// 获取并发配置
+	concurrent := 5
+	if cfg, err := s.configProvider.GetConfig(); err == nil && cfg.Concurrent > 0 {
+		concurrent = cfg.Concurrent
+	}
+
+	testReq := &TestRequest{
+		Filters: &ProxyFilter{
+			Status: []model.ProxyStatus{model.ProxyStatusPending},
+		},
+		Concurrent: concurrent,
+	}
+	// 异步执行测速，不阻塞订阅刷新主流程
+	go func() {
+		if err := s.proxyTester.TestProxies(context.Background(), testReq, false); err != nil {
+			log.Errorln("自动测试代理失败: %v", err)
+		}
+	}()
+
+	s.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
 	return nil
 }
 
@@ -423,6 +522,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 	}
 
 	log.Infoln("订阅[%s]刷新成功，解析出%d个代理，去重后%d个", subscription.URL, len(newProxies), len(uniqueProxies))
+
 	return nil
 }
 

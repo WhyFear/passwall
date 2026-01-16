@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+
 	"github.com/metacubex/mihomo/log"
 
-	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/adapter/speedtester"
 	"passwall/internal/model"
@@ -37,6 +37,7 @@ type proxyTesterImpl struct {
 	speedTesterFactory   speedtester.SpeedTesterFactory
 	parserFactory        parser.ParserFactory
 	taskManager          task.TaskManager
+	configService        ConfigService
 
 	// 新增的代理相关服务
 	proxyTester         proxy.Tester
@@ -51,20 +52,14 @@ func NewProxyTester(
 	speedTesterFactory speedtester.SpeedTesterFactory,
 	parserFactory parser.ParserFactory,
 	taskManager task.TaskManager,
+	configService ConfigService,
+	subscriptionManager proxy.SubscriptionManager,
 ) ProxyTester {
 	// 创建代理测试器
 	proxyTester := proxy.NewTester(
 		proxyRepo,
 		speedTestHistoryRepo,
 		speedTesterFactory,
-		taskManager,
-	)
-
-	// 创建订阅管理器
-	subscriptionManager := proxy.NewSubscriptionManager(
-		subscriptionRepo,
-		proxyRepo,
-		parserFactory,
 		taskManager,
 	)
 
@@ -75,6 +70,7 @@ func NewProxyTester(
 		speedTesterFactory:   speedTesterFactory,
 		parserFactory:        parserFactory,
 		taskManager:          taskManager,
+		configService:        configService,
 		proxyTester:          proxyTester,
 		subscriptionManager:  subscriptionManager,
 	}
@@ -93,7 +89,7 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest, async bool) err
 	concurrent := request.Concurrent
 	if concurrent <= 0 {
 		// 加载配置
-		cfg, err := config.LoadConfig()
+		cfg, err := s.configService.GetConfig()
 		if err != nil {
 			return errors.New("load config failed: " + err.Error())
 		}

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"passwall/config"
 	"passwall/internal/detector"
 	"passwall/internal/detector/ipinfo"
 	"passwall/internal/model"
@@ -50,7 +49,7 @@ type IPDetectorService interface {
 }
 
 type ipDetectorImpl struct {
-	Detector         *detector.DetectorManager
+	ConfigService    ConfigService
 	ProxyRepo        repository.ProxyRepository
 	ProxyIPAddress   repository.ProxyIPAddressRepository
 	IPAddressRepo    repository.IPAddressRepository
@@ -60,7 +59,7 @@ type ipDetectorImpl struct {
 	TaskManager      task.TaskManager
 }
 
-func NewIPDetector(cfg config.Config,
+func NewIPDetector(configService ConfigService,
 	proxyRepo repository.ProxyRepository,
 	proxyIPAddressRepo repository.ProxyIPAddressRepository,
 	ipAddressRepo repository.IPAddressRepository,
@@ -70,7 +69,7 @@ func NewIPDetector(cfg config.Config,
 	taskManager task.TaskManager,
 ) IPDetectorService {
 	return &ipDetectorImpl{
-		Detector:         detector.NewDetectorManager(cfg),
+		ConfigService:    configService,
 		ProxyRepo:        proxyRepo,
 		ProxyIPAddress:   proxyIPAddressRepo,
 		IPAddressRepo:    ipAddressRepo,
@@ -79,6 +78,14 @@ func NewIPDetector(cfg config.Config,
 		IPUnlockInfoRepo: ipUnlockInfoRepo,
 		TaskManager:      taskManager,
 	}
+}
+
+func (i ipDetectorImpl) getDetector() (*detector.DetectorManager, error) {
+	cfg, err := i.ConfigService.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	return detector.NewDetectorManager(*cfg), nil
 }
 
 func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
@@ -154,7 +161,12 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			return nil
 		}
 		// 先获取ip地址，然后如果没有记录再做其他检测
-		resp, err := i.Detector.DetectAll(req.IPProxy, false, false)
+		det, err := i.getDetector()
+		if err != nil {
+			log.Errorln("get detector failed: %v", err)
+			return err
+		}
+		resp, err := det.DetectAll(req.IPProxy, false, false)
 		if err != nil {
 			log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
@@ -204,7 +216,12 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		// no ip address, continue
 	}
 	// below is refresh logic
-	resp, err := i.Detector.DetectAll(req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
+	det, err := i.getDetector()
+	if err != nil {
+		log.Errorln("get detector failed: %v", err)
+		return err
+	}
+	resp, err := det.DetectAll(req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
 	if err != nil {
 		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
