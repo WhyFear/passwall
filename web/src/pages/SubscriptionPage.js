@@ -337,7 +337,13 @@ const SubscriptionPage = () => {
   const columns = [{
     title: '序号', key: 'index', width: 80, render: (_, __, index) => index + 1,
   }, {
-    title: '链接', dataIndex: 'url', key: 'url', width: 400, ellipsis: true,
+    title: '链接',
+    dataIndex: 'url',
+    key: 'url',
+    width: 400,
+    ellipsis: true,
+    render: (url) => /^https?:\/\//.test(url) ?
+      <a href={url} target="_blank" rel="noopener noreferrer">{url}</a> : (url || '-'),
   }, {
     title: '上次拉取状态',
     dataIndex: 'status',
