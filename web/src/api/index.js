@@ -115,4 +115,12 @@ export const configApi = {
   getConfig: () => api.get('/config'),
   updateConfig: (data) => api.post('/config', data),
 };
+
+export const shareConfigApi = {
+  list: () => api.get('/share_configs'),
+  create: (data) => api.post('/share_configs', data),
+  update: (id, data) => api.put(`/share_configs/${id}`, data),
+  disable: (id) => api.post(`/share_configs/${id}/disable`),
+  delete: (id) => api.post(`/share_configs/${id}/delete`),
+};
    

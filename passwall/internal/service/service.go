@@ -28,6 +28,7 @@ type Services struct {
 	StatisticsService       *traffic.StatisticsService
 	IPDetectorService       IPDetectorService
 	ConfigService           ConfigService
+	ShareConfigService      ShareConfigService
 }
 
 // NewServices 初始化所有服务
@@ -54,6 +55,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 
 	// 创建配置服务
 	configService := NewConfigService(repos.SystemConfig)
+	shareConfigService := NewShareConfigService(repos.ShareConfig)
 
 	// 创建测试服务
 	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
@@ -83,5 +85,6 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 		StatisticsService:       &statisticsService,
 		IPDetectorService:       ipDetectorService,
 		ConfigService:           configService,
+		ShareConfigService:      shareConfigService,
 	}
 }

@@ -67,7 +67,7 @@ const ConfigPage = () => {
 
       // 计算变更字段
       const changedValues = {};
-      const keys = ['concurrent', 'proxy', 'ip_check', 'clash_api', 'cron_jobs', 'default_sub'];
+      const keys = ['subscribe_token', 'concurrent', 'proxy', 'ip_check', 'clash_api', 'cron_jobs', 'default_sub'];
 
       let hasChanges = false;
       keys.forEach(key => {
@@ -107,6 +107,7 @@ const ConfigPage = () => {
       onFinish={onFinish}
       initialValues={{
         concurrent: 5,
+        subscribe_token: '',
         proxy: {enabled: false},
         ip_check: {
           enable: false,
@@ -140,6 +141,13 @@ const ConfigPage = () => {
               help="全局任务并发限制"
             >
               <InputNumber min={1} max={100}/>
+            </Form.Item>
+            <Form.Item
+              label="订阅 Token"
+              name="subscribe_token"
+              help="仅用于公开订阅接口 /api/subscribe；留空时使用登录 Token"
+            >
+              <Input.Password placeholder="留空则使用原 Token" allowClear/>
             </Form.Item>
           </Card>
 

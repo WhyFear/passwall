@@ -42,3 +42,21 @@ func AuthReq(token string) gin.HandlerFunc {
 		}
 	}
 }
+
+func AuthReqProvider(tokenProvider func() string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.Request.URL.Query().Get("token")
+		token := tokenProvider()
+
+		if authHeader != "" && token != "" && authHeader == token {
+			c.Next()
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusUnauthorized,
+				"status_msg":  "Unauthorized",
+			})
+			c.Abort()
+		}
+	}
+}

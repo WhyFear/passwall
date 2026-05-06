@@ -30,3 +30,4 @@ docker-compose.yml
 .github/
 .dockerignore
 config.yaml
+passwall/config.yaml

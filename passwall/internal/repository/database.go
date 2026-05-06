@@ -70,6 +70,7 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 			&model.IPBaseInfo{},
 			&model.IPUnlockInfo{},
 			&model.SystemConfig{},
+			&model.ShareConfig{},
 		)
 		if err != nil {
 			return nil, err
@@ -80,6 +81,7 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 		err = DB.AutoMigrate(
 			&model.SubscriptionConfig{},
 			&model.SystemConfig{},
+			&model.ShareConfig{},
 		)
 		if err != nil {
 			return nil, err

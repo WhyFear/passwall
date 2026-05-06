@@ -6,17 +6,18 @@ import (
 
 // Repositories 存储所有仓库的集合
 type Repositories struct {
-	Proxy            ProxyRepository
-	Subscription     SubscriptionRepository
-	SpeedTestHistory SpeedTestHistoryRepository
-	Traffic          TrafficRepository
-	IPAddress        IPAddressRepository
-	ProxyIPAddress   ProxyIPAddressRepository
-	IPInfo           IPInfoRepository
-	IPBaseInfo       IPBaseInfoRepository
-	IPUnlockInfo     IPUnlockInfoRepository
-	SystemConfig     SystemConfigRepository
+	Proxy              ProxyRepository
+	Subscription       SubscriptionRepository
+	SpeedTestHistory   SpeedTestHistoryRepository
+	Traffic            TrafficRepository
+	IPAddress          IPAddressRepository
+	ProxyIPAddress     ProxyIPAddressRepository
+	IPInfo             IPInfoRepository
+	IPBaseInfo         IPBaseInfoRepository
+	IPUnlockInfo       IPUnlockInfoRepository
+	SystemConfig       SystemConfigRepository
 	SubscriptionConfig SubscriptionConfigRepository
+	ShareConfig        ShareConfigRepository
 }
 
 // NewRepositories 创建所有仓库的集合
@@ -33,5 +34,6 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		IPUnlockInfo:       NewIPUnlockInfoRepository(db),
 		SystemConfig:       NewSystemConfigRepository(db),
 		SubscriptionConfig: NewSubscriptionConfigRepository(db),
+		ShareConfig:        NewShareConfigRepository(db),
 	}
 }

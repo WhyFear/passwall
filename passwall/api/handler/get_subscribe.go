@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"passwall/internal/model"
 	"passwall/internal/service/proxy"
 	"strconv"
 	"strings"
 
 	"passwall/internal/adapter/generator"
-	"passwall/internal/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/metacubex/mihomo/log"
@@ -51,112 +51,118 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 			return
 		}
 
-		// 获取请求参数
-		subType := req.Type
-		limit := req.Limit
-		id := req.ID
-
-		// 查询代理
-		var proxies []*model.Proxy
-
-		if id > 0 {
-			// 根据ID查询订阅
-			singleProxy, err := proxyService.GetProxyByID(uint(id))
-			if err != nil {
-				log.Infoln(ErrNoProxiesFound)
-				c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
-				return
-			}
-			proxies = append(proxies, singleProxy)
-		} else {
-			filters := make(map[string]interface{})
-
-			if req.StatusStr != "" {
-				statusList := strings.Split(req.StatusStr, ",")
-				filters["status"] = statusList
-			}
-			if req.ProxyType != "" {
-				proxyTypeList := strings.Split(req.ProxyType, ",")
-				filters["type"] = proxyTypeList
-			}
-			if len(req.CountryCode) > 0 {
-				filters["country_code"] = strings.Split(req.CountryCode, ",")
-			}
-			if len(req.RiskLevel) > 0 {
-				filters["risk_level"] = strings.Split(req.RiskLevel, ",")
-			}
-
-			// 获取所有符合条件的代理
-			var err error
-			proxies, _, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, 1, limit)
-			if err != nil {
-				log.Errorln("查询代理服务器失败: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusInternalServerError,
-					"status_msg":  "Failed to query proxies: " + err.Error(),
-				})
-				return
-			}
-
-			// 如果没有代理，返回空订阅
-			if len(proxies) == 0 {
-				log.Infoln(ErrNoProxiesFound)
-				c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(""))
-				return
-			}
-		}
-
-		if req.WithIndex {
-			for i, singleProxy := range proxies {
-				singleProxy.Name = "[" + strconv.Itoa(i+1) + "]-" + singleProxy.Name
-
-				if subType == SubscribeTypeClash {
-					if err := updateProxyConfigName(singleProxy); err != nil {
-						log.Errorln("%s: %v，id：%v", ErrConfigUpdate, err, singleProxy.ID)
-						continue
-					}
-				}
-			}
-		}
-
-		// 获取订阅生成器
-		subscribeGenerator, err := generatorFactory.GetGenerator(subType)
+		content, err := GenerateSubscribeContent(req, proxyService, generatorFactory)
 		if err != nil {
-			log.Errorln("不支持的订阅类型: %v", subType)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusBadRequest,
-				"status_msg":  "Unsupported subscription type: " + subType,
-			})
+			writeSubscribeError(c, err)
 			return
 		}
-
-		// 生成订阅内容
-		content, err := subscribeGenerator.Generate(proxies)
-		if err != nil {
-			log.Errorln("生成订阅内容失败: %v", err.Error())
-			if err.Error() == "没有可生成分享链接的代理" {
-				c.JSON(http.StatusOK, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusNotImplemented,
-					"status_msg":  "暂不支持该订阅类型生成分享链接",
-				})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"result":      "fail",
-					"status_code": http.StatusInternalServerError,
-					"status_msg":  "Failed to generate subscription: " + err.Error(),
-				})
-			}
-			return
-		}
-
-		log.Infoln("成功生成订阅，类型: %s，代理数量: %d", subType, len(proxies))
 
 		// 直接返回内容
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", content)
 	}
+}
+
+func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService, generatorFactory generator.GeneratorFactory) ([]byte, error) {
+	subType := req.Type
+	limit := req.Limit
+	id := req.ID
+
+	var proxies []*model.Proxy
+
+	if id > 0 {
+		singleProxy, err := proxyService.GetProxyByID(uint(id))
+		if err != nil {
+			log.Infoln(ErrNoProxiesFound)
+			return []byte(""), nil
+		}
+		proxies = append(proxies, singleProxy)
+	} else {
+		filters := buildSubscribeFilters(req)
+
+		var err error
+		proxies, _, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, 1, limit)
+		if err != nil {
+			log.Errorln("查询代理服务器失败: %v", err)
+			return nil, fmt.Errorf("Failed to query proxies: %w", err)
+		}
+
+		if len(proxies) == 0 {
+			log.Infoln(ErrNoProxiesFound)
+			return []byte(""), nil
+		}
+	}
+
+	if req.WithIndex {
+		for i, singleProxy := range proxies {
+			singleProxy.Name = "[" + strconv.Itoa(i+1) + "]-" + singleProxy.Name
+
+			if subType == SubscribeTypeClash {
+				if err := updateProxyConfigName(singleProxy); err != nil {
+					log.Errorln("%s: %v，id：%v", ErrConfigUpdate, err, singleProxy.ID)
+					continue
+				}
+			}
+		}
+	}
+
+	subscribeGenerator, err := generatorFactory.GetGenerator(subType)
+	if err != nil {
+		log.Errorln("不支持的订阅类型: %v", subType)
+		return nil, fmt.Errorf("Unsupported subscription type: %s", subType)
+	}
+
+	content, err := subscribeGenerator.Generate(proxies)
+	if err != nil {
+		log.Errorln("生成订阅内容失败: %v", err.Error())
+		return nil, err
+	}
+
+	log.Infoln("成功生成订阅，类型: %s，代理数量: %d", subType, len(proxies))
+	return content, nil
+}
+
+func buildSubscribeFilters(req SubscribeReq) map[string]interface{} {
+	filters := make(map[string]interface{})
+
+	if req.StatusStr != "" {
+		filters["status"] = strings.Split(req.StatusStr, ",")
+	}
+	if req.ProxyType != "" {
+		filters["type"] = strings.Split(req.ProxyType, ",")
+	}
+	if len(req.CountryCode) > 0 {
+		filters["country_code"] = strings.Split(req.CountryCode, ",")
+	}
+	if len(req.RiskLevel) > 0 {
+		filters["risk_level"] = strings.Split(req.RiskLevel, ",")
+	}
+
+	return filters
+}
+
+func writeSubscribeError(c *gin.Context, err error) {
+	msg := err.Error()
+	if msg == "没有可生成分享链接的代理" {
+		c.JSON(http.StatusOK, gin.H{
+			"result":      "fail",
+			"status_code": http.StatusNotImplemented,
+			"status_msg":  "暂不支持该订阅类型生成分享链接",
+		})
+		return
+	}
+	if strings.HasPrefix(msg, "Unsupported subscription type:") {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"result":      "fail",
+			"status_code": http.StatusBadRequest,
+			"status_msg":  msg,
+		})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"result":      "fail",
+		"status_code": http.StatusInternalServerError,
+		"status_msg":  "Failed to generate subscription: " + msg,
+	})
 }
 
 // updateProxyConfigName 更新代理配置中的name字段
