@@ -19,6 +19,7 @@ type Config struct {
 	CronJobs   []CronJob                       `yaml:"cron_jobs" json:"cron_jobs"`
 	DefaultSub DefaultSubscriptionUpdateConfig `yaml:"default_sub" json:"default_sub"`
 }
+
 type DefaultSubscriptionUpdateConfig struct {
 	AutoUpdate bool   `yaml:"auto_update" json:"auto_update"`
 	Interval   string `yaml:"interval" json:"interval"`

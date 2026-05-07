@@ -29,6 +29,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		openApiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
 	}
 
+	router.GET("/s/:slug", handler.GetSharedSubscribe(services.ShareConfigService, services.ProxyService, services.GeneratorFactory))
+
 	apiGroup := router.Group("/api/v1")
 	authMiddleware := middleware.Auth(cfg.Token)
 	apiGroup.Use(authMiddleware)
@@ -98,6 +100,13 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		configHandler := handler.NewConfigHandler(services.ConfigService)
 		webGroup.GET("/config", configHandler.GetConfig)
 		webGroup.POST("/config", configHandler.UpdateConfig)
+
+		shareConfigHandler := handler.NewShareConfigHandler(services.ShareConfigService)
+		webGroup.GET("/share_configs", shareConfigHandler.List)
+		webGroup.POST("/share_configs", shareConfigHandler.Create)
+		webGroup.PUT("/share_configs/:id", shareConfigHandler.Update)
+		webGroup.POST("/share_configs/:id/disable", shareConfigHandler.Disable)
+		webGroup.POST("/share_configs/:id/delete", shareConfigHandler.Delete)
 	}
 
 	// 添加静态文件服务 - 修改为最后添加，避免与API路由冲突

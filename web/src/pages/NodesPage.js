@@ -1,16 +1,36 @@
 import {
   DeleteOutlined,
+  EditOutlined,
   EyeOutlined,
   InfoCircleOutlined,
+  LinkOutlined,
   PushpinFilled,
   PushpinOutlined,
   ReloadOutlined,
   SettingOutlined,
   StopOutlined
 } from '@ant-design/icons';
-import {Button, Card, Checkbox, Dropdown, InputNumber, message, Modal, Progress, Table, Tabs, Tag, Tooltip} from 'antd';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Dropdown,
+  Form,
+  Input,
+  InputNumber,
+  message,
+  Modal,
+  Progress,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip
+} from 'antd';
 import {useEffect, useRef, useState} from 'react';
-import {nodeApi, subscriptionApi} from '../api';
+import {nodeApi, shareConfigApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
 
@@ -123,6 +143,7 @@ const formatTraffic = (bytes) => {
 };
 
 const NodesPage = () => {
+  const [shareForm] = Form.useForm();
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('2');
@@ -144,6 +165,10 @@ const NodesPage = () => {
   const [taskStatus, setTaskStatus] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
   const [countryCodes, setCountryCodes] = useState({});
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [shareConfigs, setShareConfigs] = useState([]);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [editingShareConfig, setEditingShareConfig] = useState(null);
 
   const timerRef = useRef(null);
 
@@ -341,53 +366,230 @@ const NodesPage = () => {
     }
   };
 
-  // 导出订阅链接
-  const handleExportSubscriptionUrl = async () => {
+  const splitShareValue = (value) => {
+    if (!value) return [];
+    return value.split(',').map(item => item.trim()).filter(Boolean);
+  };
+
+  const joinShareValue = (value) => {
+    if (!Array.isArray(value)) return value || '';
+    return value.join(',');
+  };
+
+  const getShareUrl = (slug) => `${window.location.origin}/s/${slug}`;
+
+  const copyText = async (text, successMessage = '已复制到剪贴板') => {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      message.success(successMessage);
+      return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
     try {
-      const params = {
-        sort: sorter.field, sortOrder: sorter.order,
-      };
-      if (filters.status && filters.status.length > 0) {
-        params.status = filters.status.join(',');
-      }
-      if (filters.type && filters.type.length > 0) {
-        params.proxy_type = filters.type.join(',');
-      }
-      if (filters.country && filters.country.length > 0) {
-        params.country_code = filters.country.join(',');
-      }
-      if (filters.risk && filters.risk.length > 0) {
-        params.risk_level = filters.risk.join(',');
-      }
-      params.token = localStorage.getItem('token');
-      params.with_index = 1;
-      params.type = 'share_link';
+      document.execCommand('copy');
+      message.success(successMessage);
+    } catch (err) {
+      message.error('复制失败，请手动复制\n' + text);
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  };
 
-      const url = `${window.location.host}/api/subscribe`;
-      const urlParams = new URLSearchParams(params);
-      const export_url = url + `?${urlParams.toString()}`;
+  const buildShareDefaults = () => ({
+    name: '节点分享',
+    type: 'share_link',
+    status: filters.status || [],
+    proxy_type: filters.type || [],
+    country_code: filters.country || [],
+    risk_level: filters.risk || [],
+    sort: sorter.field || 'download_speed',
+    sort_order: sorter.order || 'descend',
+    limit: 0,
+    with_index: true,
+  });
 
-      // 复制功能
-      if (window.isSecureContext && navigator.clipboard) {
-        navigator.clipboard.writeText(export_url)
-          .then(() => message.success('订阅链接已复制到剪贴板'))
-          .catch(() => message.error('复制失败，请手动复制'));
+  const buildSharePayload = (values, enabled) => {
+    const payload = {
+      name: values.name,
+      type: values.type,
+      status: joinShareValue(values.status),
+      proxy_type: joinShareValue(values.proxy_type),
+      country_code: joinShareValue(values.country_code),
+      risk_level: joinShareValue(values.risk_level),
+      sort: values.sort,
+      sort_order: values.sort_order,
+      limit: values.limit ?? 0,
+      with_index: values.with_index,
+    };
+
+    if (typeof enabled === 'boolean') {
+      payload.enabled = enabled;
+    }
+
+    return payload;
+  };
+
+  const fetchShareConfigs = async () => {
+    try {
+      setShareLoading(true);
+      const data = await shareConfigApi.list();
+      setShareConfigs(Array.isArray(data) ? data : []);
+    } catch (error) {
+      message.error('获取分享配置失败');
+      console.error(error);
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const openShareModal = async () => {
+    setEditingShareConfig(null);
+    shareForm.setFieldsValue(buildShareDefaults());
+    setShareModalVisible(true);
+    await fetchShareConfigs();
+  };
+
+  const handleEditShareConfig = (record) => {
+    setEditingShareConfig(record);
+    shareForm.setFieldsValue({
+      ...record,
+      status: splitShareValue(record.status),
+      proxy_type: splitShareValue(record.proxy_type),
+      country_code: splitShareValue(record.country_code),
+      risk_level: splitShareValue(record.risk_level),
+    });
+  };
+
+  const handleResetShareForm = () => {
+    setEditingShareConfig(null);
+    shareForm.setFieldsValue(buildShareDefaults());
+  };
+
+  const handleSaveShareConfig = async () => {
+    try {
+      const values = await shareForm.validateFields();
+      const payload = buildSharePayload(values);
+
+      let saved;
+      if (editingShareConfig) {
+        saved = await shareConfigApi.update(editingShareConfig.id, payload);
+        message.success('分享配置已更新');
       } else {
-        // 非https环境下无法使用navigator.clipboard，使用textarea模拟复制
-        const textArea = document.createElement("textarea");
-        textArea.value = export_url;
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try {
-          document.execCommand('copy');
-        } catch (err) {
-          message.error('复制失败，请手动复制\n' + export_url);
-        }
-        document.body.removeChild(textArea);
+        saved = await shareConfigApi.create(payload);
+        message.success('分享链接已创建');
+      }
+      await fetchShareConfigs();
+      setEditingShareConfig(saved);
+      if (saved?.slug) {
+        await copyText(getShareUrl(saved.slug), '分享链接已复制到剪贴板');
       }
     } catch (error) {
-      message.error('获取订阅链接失败');
+      if (error?.errorFields) return;
+      message.error('保存分享配置失败: ' + (error?.message || '未知错误'));
+      console.error(error);
+    }
+  };
+
+  const handleEnableShareConfig = async (record) => {
+    try {
+      await shareConfigApi.update(record.id, buildSharePayload(record, true));
+      message.success('分享链接已启用');
+      await fetchShareConfigs();
+    } catch (error) {
+      message.error('启用分享链接失败');
+      console.error(error);
+    }
+  };
+
+  const handleDisableShareConfig = async (record) => {
+    try {
+      await shareConfigApi.disable(record.id);
+      message.success('分享链接已失效');
+      await fetchShareConfigs();
+    } catch (error) {
+      message.error('失效分享链接失败');
+      console.error(error);
+    }
+  };
+
+  const handleDeleteShareConfig = async (record) => {
+    Modal.confirm({
+      title: '删除分享链接',
+      content: `确认删除「${record.name}」？删除后短链将不可访问。`,
+      okText: '删除',
+      okButtonProps: {danger: true},
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await shareConfigApi.delete(record.id);
+          message.success('分享链接已删除');
+          if (editingShareConfig?.id === record.id) {
+            handleResetShareForm();
+          }
+          await fetchShareConfigs();
+        } catch (error) {
+          message.error('删除分享链接失败');
+          console.error(error);
+        }
+      }
+    });
+  };
+
+  const shareConfigColumns = [{
+    title: '名称',
+    dataIndex: 'name',
+    key: 'name',
+  }, {
+    title: '类型',
+    dataIndex: 'type',
+    key: 'type',
+  }, {
+    title: '状态',
+    dataIndex: 'enabled',
+    key: 'enabled',
+    render: (enabled) => enabled ? <Tag color="success">启用</Tag> : <Tag color="default">已失效</Tag>,
+  }, {
+    title: '更新时间',
+    dataIndex: 'updated_at',
+    key: 'updated_at',
+    render: (time) => time ? formatDate(time) : '-',
+  }, {
+    title: '操作',
+    key: 'action',
+    width: 260,
+    render: (_, record) => (<Space wrap>
+      <Button size="small" icon={<LinkOutlined/>} onClick={() => copyText(getShareUrl(record.slug), '分享链接已复制到剪贴板')}>
+        复制
+      </Button>
+      <Button size="small" icon={<EditOutlined/>} onClick={() => handleEditShareConfig(record)}>
+        编辑
+      </Button>
+      {record.enabled ? (
+        <Button size="small" onClick={() => handleDisableShareConfig(record)}>
+          失效
+        </Button>
+      ) : (
+        <Button size="small" onClick={() => handleEnableShareConfig(record)}>
+          启用
+        </Button>
+      )}
+      <Button size="small" danger icon={<DeleteOutlined/>} onClick={() => handleDeleteShareConfig(record)}>
+        删除
+      </Button>
+    </Space>),
+  }];
+
+  // 打开分享配置管理
+  const handleExportSubscriptionUrl = async () => {
+    try {
+      await openShareModal();
+    } catch (error) {
+      message.error('打开分享管理失败');
       console.error(error);
     }
   };
@@ -814,7 +1016,7 @@ const NodesPage = () => {
           onClick={handleExportSubscriptionUrl}
           style={{margin: 0}}
         >
-          按当前参数导出订阅链接
+          分享管理
         </Button>
         <Dropdown menu={{items: columnSettingMenu}} trigger={['click']}>
           <Button
@@ -848,6 +1050,99 @@ const NodesPage = () => {
         </div>
       </Tabs.TabPane>
     </Tabs>
+
+    <Modal
+      title="分享管理"
+      open={shareModalVisible}
+      onCancel={() => setShareModalVisible(false)}
+      footer={null}
+      width={1100}
+    >
+      <Card
+        title={editingShareConfig ? '编辑分享配置' : '创建分享配置'}
+        size="small"
+        style={{marginBottom: 16}}
+        extra={<Space>
+          <Button onClick={handleResetShareForm}>使用当前筛选新建</Button>
+          <Button type="primary" onClick={handleSaveShareConfig} loading={shareLoading}>
+            {editingShareConfig ? '保存修改' : '创建并复制链接'}
+          </Button>
+        </Space>}
+      >
+        <Form form={shareForm} layout="vertical">
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12}}>
+            <Form.Item name="name" label="名称" rules={[{required: true, message: '请输入名称'}]}>
+              <Input placeholder="节点分享"/>
+            </Form.Item>
+            <Form.Item name="type" label="订阅类型" rules={[{required: true, message: '请选择订阅类型'}]}>
+              <Select options={[
+                {label: '分享链接', value: 'share_link'},
+                {label: 'Clash', value: 'clash'},
+              ]}/>
+            </Form.Item>
+            <Form.Item name="limit" label="返回数量" help="0 表示不限制">
+              <InputNumber min={0} style={{width: '100%'}}/>
+            </Form.Item>
+            <Form.Item name="sort" label="排序字段">
+              <Select allowClear options={[
+                {label: '下载速度', value: 'download_speed'},
+                {label: '上传速度', value: 'upload_speed'},
+                {label: '延迟', value: 'ping'},
+                {label: '最近测试时间', value: 'latest_test_time'},
+                {label: '创建时间', value: 'created_at'},
+                {label: 'ID', value: 'id'},
+              ]}/>
+            </Form.Item>
+            <Form.Item name="sort_order" label="排序方向">
+              <Select options={[
+                {label: '降序', value: 'descend'},
+                {label: '升序', value: 'ascend'},
+              ]}/>
+            </Form.Item>
+            <Form.Item name="status" label="状态">
+              <Select mode="multiple" allowClear options={[
+                {label: '未测试', value: '-1'},
+                {label: '正常', value: '1'},
+                {label: '失败', value: '2'},
+                {label: '未知错误', value: '3'},
+              ]}/>
+            </Form.Item>
+            <Form.Item name="proxy_type" label="节点类型">
+              <Select mode="multiple" allowClear options={nodeTypes.map(item => ({label: item.text, value: item.value}))}/>
+            </Form.Item>
+            <Form.Item name="country_code" label="国家/地区">
+              <Select
+                mode="multiple"
+                allowClear
+                showSearch
+                options={(Array.isArray(countryCodes) ? countryCodes : []).map(item => ({label: item.text, value: item.value}))}
+              />
+            </Form.Item>
+            <Form.Item name="risk_level" label="风险等级">
+              <Select mode="multiple" allowClear options={[
+                {label: formatRisk('very_low'), value: 'very_low'},
+                {label: formatRisk('low'), value: 'low'},
+                {label: formatRisk('medium'), value: 'medium'},
+                {label: formatRisk('high'), value: 'high'},
+                {label: formatRisk('very_high'), value: 'very_high'},
+              ]}/>
+            </Form.Item>
+            <Form.Item name="with_index" label="节点名前加序号" valuePropName="checked">
+              <Switch/>
+            </Form.Item>
+          </div>
+        </Form>
+      </Card>
+
+      <Table
+        columns={shareConfigColumns}
+        dataSource={shareConfigs}
+        rowKey="id"
+        loading={shareLoading}
+        pagination={{pageSize: 5}}
+        scroll={{x: 900}}
+      />
+    </Modal>
 
     {/* 节点详情弹窗，这两个弹窗写的跟shit一样 */}
     <Modal
