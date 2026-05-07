@@ -169,7 +169,7 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 	defer func() {
 		if r := recover(); r != nil {
 			finishMessage = fmt.Sprintf("测试代理任务发生panic: %v", r)
-			log.Errorln(finishMessage)
+			log.Errorln("%s", finishMessage)
 		}
 		t.taskManager.FinishTask(taskType, finishMessage)
 		log.Infoln("测试任务执行完毕")

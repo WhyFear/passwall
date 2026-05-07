@@ -238,7 +238,7 @@ func (s *subscriptionManagerImpl) refreshAllSubscriptions(ctx context.Context, t
 		// 检查是否有panic发生
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("刷新订阅任务发生panic: %v", r)
-			log.Errorln(errMsg)
+			log.Errorln("%s", errMsg)
 			finishMessage = errMsg
 		}
 
@@ -449,7 +449,7 @@ func (s *subscriptionManagerImpl) ParseAndSaveProxies(ctx context.Context, subsc
 			exist[key] = true
 			uniqueProxies = append(uniqueProxies, proxy)
 		} else {
-			log.Infoln(fmt.Sprintf("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password))
+			log.Infoln("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password)
 		}
 	}
 

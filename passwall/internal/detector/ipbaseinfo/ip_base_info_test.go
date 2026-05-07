@@ -1,7 +1,9 @@
 package ipbaseinfo
 
 import (
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,31 +11,63 @@ import (
 )
 
 func TestGetProxyIP(t *testing.T) {
-	// 创建HTTP客户端
 	client := &http.Client{
 		Timeout: 5 * time.Second,
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var body string
+			switch r.URL.Path {
+			case "/v4":
+				body = "198.51.100.24\n"
+			case "/v6":
+				body = `{"ip":"2001:db8::24"}`
+			default:
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Status:     "404 Not Found",
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Header:     make(http.Header),
+					Request:    r,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+				Request:    r,
+			}, nil
+		}),
 	}
 
-	// 测试获取代理IP
+	originalServices := ipServices
+	ipServices = []IPService{
+		{Name: "TestIPv4A", URL: "https://example.test/v4"},
+		{Name: "TestIPv4B", URL: "https://example.test/v4"},
+		{Name: "TestIPv6", URL: "https://example.test/v6", Format: &IPFormat{Format: "json", IPPath: "ip"}},
+	}
+	t.Cleanup(func() {
+		ipServices = originalServices
+	})
+
 	ipInfo, err := GetProxyIP(client)
 
-	// 验证没有错误
 	assert.NoError(t, err)
 	assert.NotNil(t, ipInfo)
+	assert.Equal(t, "198.51.100.24", ipInfo.IPV4)
+	assert.Equal(t, "2001:db8::24", ipInfo.IPV6)
+}
 
-	// 验证至少有一个IP地址
-	if ipInfo.IPV4 != "" {
-		t.Logf("获取到IPv4地址: %s", ipInfo.IPV4)
-		assert.True(t, checkIPV4(ipInfo.IPV4), "IPv4地址格式应该有效")
-	}
+func TestGetProxyIPRejectsNilClient(t *testing.T) {
+	ipInfo, err := GetProxyIP(nil)
 
-	if ipInfo.IPV6 != "" {
-		t.Logf("获取到IPv6地址: %s", ipInfo.IPV6)
-		assert.True(t, checkIPV6(ipInfo.IPV6), "IPv6地址格式应该有效")
-	}
+	assert.Error(t, err)
+	assert.Nil(t, ipInfo)
+}
 
-	// 至少应该有一个IP地址
-	assert.True(t, ipInfo.IPV4 != "" || ipInfo.IPV6 != "", "至少应该获取到一个IP地址")
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
 func TestGetAllProxyIPsIntegration(t *testing.T) {

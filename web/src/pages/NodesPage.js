@@ -29,7 +29,7 @@ import {
   Tag,
   Tooltip
 } from 'antd';
-import {useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {nodeApi, shareConfigApi, subscriptionApi} from '../api';
 import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
@@ -126,6 +126,8 @@ const formatRisk = (risk) => {
   }
 }
 
+const DEFAULT_VISIBLE_COLUMNS = ['index', 'subscription_url', 'name', 'address', 'type', 'status', 'ping', 'download_speed', 'upload_speed', 'latest_test_time', 'success_rate', 'action'];
+
 // 格式化流量的函数
 const formatTraffic = (bytes) => {
   if (!bytes) return '-';
@@ -173,7 +175,7 @@ const NodesPage = () => {
   const timerRef = useRef(null);
 
   // 获取所有节点
-  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
+  const fetchNodes = useCallback(async (page, pageSize, sort, filter) => {
     try {
       setLoading(true);
 
@@ -217,7 +219,7 @@ const NodesPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // 获取节点历史
   const fetchNodeHistory = async (nodeId, page = historyPagination.current, pageSize = historyPagination.pageSize) => {
@@ -258,7 +260,7 @@ const NodesPage = () => {
   };
 
   // 获取节点类型
-  const fetchNodeTypes = async () => {
+  const fetchNodeTypes = useCallback(async () => {
     try {
       const data = await nodeApi.getTypes();
       if (Array.isArray(data)) {
@@ -270,10 +272,10 @@ const NodesPage = () => {
       message.error('获取节点类型失败');
       console.error(error);
     }
-  };
+  }, []);
 
   // 获取国家代码
-  const fetchCountryCodes = async () => {
+  const fetchCountryCodes = useCallback(async () => {
     try {
       const data = await nodeApi.getCountryCodes();
       if (Array.isArray(data?.data)) {
@@ -287,11 +289,11 @@ const NodesPage = () => {
       setCountryCodes({});
       console.error(error);
     }
-  };
+  }, []);
   // 获取任务状态
-  const fetchTaskStatusHandler = async () => {
+  const fetchTaskStatusHandler = useCallback(async () => {
     await fetchTaskStatus("speed_test", setTaskStatus);
-  };
+  }, []);
 
   // 停止任务
   const handleStopTask = async () => {
@@ -302,7 +304,7 @@ const NodesPage = () => {
   useEffect(() => {
     // 初始获取一次任务状态
     fetchTaskStatusHandler();
-    fetchNodes();
+    fetchNodes(1, 10, {field: 'download_speed', order: 'descend'}, {});
     fetchNodeTypes();
     fetchCountryCodes();
 
@@ -323,7 +325,7 @@ const NodesPage = () => {
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchTaskStatusHandler]);
 
 
   // 初始化列显示状态
@@ -339,7 +341,7 @@ const NodesPage = () => {
     }
     // 其他情况，比如首次加载或者配置错误时使用默认设置
     const initialColumns = {};
-    defaultVisibleColumns.forEach(key => {
+    DEFAULT_VISIBLE_COLUMNS.forEach(key => {
       initialColumns[key] = true;
     });
     setVisibleColumns(initialColumns);
@@ -794,7 +796,6 @@ const NodesPage = () => {
   }];
 
   // 默认显示的列（不可隐藏的列+一些默认显示的可隐藏列）
-  const defaultVisibleColumns = ['index', 'subscription_url', 'name', 'address', 'type', 'status', 'ping', 'download_speed', 'upload_speed', 'latest_test_time', 'success_rate', 'action'];
 
 
   // 保存列设置到本地存储
@@ -961,7 +962,7 @@ const NodesPage = () => {
   // 列设置菜单
   const columnSettingMenu = allColumns.map(column => ({
     key: column.key, label: (<Checkbox
-      checked={visibleColumns[column.key] ?? defaultVisibleColumns.includes(column.key)}
+      checked={visibleColumns[column.key] ?? DEFAULT_VISIBLE_COLUMNS.includes(column.key)}
       onChange={e => handleColumnVisibilityChange(column.key, e.target.checked)}
       disabled={!column.hideable}
       onClick={(e) => e.stopPropagation()}

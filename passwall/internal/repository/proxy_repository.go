@@ -230,7 +230,6 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	if joinIPInfo {
 		db = db.Distinct("proxies.*")
 	}
-	db.Debug().Offset((query.Page - 1) * query.PageSize).Limit(query.PageSize).Find(&proxies)
 	if err := db.Offset((query.Page - 1) * query.PageSize).Limit(query.PageSize).Find(&proxies).Error; err != nil {
 		return nil, err
 	}

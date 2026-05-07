@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip,} from 'antd';
 import {
   DeleteOutlined,
@@ -39,7 +39,7 @@ const SubscriptionPage = () => {
   const [intervalMode, setIntervalMode] = useState('simple'); // 'simple' or 'advanced'
 
   // 获取订阅列表
-  const fetchSubscriptions = async (page = pagination.current, pageSize = pagination.pageSize) => {
+  const fetchSubscriptions = useCallback(async (page, pageSize) => {
     try {
       setLoading(true);
       // 构建请求参数
@@ -62,10 +62,15 @@ const SubscriptionPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // 获取任务状态
+  const fetchTaskStatusHandler = useCallback(async () => {
+    await fetchTaskStatus("reload_subs", setTaskStatus);
+  }, []);
 
   useEffect(() => {
-    fetchSubscriptions()
+    fetchSubscriptions(1, 10)
     fetchTaskStatusHandler();
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
@@ -78,7 +83,7 @@ const SubscriptionPage = () => {
         clearInterval(timerRef.current);
       }
     };
-  }, []);
+  }, [fetchSubscriptions, fetchTaskStatusHandler]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -87,11 +92,6 @@ const SubscriptionPage = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // 获取任务状态
-  const fetchTaskStatusHandler = async () => {
-    await fetchTaskStatus("reload_subs", setTaskStatus);
-  };
 
   // 停止任务
   const handleStopTask = async () => {

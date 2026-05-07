@@ -9,13 +9,22 @@ import (
 )
 
 func TestNewDetectorManager(t *testing.T) {
-	// 创建一个空的配置用于测试
 	cfg := config.Config{}
 	manager := NewDetectorManager(cfg)
 	assert.NotNil(t, manager)
-	resp, err := manager.DetectAll(model.NewIPProxy(&model.Proxy{
-		Config: "you config here",
-	}), true, true)
+
+	resp, err := manager.DetectAll(&model.IPProxy{
+		IPV4: "203.0.113.10",
+	}, false, false)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
+	assert.Equal(t, "203.0.113.10", resp.BaseInfo.IPV4)
+}
+
+func TestDetectorManagerDetectAllRejectsNilProxy(t *testing.T) {
+	manager := NewDetectorManager(config.Config{})
+	resp, err := manager.DetectAll(nil, false, false)
+
+	assert.Error(t, err)
+	assert.Nil(t, resp)
 }

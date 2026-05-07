@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/metacubex/mihomo/log"
@@ -129,7 +130,7 @@ func LoadConfig() (*Config, error) {
 	// 获取token
 	token := os.Getenv("PASSWALL_TOKEN")
 	if token == "" {
-		panic("PASSWALL_TOKEN is not set")
+		return nil, fmt.Errorf("PASSWALL_TOKEN is not set")
 	}
 	config.Token = token
 
