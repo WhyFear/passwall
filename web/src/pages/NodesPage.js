@@ -402,7 +402,6 @@ const NodesPage = () => {
 
   const buildShareDefaults = () => ({
     name: '节点分享',
-    enabled: true,
     type: 'share_link',
     status: filters.status || [],
     proxy_type: filters.type || [],
@@ -413,6 +412,27 @@ const NodesPage = () => {
     limit: 0,
     with_index: true,
   });
+
+  const buildSharePayload = (values, enabled) => {
+    const payload = {
+      name: values.name,
+      type: values.type,
+      status: joinShareValue(values.status),
+      proxy_type: joinShareValue(values.proxy_type),
+      country_code: joinShareValue(values.country_code),
+      risk_level: joinShareValue(values.risk_level),
+      sort: values.sort,
+      sort_order: values.sort_order,
+      limit: values.limit ?? 0,
+      with_index: values.with_index,
+    };
+
+    if (typeof enabled === 'boolean') {
+      payload.enabled = enabled;
+    }
+
+    return payload;
+  };
 
   const fetchShareConfigs = async () => {
     try {
@@ -453,13 +473,7 @@ const NodesPage = () => {
   const handleSaveShareConfig = async () => {
     try {
       const values = await shareForm.validateFields();
-      const payload = {
-        ...values,
-        status: joinShareValue(values.status),
-        proxy_type: joinShareValue(values.proxy_type),
-        country_code: joinShareValue(values.country_code),
-        risk_level: joinShareValue(values.risk_level),
-      };
+      const payload = buildSharePayload(values);
 
       let saved;
       if (editingShareConfig) {
@@ -477,6 +491,17 @@ const NodesPage = () => {
     } catch (error) {
       if (error?.errorFields) return;
       message.error('保存分享配置失败: ' + (error?.message || '未知错误'));
+      console.error(error);
+    }
+  };
+
+  const handleEnableShareConfig = async (record) => {
+    try {
+      await shareConfigApi.update(record.id, buildSharePayload(record, true));
+      message.success('分享链接已启用');
+      await fetchShareConfigs();
+    } catch (error) {
+      message.error('启用分享链接失败');
       console.error(error);
     }
   };
@@ -544,9 +569,15 @@ const NodesPage = () => {
       <Button size="small" icon={<EditOutlined/>} onClick={() => handleEditShareConfig(record)}>
         编辑
       </Button>
-      <Button size="small" disabled={!record.enabled} onClick={() => handleDisableShareConfig(record)}>
-        失效
-      </Button>
+      {record.enabled ? (
+        <Button size="small" onClick={() => handleDisableShareConfig(record)}>
+          失效
+        </Button>
+      ) : (
+        <Button size="small" onClick={() => handleEnableShareConfig(record)}>
+          启用
+        </Button>
+      )}
       <Button size="small" danger icon={<DeleteOutlined/>} onClick={() => handleDeleteShareConfig(record)}>
         删除
       </Button>
@@ -1095,10 +1126,6 @@ const NodesPage = () => {
                 {label: formatRisk('high'), value: 'high'},
                 {label: formatRisk('very_high'), value: 'very_high'},
               ]}/>
-            </Form.Item>
-            {/*todo 这里点击后没生效*/}
-            <Form.Item name="enabled" label="启用" valuePropName="checked">
-              <Switch/>
             </Form.Item>
             <Form.Item name="with_index" label="节点名前加序号" valuePropName="checked">
               <Switch/>
