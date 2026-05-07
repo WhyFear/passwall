@@ -23,13 +23,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	router.Use(middleware.Recovery())
 
 	openApiGroup := router.Group("/api")
-	openAuthMiddleware := middleware.AuthReqProvider(func() string {
-		currentConfig, err := services.ConfigService.GetConfig()
-		if err != nil {
-			return cfg.EffectiveSubscribeToken()
-		}
-		return currentConfig.EffectiveSubscribeToken()
-	})
+	openAuthMiddleware := middleware.AuthReq(cfg.Token)
 	openApiGroup.Use(openAuthMiddleware)
 	{
 		openApiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))

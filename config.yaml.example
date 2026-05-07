@@ -1,5 +1,4 @@
 concurrent: 30
-subscribe_token: ""  # 可选：仅用于 /api/subscribe；为空时回退到 PASSWALL_TOKEN
 
 server:
   address: "0.0.0.0:8080"  # 使用0.0.0.0允许外部访问

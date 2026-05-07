@@ -9,23 +9,15 @@ import (
 
 // Config 应用程序配置
 type Config struct {
-	Token          string                          `yaml:"token" json:"-"`
-	SubscribeToken string                          `yaml:"subscribe_token" json:"subscribe_token"`
-	Concurrent     int                             `yaml:"concurrent" json:"concurrent"`
-	Server         Server                          `yaml:"server" json:"server"`
-	Database       Database                        `yaml:"database" json:"database"`
-	Proxy          Proxy                           `yaml:"proxy" json:"proxy"`
-	IPCheck        IPCheckConfig                   `yaml:"ip_check" json:"ip_check"`
-	ClashAPI       ClashAPIConfig                  `yaml:"clash_api" json:"clash_api"`
-	CronJobs       []CronJob                       `yaml:"cron_jobs" json:"cron_jobs"`
-	DefaultSub     DefaultSubscriptionUpdateConfig `yaml:"default_sub" json:"default_sub"`
-}
-
-func (c Config) EffectiveSubscribeToken() string {
-	if c.SubscribeToken != "" {
-		return c.SubscribeToken
-	}
-	return c.Token
+	Token      string                          `yaml:"token" json:"-"`
+	Concurrent int                             `yaml:"concurrent" json:"concurrent"`
+	Server     Server                          `yaml:"server" json:"server"`
+	Database   Database                        `yaml:"database" json:"database"`
+	Proxy      Proxy                           `yaml:"proxy" json:"proxy"`
+	IPCheck    IPCheckConfig                   `yaml:"ip_check" json:"ip_check"`
+	ClashAPI   ClashAPIConfig                  `yaml:"clash_api" json:"clash_api"`
+	CronJobs   []CronJob                       `yaml:"cron_jobs" json:"cron_jobs"`
+	DefaultSub DefaultSubscriptionUpdateConfig `yaml:"default_sub" json:"default_sub"`
 }
 
 type DefaultSubscriptionUpdateConfig struct {

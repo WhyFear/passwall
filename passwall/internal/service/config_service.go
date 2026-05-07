@@ -59,13 +59,12 @@ func (s *configService) GetClashClients() ([]config.ClashAPIClient, bool) {
 
 // 允许的配置键列表
 var allowedConfigKeys = map[string]bool{
-	"subscribe_token": true,
-	"concurrent":      true,
-	"proxy":           true,
-	"ip_check":        true,
-	"clash_api":       true,
-	"cron_jobs":       true,
-	"default_sub":     true,
+	"concurrent":  true,
+	"proxy":       true,
+	"ip_check":    true,
+	"clash_api":   true,
+	"cron_jobs":   true,
+	"default_sub": true,
 }
 
 func (s *configService) GetConfig() (*config.Config, error) {
@@ -100,9 +99,6 @@ func (s *configService) getConfigInternal() (*config.Config, error) {
 	// 4. 合并配置
 	if val, ok := dbConfigs["concurrent"]; ok {
 		_ = json.Unmarshal([]byte(val), &baseConfig.Concurrent)
-	}
-	if val, ok := dbConfigs["subscribe_token"]; ok {
-		_ = json.Unmarshal([]byte(val), &baseConfig.SubscribeToken)
 	}
 	if val, ok := dbConfigs["proxy"]; ok {
 		_ = json.Unmarshal([]byte(val), &baseConfig.Proxy)
