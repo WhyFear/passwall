@@ -2,3 +2,5 @@
 build
 node_modules
 passwall/main
+.agents
+.codex
