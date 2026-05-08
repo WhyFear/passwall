@@ -99,7 +99,7 @@ export const nodeApi = {
   pinProxy: (id, pinned) => api.post('/pin_proxy', {id: id, pinned: pinned}),
   banProxy: (params) => api.post(`/ban_proxy`, params),
   detectIP: (params) => api.post(`/detect_ip`, params),
-  getIPInfo: (params) => api.post(`/get_ip_info`, params),
+  getIPInfo: (params) => api.get(`/get_ip_info`, {params}),
   getCountryCodes: () => api.get('/get_country_codes'),
 };
 

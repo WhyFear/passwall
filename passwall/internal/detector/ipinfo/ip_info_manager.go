@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"context"
 	"fmt"
 	"passwall/internal/model"
 
@@ -21,12 +22,15 @@ func NewRiskManager(factory IPInfoFactory) *RiskManager {
 }
 
 // DetectByAll 调用所有已注册的风险检测器
-func (rm *RiskManager) DetectByAll(ipProxy *model.IPProxy) ([]*IPInfoResult, error) {
+func (rm *RiskManager) DetectByAll(ctx context.Context, ipProxy *model.IPProxy) ([]*IPInfoResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	allDetectors := rm.factory.GetAllIPInfoDetectors()
 	results := make([]*IPInfoResult, 0)
 	var mu sync.Mutex
 
-	g := new(errgroup.Group)
+	g, ctx := errgroup.WithContext(ctx)
 	for _, detector := range allDetectors {
 		d := detector
 		g.Go(func() error {
@@ -35,7 +39,10 @@ func (rm *RiskManager) DetectByAll(ipProxy *model.IPProxy) ([]*IPInfoResult, err
 					log.Errorln("batch detect proxy ip failed, detector: %v, err: %v", detector, err)
 				}
 			}()
-			result, err := d.Detect(ipProxy)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			result, err := d.Detect(ctx, ipProxy)
 			if err != nil {
 				return fmt.Errorf("检测器执行失败: %w", err)
 			}

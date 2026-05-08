@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"passwall/internal/service"
 
@@ -46,12 +47,13 @@ func DetectIPQuality(configService service.ConfigService, ipDetectorService serv
 			}
 			ipCheckConfig := cfg.IPCheck
 
-			_ = ipDetectorService.Detect(&service.IPDetectorReq{
-				ProxyID:         req.ProxyID,
+			_ = ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
+				ProxyIDList:     []uint{req.ProxyID},
 				Enabled:         ipCheckConfig.Enable,
 				IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
 				APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
 				Refresh:         true,
+				Concurrent:      1,
 			})
 		}()
 
@@ -91,7 +93,7 @@ func BatchDetectIPQuality(configService service.ConfigService, ipDetectorService
 			}
 			ipCheckConfig := cfg.IPCheck
 
-			_ = ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
+			_ = ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
 				ProxyIDList:     req.ProxyIDList,
 				Enabled:         ipCheckConfig.Enable,
 				IPInfoEnable:    ipCheckConfig.IPInfo.Enable,

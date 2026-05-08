@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"context"
 	"errors"
 	"passwall/config"
 	"passwall/internal/detector/ipbaseinfo"
@@ -49,18 +50,21 @@ func NewDetectorManager(cfg config.Config) *DetectorManager {
 	}
 }
 
-func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool, unlockEnable bool) (*DetectionResult, error) {
+func (dm *DetectorManager) DetectAll(ctx context.Context, ipProxy *model.IPProxy, ipInfoEnabled bool, unlockEnable bool) (*DetectionResult, error) {
 	if ipProxy == nil {
 		return nil, errors.New("ipProxy is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	var baseInfo *ipbaseinfo.IPBaseInfo
 	var err error
 	if ipProxy.IPV4 == "" && ipProxy.IPV6 == "" {
 		// 第一步：获取基础IP信息（强依赖）
-		baseInfo, err = ipbaseinfo.GetProxyIP(ipProxy.ProxyClient)
+		baseInfo, err = ipbaseinfo.GetProxyIPWithContext(ctx, ipProxy.ProxyClient)
 		if err != nil {
-			log.Errorln("DetectAll GetProxyIP error: %v", err)
+			log.Errorln("DetectAll GetProxyIPWithContext error: %v", err)
 			return nil, err
 		}
 		if baseInfo.IPV4 == "" && baseInfo.IPV6 == "" {
@@ -88,7 +92,7 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	var ipInfoResultMap map[string][]*ipinfo.IPInfoResult
 	var unlockResult []*unlockchecker.CheckResult
 
-	g := &errgroup.Group{}
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	// 并发执行IP信息检测
 	if ipInfoEnabled {
@@ -96,7 +100,7 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 		g.Go(func() error {
 			if ipProxy.IPV4 != "" {
 				ipProxy.IP = ipProxy.IPV4
-				result, err := dm.ipInfoManager.DetectByAll(ipProxy)
+				result, err := dm.ipInfoManager.DetectByAll(groupCtx, ipProxy)
 				if err != nil {
 					log.Errorln("DetectAll IPInfo error: %v", err)
 				} else {
@@ -105,7 +109,7 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 			}
 			if ipProxy.IPV6 != "" {
 				ipProxy.IP = ipProxy.IPV6
-				result, err := dm.ipInfoManager.DetectByAll(ipProxy)
+				result, err := dm.ipInfoManager.DetectByAll(groupCtx, ipProxy)
 				if err != nil {
 					log.Errorln("DetectAll IPInfo error: %v", err)
 				} else {
@@ -119,7 +123,7 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	// 并发执行解锁检测
 	if unlockEnable {
 		g.Go(func() error {
-			result, err := dm.unlockCheckManager.CheckByAll(ipProxy)
+			result, err := dm.unlockCheckManager.CheckByAll(groupCtx, ipProxy)
 			if err != nil {
 				log.Errorln("DetectAll UnlockCheck error: %v", err)
 				return err
@@ -132,6 +136,9 @@ func (dm *DetectorManager) DetectAll(ipProxy *model.IPProxy, ipInfoEnabled bool,
 	// 等待所有goroutine完成
 	if err := g.Wait(); err != nil {
 		log.Errorln("DetectAll error: %v", err)
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	return &DetectionResult{

@@ -2,6 +2,7 @@ package unlockchecker
 
 import (
 	MediaUnlockTest "MediaUnlockTest/checks"
+	"context"
 	"passwall/internal/model"
 	"strings"
 )
@@ -13,7 +14,10 @@ func NewClaudeChecker() *ClaudeChecker {
 	return &ClaudeChecker{}
 }
 
-func (c *ClaudeChecker) Check(ipProxy *model.IPProxy) *CheckResult {
+func (c *ClaudeChecker) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(Claude)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		return &CheckResult{
 			APPName: Claude,
@@ -22,6 +26,9 @@ func (c *ClaudeChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 	}
 
 	checkResult := MediaUnlockTest.Claude(*ipProxy.ProxyClient)
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(Claude)
+	}
 	switch checkResult.Status {
 	case 1:
 		return &CheckResult{

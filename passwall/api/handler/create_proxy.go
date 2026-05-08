@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -116,7 +117,7 @@ func (p *subProcessor) dispatchTasks(subID uint, proxies []*model.Proxy) {
 			return
 		}
 		log.Infoln("开始对订阅[ID:%d]进行 IP 归属地及流媒体检测...", subID)
-		_ = p.ipDetectorService.BatchDetect(&service.BatchIPDetectorReq{
+		_ = p.ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
 			ProxyIDList:     ids,
 			Enabled:         true,
 			IPInfoEnable:    p.cfg.IPCheck.IPInfo.Enable,

@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"passwall/internal/model"
 	"passwall/internal/util"
 	"regexp"
@@ -16,7 +17,10 @@ func NewNetflixUnlockCheck() UnlockCheck {
 	return &NetflixUnlockCheck{}
 }
 
-func (n *NetflixUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (n *NetflixUnlockCheck) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(Netflix)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("NetflixUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
@@ -30,13 +34,13 @@ func (n *NetflixUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	}
 
 	// 检查第一个Netflix视频
-	result1, err := util.GetUrlWithHeaders(ipProxy.ProxyClient, "https://www.netflix.com/title/81280792", headers)
+	result1, err := util.GetUrlWithHeadersContext(ctx, ipProxy.ProxyClient, "https://www.netflix.com/title/81280792", headers)
 	if err != nil {
 		log.Infoln("NetflixUnlockCheck GetUrlWithHeaders error: %v", err)
 	}
 
 	// 检查第二个Netflix视频
-	result2, err := util.GetUrlWithHeaders(ipProxy.ProxyClient, "https://www.netflix.com/title/70143836", headers)
+	result2, err := util.GetUrlWithHeadersContext(ctx, ipProxy.ProxyClient, "https://www.netflix.com/title/70143836", headers)
 	if err != nil {
 		log.Infoln("NetflixUnlockCheck GetUrlWithHeaders error: %v", err)
 	}

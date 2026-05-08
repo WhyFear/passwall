@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"encoding/json"
 	"passwall/internal/model"
 	"passwall/internal/util"
@@ -14,7 +15,10 @@ func NewSpotifyUnlockCheck() UnlockCheck {
 	return &SpotifyUnlockCheck{}
 }
 
-func (s *SpotifyUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (s *SpotifyUnlockCheck) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(Spotify)
+	}
 	// 检查IP代理是否有效
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		return &CheckResult{
@@ -33,7 +37,7 @@ func (s *SpotifyUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	url := "https://spclient.wg.spotify.com/signup/public/v1/account"
 	body := "birth_day=11&birth_month=11&birth_year=2000&collect_personal_info=undefined&creation_flow=&creation_point=https%3A%2F%2Fwww.spotify.com%2Fhk-en%2F&displayname=Gay%20Lord&gender=male&iagree=1&key=a1e486e2729f46d6bb368d6b2bcda326&platform=www&referrer=&send-email=0&thirdpartyemail=0&identifier_token=AgE6YTvEzkReHNfJpO114514"
 
-	resp, err := util.PostUrlWithHeaders(ipProxy.ProxyClient, url, headers, []byte(body))
+	resp, err := util.PostUrlWithHeadersContext(ctx, ipProxy.ProxyClient, url, headers, []byte(body))
 	if err != nil {
 		return &CheckResult{
 			APPName: Spotify,

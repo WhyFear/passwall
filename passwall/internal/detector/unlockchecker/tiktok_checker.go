@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"passwall/internal/model"
 	"passwall/internal/util"
 	"regexp"
@@ -16,7 +17,10 @@ func NewTikTokUnlockCheck() UnlockCheck {
 	return &TikTokUnlockCheck{}
 }
 
-func (t *TikTokUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (t *TikTokUnlockCheck) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(TikTok)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("TikTokUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
@@ -28,7 +32,7 @@ func (t *TikTokUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	headers := map[string]string{
 		"User-Agent": util.GetRandomUserAgent(),
 	}
-	resp, err := util.GetUrlWithHeaders(ipProxy.ProxyClient, "https://www.tiktok.com/", headers)
+	resp, err := util.GetUrlWithHeadersContext(ctx, ipProxy.ProxyClient, "https://www.tiktok.com/", headers)
 	if err != nil {
 		return &CheckResult{
 			APPName: TikTok,

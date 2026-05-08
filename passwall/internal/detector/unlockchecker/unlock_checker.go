@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"passwall/internal/model"
 )
 
@@ -34,11 +35,18 @@ type CheckResult struct {
 }
 
 type UnlockCheck interface {
-	Check(ipProxy *model.IPProxy) *CheckResult
+	Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult
 }
 
 type UnlockCheckFactory interface {
 	RegisterUnlockChecker(detectorName application, checker UnlockCheck)
 	GetUnlockChecker(detectorName application) (UnlockCheck, error)
 	GetAllUnlockCheckers() []UnlockCheck
+}
+
+func canceledCheckResult(app application) *CheckResult {
+	return &CheckResult{
+		APPName: app,
+		Status:  CheckStatusFail,
+	}
 }

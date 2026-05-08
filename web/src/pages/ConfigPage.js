@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
   Button,
   Card,
@@ -32,11 +32,7 @@ const ConfigPage = () => {
   const [intervalMode, setIntervalMode] = useState('simple'); // 'simple' or 'advanced'
   const [initialData, setInitialData] = useState({});
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
-
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     try {
       setLoading(true);
       const data = await configApi.getConfig();
@@ -59,7 +55,11 @@ const ConfigPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [form]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
 
   const onFinish = async (values) => {
     try {

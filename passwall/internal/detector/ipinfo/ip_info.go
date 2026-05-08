@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"context"
 	"passwall/internal/model"
 )
 
@@ -47,7 +48,7 @@ type IPGeoInfo struct {
 }
 
 type IPInfo interface {
-	Detect(ipProxy *model.IPProxy) (*IPInfoResult, error)
+	Detect(ctx context.Context, ipProxy *model.IPProxy) (*IPInfoResult, error)
 }
 
 type IPInfoFactory interface {

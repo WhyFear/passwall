@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"passwall/internal/model"
 
 	"sync"
@@ -20,12 +21,15 @@ func NewUnlockCheckManager(factory UnlockCheckFactory) *UnlockCheckManager {
 }
 
 // CheckByAll 调用所有已注册的解锁检测器
-func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]*CheckResult, error) {
+func (m *UnlockCheckManager) CheckByAll(ctx context.Context, ipProxy *model.IPProxy) ([]*CheckResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	allCheckers := m.factory.GetAllUnlockCheckers()
 	results := make([]*CheckResult, len(allCheckers))
 	var mu sync.Mutex
 
-	g := new(errgroup.Group)
+	g, ctx := errgroup.WithContext(ctx)
 	for i, checker := range allCheckers {
 		idx := i
 		ch := checker
@@ -35,7 +39,10 @@ func (m *UnlockCheckManager) CheckByAll(ipProxy *model.IPProxy) ([]*CheckResult,
 					log.Errorln("batch check proxy ip failed, checker: %v, err: %v", ch, err)
 				}
 			}()
-			result := ch.Check(ipProxy)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			result := ch.Check(ctx, ipProxy)
 			mu.Lock()
 			results[idx] = result
 			mu.Unlock()

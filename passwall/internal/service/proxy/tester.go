@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"passwall/internal/adapter/speedtester"
@@ -32,7 +31,7 @@ type ProxyFilter struct {
 // Tester 代理测试服务接口
 type Tester interface {
 	// TestProxy 测试单个代理
-	TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error)
+	TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
 
 	// TestProxies 批量测试代理
 	TestProxies(ctx context.Context, request *TestRequest, async bool) error
@@ -62,9 +61,12 @@ func NewTester(
 }
 
 // TestProxy 测试单个代理
-func (t *testerImpl) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error) {
+func (t *testerImpl) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
 	if proxy == nil {
 		return nil, fmt.Errorf("代理对象不能为空")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	// 获取速度测试器
@@ -74,8 +76,11 @@ func (t *testerImpl) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, erro
 	}
 
 	// 测试代理
-	result, err := tester.Test(proxy)
+	result, err := tester.Test(ctx, proxy)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		log.Errorln("测试代理失败[代理ID:%d]: %v", proxy.ID, err)
 		return nil, err
 	}
@@ -143,7 +148,7 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 
 	// 开始任务
 	taskType := task.TaskTypeSpeedTest
-	ctx, started := t.taskManager.StartTask(ctx, taskType, len(proxies))
+	taskRun, started := task.StartRun(ctx, t.taskManager, taskType, len(proxies))
 	if !started {
 		return fmt.Errorf("启动任务失败")
 	}
@@ -155,49 +160,50 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 	}
 
 	if async {
-		go t.runTests(ctx, taskType, proxies, concurrent)
+		go t.runTests(taskRun, proxies, concurrent)
 	} else {
-		t.runTests(ctx, taskType, proxies, concurrent)
+		t.runTests(taskRun, proxies, concurrent)
 	}
 
 	return nil
 }
 
 // runTests 多线程执行测试
-func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxies []*model.Proxy, concurrent int) {
+func (t *testerImpl) runTests(taskRun *task.TaskRun, proxies []*model.Proxy, concurrent int) {
 	var finishMessage string
 	defer func() {
 		if r := recover(); r != nil {
 			finishMessage = fmt.Sprintf("测试代理任务发生panic: %v", r)
-			log.Errorln(finishMessage)
+			log.Errorln("%s", finishMessage)
 		}
-		t.taskManager.FinishTask(taskType, finishMessage)
+		taskRun.FinishWithContextMessage(finishMessage)
 		log.Infoln("测试任务执行完毕")
 	}()
 
 	// 使用限制并发的context
-	eg, ctx := errgroup.WithContext(ctx)
+	taskCtx := taskRun.Context()
+	eg, groupCtx := errgroup.WithContext(taskCtx)
 	eg.SetLimit(concurrent)
-	var completedCount int32
 
 	for _, proxy := range proxies {
-		if ctx.Err() != nil {
+		if taskCtx.Err() != nil || groupCtx.Err() != nil {
 			log.Infoln("测试任务已被取消，停止处理剩余代理")
 			break
 		}
 
 		p := proxy // 创建局部变量避免闭包问题
 		eg.Go(func() error {
-			defer func() {
-				completed := atomic.AddInt32(&completedCount, 1)
-				t.taskManager.UpdateProgress(taskType, int(completed), "")
-			}()
-
-			if ctx.Err() != nil {
-				return ctx.Err()
+			if taskCtx.Err() != nil {
+				return taskCtx.Err()
+			}
+			if groupCtx.Err() != nil {
+				return groupCtx.Err()
 			}
 
-			t.testProxyAndUpdateDB(p)
+			defer func() {
+				taskRun.IncrementProgress("")
+			}()
+			t.testProxyAndUpdateDB(taskCtx, p)
 			return nil
 		})
 	}
@@ -211,28 +217,23 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 
 	// 处理完成或取消情况
 	select {
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.Canceled) {
-			finishMessage = "任务被取消"
+	case <-taskCtx.Done():
+		if errors.Is(taskCtx.Err(), context.Canceled) {
+			finishMessage = task.TaskCanceledMessage
 			log.Infoln("任务已被取消，等待正在进行的测试完成")
 		} else {
-			finishMessage = "任务超时或其他原因终止"
+			finishMessage = task.TaskTerminatedMessage
 		}
 
-		select {
-		case <-waitCh:
-			log.Infoln("所有测试已停止")
-		case <-time.After(20 * time.Second):
-			log.Warnln("等待测试完成超时，强制结束任务")
-			finishMessage = "等待测试完成超时，强制结束任务"
-		}
+		<-waitCh
+		log.Infoln("所有测试已停止")
 	case <-waitCh:
 		log.Infoln("所有测试已完成")
 	}
 }
 
 // testProxyAndUpdateDB 测试单个代理并更新数据库
-func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
+func (t *testerImpl) testProxyAndUpdateDB(ctx context.Context, p *model.Proxy) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorln("测试代理过程中发生panic[代理ID:%d]: %v", p.ID, r)
@@ -246,8 +247,12 @@ func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
 
 	// 测试代理
 	testTime := time.Now()
-	result, err := t.TestProxy(p)
+	result, err := t.TestProxy(ctx, p)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			log.Infoln("测试代理已取消[代理ID:%d]", p.ID)
+			return
+		}
 		log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
 		p.Status = model.ProxyStatusFailed
 

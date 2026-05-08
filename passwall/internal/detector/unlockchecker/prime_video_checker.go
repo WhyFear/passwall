@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"log"
 	"passwall/internal/model"
 	"passwall/internal/util"
@@ -15,11 +16,14 @@ func NewPrimeVideoUnlockCheck() UnlockCheck {
 	return &PrimeVideoUnlockCheck{}
 }
 
-func (p *PrimeVideoUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (p *PrimeVideoUnlockCheck) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
 	result := &CheckResult{
 		APPName: PrimeVideo,
 		Status:  CheckStatusFail,
 		Region:  "",
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return result
 	}
 
 	// 检查IP代理是否有效
@@ -40,7 +44,7 @@ func (p *PrimeVideoUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 
 	// 发送请求到Prime Video
 	url := "https://www.primevideo.com"
-	content, err := util.GetUrlWithHeaders(ipProxy.ProxyClient, url, headers)
+	content, err := util.GetUrlWithHeadersContext(ctx, ipProxy.ProxyClient, url, headers)
 	if err != nil {
 		log.Printf("PrimeVideo check request failed: %v", err)
 		result.Status = CheckStatusFail

@@ -8,7 +8,6 @@ WORKDIR /app
 COPY web/package*.json ./
 
 # 安装依赖
-RUN npm install
 RUN npm ci
 
 # 复制源代码

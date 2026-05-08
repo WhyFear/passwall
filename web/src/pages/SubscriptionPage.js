@@ -1,7 +1,8 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip,} from 'antd';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
+import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip} from 'antd';
 import {
   DeleteOutlined,
+  ExclamationCircleOutlined,
   EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -9,7 +10,7 @@ import {
   StopOutlined
 } from '@ant-design/icons';
 import {configApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {fetchTaskStatus, isTaskActive, stopTask, TASK_STATE_CANCELING} from '../utils/taskUtils';
 import SubscriptionForm from '../components/SubscriptionForm';
 import StatusTag from '../components/StatusTag';
 import IntervalSelector from '../components/IntervalSelector';
@@ -39,7 +40,7 @@ const SubscriptionPage = () => {
   const [intervalMode, setIntervalMode] = useState('simple'); // 'simple' or 'advanced'
 
   // 获取订阅列表
-  const fetchSubscriptions = async (page = pagination.current, pageSize = pagination.pageSize) => {
+  const fetchSubscriptions = useCallback(async (page, pageSize) => {
     try {
       setLoading(true);
       // 构建请求参数
@@ -62,10 +63,15 @@ const SubscriptionPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // 获取任务状态
+  const fetchTaskStatusHandler = useCallback(async () => {
+    await fetchTaskStatus("reload_subs", setTaskStatus);
+  }, []);
 
   useEffect(() => {
-    fetchSubscriptions()
+    fetchSubscriptions(1, 10)
     fetchTaskStatusHandler();
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
@@ -78,7 +84,7 @@ const SubscriptionPage = () => {
         clearInterval(timerRef.current);
       }
     };
-  }, []);
+  }, [fetchSubscriptions, fetchTaskStatusHandler]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -87,11 +93,6 @@ const SubscriptionPage = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // 获取任务状态
-  const fetchTaskStatusHandler = async () => {
-    await fetchTaskStatus("reload_subs", setTaskStatus);
-  };
 
   // 停止任务
   const handleStopTask = async () => {
@@ -387,6 +388,7 @@ const SubscriptionPage = () => {
         <Button
           type="text"
           icon={<ReloadOutlined/>}
+          disabled={!record.url || !record.url.startsWith('http')}
           onClick={() => handleReloadSubs(record.id)}
         >
           刷新
@@ -402,16 +404,25 @@ const SubscriptionPage = () => {
           配置
         </Button>
       </Tooltip>
-      <Tooltip title="删除订阅">
-        <Button
-          type="text"
-          icon={<DeleteOutlined/>}
-          onClick={() => handleDeleteSubs(record.id)}
-          loading={deletingIds.includes(record.id)}
-        >
-          删除
-        </Button>
-      </Tooltip>
+      <Button
+        type="text"
+        danger
+        icon={<DeleteOutlined/>}
+        onClick={() => {
+          Modal.confirm({
+            title: '确认删除吗？',
+            content:'订阅删除后无法恢复！',
+            icon: <ExclamationCircleOutlined/>,
+            okText: '确认',
+            cancelText: '取消',
+            okButtonProps: {danger: true},
+            onOk: () => handleDeleteSubs(record.id),
+          });
+        }}
+        loading={deletingIds.includes(record.id)}
+      >
+        删除
+      </Button>
     </div>),
   },];
 
@@ -421,7 +432,7 @@ const SubscriptionPage = () => {
       onChange={setActiveTab}
       tabBarExtraContent={<div className="tab-bar-extra"
                                style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
-        {taskStatus && taskStatus.state === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+        {isTaskActive(taskStatus) && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
             percent={Math.round((taskStatus.completed / taskStatus.total) * 100)}
@@ -429,7 +440,7 @@ const SubscriptionPage = () => {
             style={{marginRight: 8}}
           />
           <span style={{marginRight: 8}}>
-            处理中: {taskStatus.completed}/{taskStatus.total}
+            {taskStatus.state === TASK_STATE_CANCELING ? '取消中' : '处理中'}: {taskStatus.completed}/{taskStatus.total}
           </span>
           <Button
             type="primary"

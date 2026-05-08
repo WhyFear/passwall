@@ -68,18 +68,7 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}
 		Filters: filters,
 	}
 
-	// 设置排序
-	pageQuery.OrderBy = "pinned desc,"
-	if sort != "" {
-		if sortOrder == "ascend" || sortOrder == "asc" {
-			pageQuery.OrderBy += sort + " ASC"
-		} else {
-			pageQuery.OrderBy += sort + " DESC"
-		}
-	} else {
-		// 默认按下载速度降序排序
-		pageQuery.OrderBy += "download_speed DESC"
-	}
+	pageQuery.OrderBy = buildProxyOrderBy(sort, sortOrder)
 	// 限制返回的页数
 	if page > 0 {
 		pageQuery.Page = page
@@ -100,6 +89,27 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}
 		return nil, 0, err
 	}
 	return queryResult.Items, queryResult.Total, err
+}
+
+func buildProxyOrderBy(sort string, sortOrder string) string {
+	allowedSortFields := map[string]bool{
+		"id":               true,
+		"download_speed":   true,
+		"upload_speed":     true,
+		"ping":             true,
+		"latest_test_time": true,
+		"created_at":       true,
+		"updated_at":       true,
+	}
+	if !allowedSortFields[sort] {
+		sort = "download_speed"
+		sortOrder = "descend"
+	}
+	direction := "DESC"
+	if sortOrder == "ascend" || sortOrder == "asc" {
+		direction = "ASC"
+	}
+	return "pinned desc," + sort + " " + direction
 }
 
 func (s *DefaultProxyService) GetProxyByName(name string) (*model.Proxy, error) {
@@ -149,7 +159,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		proxy, err := s.proxyRepo.FindByID(req.ID)
 		if err != nil {
 			errMsg := fmt.Sprintf("找不到指定的代理：%v", req.ID)
-			log.Errorln(errMsg)
+			log.Errorln("%s", errMsg)
 			finishMessage = errMsg
 			return err
 		}
@@ -157,7 +167,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		err = s.proxyRepo.UpdateProxyStatus(proxy)
 		if err != nil {
 			errMsg := fmt.Sprintf("更新代理状态失败：%v", err)
-			log.Errorln(errMsg)
+			log.Errorln("%s", errMsg)
 			finishMessage = errMsg
 			return err
 		}
@@ -175,11 +185,11 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 	allProxies, err := s.proxyRepo.FindAll()
 	if err != nil {
 		finishMessage = "获取所有代理失败：" + err.Error()
-		log.Errorln(finishMessage)
+		log.Errorln("%s", finishMessage)
 		return err
 	}
 
-	log.Infoln(fmt.Sprintf("找到 %d 个代理", len(allProxies)))
+	log.Infoln("找到 %d 个代理", len(allProxies))
 	s.taskManager.UpdateTotal(task.TaskTypeBanProxy, len(allProxies))
 	// 收集需要封禁的代理ID
 	proxiesToBan := make([]uint, 0)
@@ -201,12 +211,12 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		}
 		speedTestHistory, err := s.speedTestHistoryRepo.FindByProxyID(proxy.ID, page)
 		if err != nil {
-			log.Warnln(fmt.Sprintf("获取代理测速历史失败：%v", err))
+			log.Warnln("获取代理测速历史失败：%v", err)
 			continue
 		}
 		// 先判断是否有足够的测速历史记录
 		if len(speedTestHistory.Items) < req.TestTimes {
-			log.Infoln(fmt.Sprintf("代理 %d 的测速历史记录不足 %d 条，跳过", proxy.ID, req.TestTimes))
+			log.Infoln("代理 %d 的测速历史记录不足 %d 条，跳过", proxy.ID, req.TestTimes)
 			continue
 		}
 		// 计算成功率

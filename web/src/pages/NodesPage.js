@@ -29,10 +29,12 @@ import {
   Tag,
   Tooltip
 } from 'antd';
-import {useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {nodeApi, shareConfigApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {fetchTaskStatus, isTaskActive, TASK_STATE_CANCELING, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
+import {DEFAULT_VISIBLE_COLUMNS, formatRisk, formatSpeed, formatTraffic} from './nodes/nodeFormatters';
+import {DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER, useNodesQuery} from './nodes/useNodesQuery';
 
 // 状态标签组件
 const StatusTag = ({status}) => {
@@ -92,75 +94,16 @@ const InfoItem = ({label, value}) => {
   </div>);
 };
 
-// 格式化速度的函数
-const formatSpeed = (bytesPerSecond) => {
-  if (!bytesPerSecond) return '-';
-
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
-  let unit = 0;
-  let speed = bytesPerSecond;
-
-  while (speed >= 1024 && unit < units.length - 1) {
-    speed /= 1024;
-    unit++;
-  }
-
-  return `${speed.toFixed(2)}${units[unit]}`;
-};
-
-const formatRisk = (risk) => {
-  if (!risk) return '-';
-  switch (risk) {
-    case 'very_low':
-      return '非常低';
-    case 'low':
-      return '低';
-    case 'medium':
-      return '中';
-    case 'high':
-      return '高';
-    case 'very_high':
-      return '非常高';
-    default:
-      return '-';
-  }
-}
-
-// 格式化流量的函数
-const formatTraffic = (bytes) => {
-  if (!bytes) return '-';
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let unit = 0;
-  let traffic = bytes;
-
-  while (traffic >= 1024 && unit < units.length - 1) {
-    traffic /= 1024;
-    unit++;
-  }
-
-  return `${traffic.toFixed(2)}${units[unit]}`;
-};
-
 const NodesPage = () => {
   const [shareForm] = Form.useForm();
-  const [nodes, setNodes] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('2');
   const [modalVisible, setModalVisible] = useState(false);
   const [currentNode, setCurrentNode] = useState(null);
   const [nodeHistory, setNodeHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [pagination, setPagination] = useState({
-    current: 1, pageSize: 10, total: 0,
-  });
   const [historyPagination, setHistoryPagination] = useState({
     current: 1, pageSize: 5, total: 0,
   });
-  const [sorter, setSorter] = useState({
-    field: 'download_speed', order: 'descend',
-  });
-  const [filters, setFilters] = useState({});
   const [nodeTypes, setNodeTypes] = useState([]);
   const [taskStatus, setTaskStatus] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
@@ -169,55 +112,17 @@ const NodesPage = () => {
   const [shareConfigs, setShareConfigs] = useState([]);
   const [shareLoading, setShareLoading] = useState(false);
   const [editingShareConfig, setEditingShareConfig] = useState(null);
+  const {
+    nodes,
+    loading,
+    pagination,
+    sorter,
+    filters,
+    fetchNodes,
+    handleTableChange,
+  } = useNodesQuery(subscriptionApi);
 
   const timerRef = useRef(null);
-
-  // 获取所有节点
-  const fetchNodes = async (page = pagination.current, pageSize = pagination.pageSize, sort = sorter, filter = filters) => {
-    try {
-      setLoading(true);
-
-      // 构建请求参数
-      const params = {
-        page: page, pageSize: pageSize, sortField: sort.field, sortOrder: sort.order,
-      };
-
-      // 处理状态筛选
-      if (filter.status && filter.status.length > 0) {
-        // 按status=1,2,3拼接
-        params.status = filter.status.join(',');
-      }
-
-      // 处理节点类型筛选
-      if (filter.type && filter.type.length > 0) {
-        params.type = filter.type.join(',');
-      }
-
-      if (filter.country) {
-        params.country_code = filter.country.join(',');
-      }
-
-      if (filter.risk) {
-        params.risk_level = filter.risk.join(',');
-      }
-
-      const data = await subscriptionApi.getProxies({params});
-      // 在开始加载时立即清空节点列表，避免分页时数据乱序
-      setNodes([]);
-
-      // 直接使用返回的items数组作为节点列表
-      const nodeList = Array.isArray(data.items) ? data.items : [];
-      setNodes(nodeList);
-      setPagination(prev => ({
-        ...prev, current: page, pageSize: pageSize, total: data.total || nodeList.length,
-      }));
-    } catch (error) {
-      message.error('获取节点列表失败');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // 获取节点历史
   const fetchNodeHistory = async (nodeId, page = historyPagination.current, pageSize = historyPagination.pageSize) => {
@@ -258,7 +163,7 @@ const NodesPage = () => {
   };
 
   // 获取节点类型
-  const fetchNodeTypes = async () => {
+  const fetchNodeTypes = useCallback(async () => {
     try {
       const data = await nodeApi.getTypes();
       if (Array.isArray(data)) {
@@ -270,10 +175,10 @@ const NodesPage = () => {
       message.error('获取节点类型失败');
       console.error(error);
     }
-  };
+  }, []);
 
   // 获取国家代码
-  const fetchCountryCodes = async () => {
+  const fetchCountryCodes = useCallback(async () => {
     try {
       const data = await nodeApi.getCountryCodes();
       if (Array.isArray(data?.data)) {
@@ -287,11 +192,11 @@ const NodesPage = () => {
       setCountryCodes({});
       console.error(error);
     }
-  };
+  }, []);
   // 获取任务状态
-  const fetchTaskStatusHandler = async () => {
+  const fetchTaskStatusHandler = useCallback(async () => {
     await fetchTaskStatus("speed_test", setTaskStatus);
-  };
+  }, []);
 
   // 停止任务
   const handleStopTask = async () => {
@@ -302,7 +207,7 @@ const NodesPage = () => {
   useEffect(() => {
     // 初始获取一次任务状态
     fetchTaskStatusHandler();
-    fetchNodes();
+    fetchNodes(DEFAULT_NODE_PAGINATION.current, DEFAULT_NODE_PAGINATION.pageSize, DEFAULT_NODE_SORTER, {});
     fetchNodeTypes();
     fetchCountryCodes();
 
@@ -323,7 +228,7 @@ const NodesPage = () => {
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchTaskStatusHandler]);
 
 
   // 初始化列显示状态
@@ -339,25 +244,11 @@ const NodesPage = () => {
     }
     // 其他情况，比如首次加载或者配置错误时使用默认设置
     const initialColumns = {};
-    defaultVisibleColumns.forEach(key => {
+    DEFAULT_VISIBLE_COLUMNS.forEach(key => {
       initialColumns[key] = true;
     });
     setVisibleColumns(initialColumns);
   }, []);
-
-// 处理表格分页变化
-  const handleTableChange = (newPagination, newFilters, newSorter) => {
-    const sort = newSorter.field ? {
-      field: newSorter.field, order: newSorter.order || 'descend',
-    } : sorter;
-
-    // 先更新状态，然后使用最新的状态调用 fetchNodes
-    setSorter(sort);
-    setFilters(newFilters);
-
-    // 直接使用新的参数值，而不是依赖异步更新的状态
-    fetchNodes(newPagination.current, newPagination.pageSize, sort, newFilters);
-  };
 
   // 处理历史记录表格分页变化
   const handleHistoryTableChange = (newPagination) => {
@@ -794,7 +685,6 @@ const NodesPage = () => {
   }];
 
   // 默认显示的列（不可隐藏的列+一些默认显示的可隐藏列）
-  const defaultVisibleColumns = ['index', 'subscription_url', 'name', 'address', 'type', 'status', 'ping', 'download_speed', 'upload_speed', 'latest_test_time', 'success_rate', 'action'];
 
 
   // 保存列设置到本地存储
@@ -961,7 +851,7 @@ const NodesPage = () => {
   // 列设置菜单
   const columnSettingMenu = allColumns.map(column => ({
     key: column.key, label: (<Checkbox
-      checked={visibleColumns[column.key] ?? defaultVisibleColumns.includes(column.key)}
+      checked={visibleColumns[column.key] ?? DEFAULT_VISIBLE_COLUMNS.includes(column.key)}
       onChange={e => handleColumnVisibilityChange(column.key, e.target.checked)}
       disabled={!column.hideable}
       onClick={(e) => e.stopPropagation()}
@@ -976,7 +866,7 @@ const NodesPage = () => {
       onChange={setActiveTab}
       tabBarExtraContent={<div className="tab-bar-extra"
                                style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
-        {taskStatus && taskStatus.state === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+        {isTaskActive(taskStatus) && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
             percent={Math.round((taskStatus.completed / taskStatus.total) * 100)}
@@ -984,7 +874,7 @@ const NodesPage = () => {
             style={{marginRight: 8}}
           />
           <span style={{marginRight: 8}}>
-            测速进行中: {taskStatus.completed}/{taskStatus.total}
+            {taskStatus.state === TASK_STATE_CANCELING ? '测速取消中' : '测速进行中'}: {taskStatus.completed}/{taskStatus.total}
           </span>
           <Button
             type="primary"

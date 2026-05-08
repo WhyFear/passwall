@@ -2,6 +2,7 @@ package unlockchecker
 
 import (
 	MediaUnlockTest "MediaUnlockTest/checks"
+	"context"
 	"passwall/internal/model"
 	"strings"
 
@@ -15,7 +16,10 @@ func NewGeminiChecker() UnlockCheck {
 	return &GeminiChecker{}
 }
 
-func (c *GeminiChecker) Check(ipProxy *model.IPProxy) *CheckResult {
+func (c *GeminiChecker) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(Gemini)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("GeminiUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
@@ -24,6 +28,9 @@ func (c *GeminiChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 		}
 	}
 	checkResult := MediaUnlockTest.Gemini(*ipProxy.ProxyClient)
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(Gemini)
+	}
 	switch checkResult.Status {
 	case 1:
 		return &CheckResult{
