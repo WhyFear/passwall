@@ -45,11 +45,6 @@ var ipServices = []IPService{
 	{"ITDogV6", "https://ipv6.itdog.cn/", &IPFormat{Format: "json", IPPath: "ip"}},
 }
 
-// GetProxyIP 从多个服务获取代理IP地址
-func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
-	return GetProxyIPWithContext(context.Background(), proxyClient)
-}
-
 // GetProxyIPWithContext 从多个服务获取代理IP地址，并响应调用方取消
 func GetProxyIPWithContext(ctx context.Context, proxyClient *http.Client) (*IPBaseInfo, error) {
 	if proxyClient == nil {

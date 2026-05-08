@@ -1,7 +1,8 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip,} from 'antd';
+import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip} from 'antd';
 import {
   DeleteOutlined,
+  ExclamationCircleOutlined,
   EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -9,7 +10,7 @@ import {
   StopOutlined
 } from '@ant-design/icons';
 import {configApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, isTaskActive, TASK_STATE_CANCELING, stopTask} from '../utils/taskUtils';
+import {fetchTaskStatus, isTaskActive, stopTask, TASK_STATE_CANCELING} from '../utils/taskUtils';
 import SubscriptionForm from '../components/SubscriptionForm';
 import StatusTag from '../components/StatusTag';
 import IntervalSelector from '../components/IntervalSelector';
@@ -387,6 +388,7 @@ const SubscriptionPage = () => {
         <Button
           type="text"
           icon={<ReloadOutlined/>}
+          disabled={!record.url || !record.url.startsWith('http')}
           onClick={() => handleReloadSubs(record.id)}
         >
           刷新
@@ -402,16 +404,25 @@ const SubscriptionPage = () => {
           配置
         </Button>
       </Tooltip>
-      <Tooltip title="删除订阅">
-        <Button
-          type="text"
-          icon={<DeleteOutlined/>}
-          onClick={() => handleDeleteSubs(record.id)}
-          loading={deletingIds.includes(record.id)}
-        >
-          删除
-        </Button>
-      </Tooltip>
+      <Button
+        type="text"
+        danger
+        icon={<DeleteOutlined/>}
+        onClick={() => {
+          Modal.confirm({
+            title: '确认删除吗？',
+            content:'订阅删除后无法恢复！',
+            icon: <ExclamationCircleOutlined/>,
+            okText: '确认',
+            cancelText: '取消',
+            okButtonProps: {danger: true},
+            onOk: () => handleDeleteSubs(record.id),
+          });
+        }}
+        loading={deletingIds.includes(record.id)}
+      >
+        删除
+      </Button>
     </div>),
   },];
 
