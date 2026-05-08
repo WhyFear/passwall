@@ -41,7 +41,7 @@ func StopTask(taskManager task.TaskManager) gin.HandlerFunc {
 			return
 		}
 
-		// 默认情况下等待任务清理完成，但不超过10秒
+		// 默认情况下等待任务清理完成，但不超过任务管理器的取消等待超时
 		// 客户端可以通过设置wait=false来立即返回
 		wait := true
 		if req.Wait != nil {
@@ -65,7 +65,7 @@ func StopTask(taskManager task.TaskManager) gin.HandlerFunc {
 		msg := "任务已成功停止"
 
 		if timedOut {
-			msg = "任务已停止，但等待清理超时"
+			msg = "已请求取消，但任务仍在清理中"
 		}
 
 		c.JSON(status, gin.H{

@@ -77,7 +77,7 @@ func NewSubscriptionManager(
 			configProvider,
 			proxyTester,
 			proxySyncer,
-			util.DownloadFromURL,
+			util.DownloadFromURLWithContext,
 		),
 	}
 }

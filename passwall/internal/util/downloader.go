@@ -36,8 +36,16 @@ var DefaultDownloadOptions = DownloadOptions{
 
 // DownloadFromURL 从URL下载内容
 func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error) {
+	return DownloadFromURLWithContext(context.Background(), targetURL, options)
+}
+
+// DownloadFromURLWithContext 从URL下载内容，并响应调用方取消
+func DownloadFromURLWithContext(ctx context.Context, targetURL string, options *DownloadOptions) ([]byte, error) {
 	if targetURL == "" {
 		return nil, errors.New("URL cannot be empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	// 使用默认选项（如果未提供）
@@ -46,7 +54,7 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 	}
 
 	// 创建带超时的上下文
-	ctx, cancel := context.WithTimeout(context.Background(), options.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, options.Timeout)
 	defer cancel()
 
 	// 创建HTTP请求
@@ -113,42 +121,25 @@ func DownloadFromURL(targetURL string, options *DownloadOptions) ([]byte, error)
 }
 
 func GetUrl(client *http.Client, url string) ([]byte, error) {
+	return GetUrlWithContext(context.Background(), client, url)
+}
+
+func GetUrlWithContext(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 	if client == nil {
 		return nil, errors.New("HTTP client is nil")
 	}
-	resp, err := client.Get(url)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("HTTP request failed with status: " + resp.Status)
-	}
-
-	// 检查是否为gzip压缩内容
-	contentEncoding := resp.Header.Get("Content-Encoding")
-	if contentEncoding == "gzip" {
-		// 使用gzip reader解压内容
-		gzipReader, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer gzipReader.Close()
-		content, err := io.ReadAll(gzipReader)
-		if err != nil {
-			return nil, err
-		}
-		return content, nil
-	}
-
-	// 非压缩内容直接读取
-	content, err := io.ReadAll(resp.Body)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	return content, nil
+	return readHTTPResponse(resp, http.StatusOK)
 }
 
 func GetRandomUserAgent() string {
@@ -156,10 +147,17 @@ func GetRandomUserAgent() string {
 }
 
 func GetUrlWithHeaders(client *http.Client, url string, headers map[string]string) ([]byte, error) {
+	return GetUrlWithHeadersContext(context.Background(), client, url, headers)
+}
+
+func GetUrlWithHeadersContext(ctx context.Context, client *http.Client, url string, headers map[string]string) ([]byte, error) {
 	if client == nil {
 		return nil, errors.New("HTTP client is nil")
 	}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -170,42 +168,21 @@ func GetUrlWithHeaders(client *http.Client, url string, headers map[string]strin
 	if err != nil {
 		return nil, err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("HTTP request failed with status: " + resp.Status)
-	}
-
-	// 检查是否为gzip压缩内容
-	contentEncoding := resp.Header.Get("Content-Encoding")
-	if contentEncoding == "gzip" {
-		// 使用gzip reader解压内容
-		gzipReader, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer gzipReader.Close()
-		content, err := io.ReadAll(gzipReader)
-		if err != nil {
-			return nil, err
-		}
-		return content, nil
-	}
-
-	// 非压缩内容直接读取
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
+	return readHTTPResponse(resp, http.StatusOK)
 }
 
 func PostUrlWithHeaders(client *http.Client, url string, headers map[string]string, body []byte) ([]byte, error) {
+	return PostUrlWithHeadersContext(context.Background(), client, url, headers, body)
+}
+
+func PostUrlWithHeadersContext(ctx context.Context, client *http.Client, url string, headers map[string]string, body []byte) ([]byte, error) {
 	if client == nil {
 		return nil, errors.New("HTTP client is nil")
 	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -216,10 +193,22 @@ func PostUrlWithHeaders(client *http.Client, url string, headers map[string]stri
 	if err != nil {
 		return nil, err
 	}
+	return readHTTPResponse(resp, http.StatusOK, http.StatusCreated)
+}
+
+func readHTTPResponse(resp *http.Response, allowedStatuses ...int) ([]byte, error) {
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+
+	statusAllowed := false
+	for _, status := range allowedStatuses {
+		if resp.StatusCode == status {
+			statusAllowed = true
+			break
+		}
+	}
+	if !statusAllowed {
 		return nil, errors.New("HTTP request failed with status: " + resp.Status)
 	}
 

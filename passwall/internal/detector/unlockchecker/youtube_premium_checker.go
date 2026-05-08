@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"passwall/internal/model"
 	"passwall/internal/util"
 	"strings"
@@ -15,7 +16,10 @@ func NewYoutubePremiumCheck() UnlockCheck {
 	return &YoutubePremiumCheck{}
 }
 
-func (check *YoutubePremiumCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (check *YoutubePremiumCheck) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(YouTubePremium)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("YoutubePremiumCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
@@ -31,7 +35,7 @@ func (check *YoutubePremiumCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 	}
 
 	// 请求YouTube Premium页面
-	result, err := util.GetUrlWithHeaders(ipProxy.ProxyClient, "https://www.youtube.com/premium", headers)
+	result, err := util.GetUrlWithHeadersContext(ctx, ipProxy.ProxyClient, "https://www.youtube.com/premium", headers)
 	if err != nil {
 		return &CheckResult{
 			APPName: YouTubePremium,

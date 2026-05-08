@@ -1,6 +1,7 @@
 package speedtester
 
 import (
+	"context"
 	"fmt"
 	"passwall/internal/model"
 )
@@ -8,7 +9,7 @@ import (
 // SpeedTester 测速器接口
 type SpeedTester interface {
 	// Test 测试代理速度
-	Test(proxy *model.Proxy) (*model.SpeedTestResult, error)
+	Test(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
 
 	// SupportedTypes 返回支持的代理类型列表
 	SupportedTypes() []model.ProxyType

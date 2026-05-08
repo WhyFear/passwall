@@ -31,7 +31,7 @@ import {
 } from 'antd';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {nodeApi, shareConfigApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {fetchTaskStatus, isTaskActive, TASK_STATE_CANCELING, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
 import {DEFAULT_VISIBLE_COLUMNS, formatRisk, formatSpeed, formatTraffic} from './nodes/nodeFormatters';
 import {DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER, useNodesQuery} from './nodes/useNodesQuery';
@@ -866,7 +866,7 @@ const NodesPage = () => {
       onChange={setActiveTab}
       tabBarExtraContent={<div className="tab-bar-extra"
                                style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
-        {taskStatus && taskStatus.state === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+        {isTaskActive(taskStatus) && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
             percent={Math.round((taskStatus.completed / taskStatus.total) * 100)}
@@ -874,7 +874,7 @@ const NodesPage = () => {
             style={{marginRight: 8}}
           />
           <span style={{marginRight: 8}}>
-            测速进行中: {taskStatus.completed}/{taskStatus.total}
+            {taskStatus.state === TASK_STATE_CANCELING ? '测速取消中' : '测速进行中'}: {taskStatus.completed}/{taskStatus.total}
           </span>
           <Button
             type="primary"

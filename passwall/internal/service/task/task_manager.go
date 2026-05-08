@@ -21,9 +21,12 @@ const (
 type TaskState int
 
 const (
-	TaskStateRunning  TaskState = iota // 运行中
-	TaskStateFinished                  // 已完成
+	TaskStateRunning   TaskState = iota // 运行中
+	TaskStateFinished                   // 已完成
+	TaskStateCanceling                  // 取消中
 )
+
+var cancelWaitTimeout = 20 * time.Second
 
 // TaskManager 任务管理器接口
 type TaskManager interface {
@@ -116,8 +119,8 @@ func (m *defaultTaskManager) StartResourceTask(ctx context.Context, taskType Tas
 
 	key := m.getTaskKey(taskType, resourceID)
 
-	// 检查是否有同类型同资源任务正在运行
-	if t, exists := m.tasks[key]; exists && t.status.State == TaskStateRunning {
+	// 检查是否有同类型同资源任务正在运行或取消中
+	if t, exists := m.tasks[key]; exists && isActiveState(t.status.State) {
 		return nil, false
 	}
 
@@ -153,7 +156,7 @@ func (m *defaultTaskManager) UpdateResourceProgress(taskType TaskType, resourceI
 
 	key := m.getTaskKey(taskType, resourceID)
 	t, exists := m.tasks[key]
-	if !exists || t.status.State != TaskStateRunning {
+	if !exists || !isActiveState(t.status.State) {
 		return
 	}
 
@@ -161,7 +164,9 @@ func (m *defaultTaskManager) UpdateResourceProgress(taskType TaskType, resourceI
 	if t.status.Total > 0 {
 		t.status.Progress = completed * 100 / t.status.Total
 	}
-	t.status.Error = errMsg
+	if t.status.State != TaskStateCanceling || errMsg != "" {
+		t.status.Error = errMsg
+	}
 }
 
 func (m *defaultTaskManager) UpdateTotal(taskType TaskType, total int) {
@@ -169,7 +174,7 @@ func (m *defaultTaskManager) UpdateTotal(taskType TaskType, total int) {
 	defer m.mu.Unlock()
 	key := m.getTaskKey(taskType, 0)
 	t, exists := m.tasks[key]
-	if !exists || t.status.State != TaskStateRunning {
+	if !exists || !isActiveState(t.status.State) {
 		return
 	}
 	if t.status.Completed >= total {
@@ -194,7 +199,7 @@ func (m *defaultTaskManager) FinishResourceTask(taskType TaskType, resourceID ui
 		return
 	}
 
-	if t.status.State == TaskStateRunning {
+	if isActiveState(t.status.State) {
 		now := time.Now()
 		t.status.FinishTime = &now
 		t.status.State = TaskStateFinished
@@ -216,13 +221,17 @@ func (m *defaultTaskManager) CancelTask(taskType TaskType, wait bool) (bool, boo
 
 	key := m.getTaskKey(taskType, 0)
 	t, exists := m.tasks[key]
-	if !exists || t.status.State != TaskStateRunning {
+	if !exists || !isActiveState(t.status.State) {
 		m.mu.Unlock()
 		return false, false
 	}
 
 	// 取消任务上下文
 	t.cancelFunc()
+	t.status.State = TaskStateCanceling
+	if t.status.Error == "" {
+		t.status.Error = TaskCanceledMessage
+	}
 
 	// 获取done通道的引用
 	doneChan := t.doneChan
@@ -239,11 +248,14 @@ func (m *defaultTaskManager) CancelTask(taskType TaskType, wait bool) (bool, boo
 	select {
 	case <-doneChan:
 		// 任务已完成
-	case <-time.After(20 * time.Second):
+	case <-time.After(cancelWaitTimeout):
 		// 等待超时
 		timeout = true
-		// 强制完成任务
-		m.FinishTask(taskType, "任务取消等待超时")
+		m.mu.Lock()
+		if current, ok := m.tasks[key]; ok && current.status.State == TaskStateCanceling {
+			current.status.Error = "任务取消等待超时，仍在清理中"
+		}
+		m.mu.Unlock()
 	}
 
 	return true, timeout
@@ -260,7 +272,7 @@ func (m *defaultTaskManager) IsResourceRunning(taskType TaskType, resourceID uin
 
 	key := m.getTaskKey(taskType, resourceID)
 	t, exists := m.tasks[key]
-	return exists && t.status.State == TaskStateRunning
+	return exists && isActiveState(t.status.State)
 }
 
 // IsAnyRunning 检查是否有任何任务正在运行
@@ -269,11 +281,15 @@ func (m *defaultTaskManager) IsAnyRunning() bool {
 	defer m.mu.RUnlock()
 
 	for _, t := range m.tasks {
-		if t.status.State == TaskStateRunning {
+		if isActiveState(t.status.State) {
 			return true
 		}
 	}
 	return false
+}
+
+func isActiveState(state TaskState) bool {
+	return state == TaskStateRunning || state == TaskStateCanceling
 }
 
 // GetStatus 获取任务状态

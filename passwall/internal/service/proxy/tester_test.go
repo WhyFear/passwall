@@ -44,18 +44,24 @@ func TestTesterCancellationStopsPendingTests(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var calls atomic.Int32
+	proxyRepo := &fakeTesterProxyRepo{proxies: []*model.Proxy{
+		{ID: 1, Type: model.ProxyTypeVMess},
+		{ID: 2, Type: model.ProxyTypeVMess},
+		{ID: 3, Type: model.ProxyTypeVMess},
+	}}
+	historyRepo := &fakeTesterHistoryRepo{}
 	tester := NewTester(
-		&fakeTesterProxyRepo{proxies: []*model.Proxy{
-			{ID: 1, Type: model.ProxyTypeVMess},
-			{ID: 2, Type: model.ProxyTypeVMess},
-			{ID: 3, Type: model.ProxyTypeVMess},
-		}},
-		&fakeTesterHistoryRepo{},
+		proxyRepo,
+		historyRepo,
 		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
-			testFunc: func(proxy *model.Proxy) (*model.SpeedTestResult, error) {
+			testFunc: func(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
 				if calls.Add(1) == 1 {
 					close(started)
-					<-release
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-release:
+					}
 				}
 				return &model.SpeedTestResult{Ping: 10, DownloadSpeed: 1024, UploadSpeed: 512}, nil
 			},
@@ -77,7 +83,6 @@ func TestTesterCancellationStopsPendingTests(t *testing.T) {
 	cancelled, timedOut := taskManager.CancelTask(task.TaskTypeSpeedTest, false)
 	require.True(t, cancelled)
 	require.False(t, timedOut)
-	close(release)
 
 	require.Eventually(t, func() bool {
 		status := taskManager.GetStatus(task.TaskTypeSpeedTest)
@@ -89,6 +94,8 @@ func TestTesterCancellationStopsPendingTests(t *testing.T) {
 	assert.Equal(t, task.TaskCanceledMessage, status.Error)
 	assert.Equal(t, 1, status.Completed)
 	assert.Equal(t, int32(1), calls.Load())
+	assert.Empty(t, proxyRepo.updated)
+	assert.Empty(t, historyRepo.created)
 }
 
 type fakeTesterProxyRepo struct {
@@ -111,9 +118,14 @@ func (r *fakeTesterProxyRepo) UpdateSpeedTestInfo(proxy *model.Proxy) error {
 
 type fakeTesterHistoryRepo struct {
 	repository.SpeedTestHistoryRepository
+	mu      sync.Mutex
+	created []*model.SpeedTestHistory
 }
 
 func (r *fakeTesterHistoryRepo) Create(history *model.SpeedTestHistory) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.created = append(r.created, history)
 	return nil
 }
 
@@ -128,12 +140,12 @@ func (f *fakeTesterSpeedFactory) GetSpeedTester(proxyType model.ProxyType) (spee
 
 type fakeTesterSpeedTester struct {
 	speedtester.SpeedTester
-	testFunc func(proxy *model.Proxy) (*model.SpeedTestResult, error)
+	testFunc func(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
 }
 
-func (t *fakeTesterSpeedTester) Test(proxy *model.Proxy) (*model.SpeedTestResult, error) {
+func (t *fakeTesterSpeedTester) Test(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
 	if t.testFunc != nil {
-		return t.testFunc(proxy)
+		return t.testFunc(ctx, proxy)
 	}
 	return &model.SpeedTestResult{Ping: 10, DownloadSpeed: 1024, UploadSpeed: 512}, nil
 }

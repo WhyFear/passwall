@@ -23,7 +23,7 @@ func TestSubscriptionRefresherRejectsEmptyURL(t *testing.T) {
 		&fakeConfigProvider{},
 		nil,
 		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
-		func(url string, options *util.DownloadOptions) ([]byte, error) {
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
 			t.Fatal("download should not be called for empty URL")
 			return nil, nil
 		},
@@ -43,7 +43,7 @@ func TestSubscriptionRefresherSkipsNonHTTPURL(t *testing.T) {
 		&fakeConfigProvider{},
 		nil,
 		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
-		func(url string, options *util.DownloadOptions) ([]byte, error) {
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
 			called = true
 			return nil, nil
 		},
@@ -63,7 +63,7 @@ func TestSubscriptionRefresherMarksInvalidOnDownloadFailure(t *testing.T) {
 		&fakeConfigProvider{},
 		nil,
 		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
-		func(url string, options *util.DownloadOptions) ([]byte, error) {
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
 			return nil, errors.New("network failed")
 		},
 	)
@@ -83,7 +83,7 @@ func TestSubscriptionRefresherRefreshAsyncKeepsFailureMessage(t *testing.T) {
 		&fakeConfigProvider{},
 		nil,
 		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
-		func(url string, options *util.DownloadOptions) ([]byte, error) {
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
 			return nil, errors.New("network failed")
 		},
 	)
@@ -108,7 +108,7 @@ func TestSubscriptionRefresherRefreshManyKeepsCancellationMessage(t *testing.T) 
 		&fakeConfigProvider{},
 		nil,
 		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
-		func(url string, options *util.DownloadOptions) ([]byte, error) {
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
 			t.Fatal("download should not be called after cancellation")
 			return nil, nil
 		},
@@ -122,6 +122,53 @@ func TestSubscriptionRefresherRefreshManyKeepsCancellationMessage(t *testing.T) 
 	require.NotNil(t, status)
 	assert.Equal(t, task.TaskStateFinished, status.State)
 	assert.Equal(t, "任务被取消", status.Error)
+}
+
+func TestSubscriptionRefresherCancellationStopsInFlightDownload(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	subRepo := &fakeSubscriptionStatusRepository{}
+	started := make(chan struct{})
+	refresher := newSubscriptionRefresher(
+		subRepo,
+		taskManager,
+		&fakeConfigProvider{},
+		nil,
+		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	)
+
+	refresher.RefreshMany(context.Background(), []*model.Subscription{{
+		ID:     1,
+		URL:    "https://example.test/sub",
+		Status: model.SubscriptionStatusPending,
+	}}, nil, true)
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+
+	cancelled, timedOut := taskManager.CancelTask(task.TaskTypeReloadSubs, false)
+	require.True(t, cancelled)
+	require.False(t, timedOut)
+
+	require.Eventually(t, func() bool {
+		status := taskManager.GetStatus(task.TaskTypeReloadSubs)
+		return status != nil && status.State == task.TaskStateFinished
+	}, time.Second, 10*time.Millisecond)
+
+	status := taskManager.GetStatus(task.TaskTypeReloadSubs)
+	require.NotNil(t, status)
+	assert.Equal(t, task.TaskCanceledMessage, status.Error)
+	assert.NotEqual(t, model.SubscriptionStatusInvalid, subRepo.status)
 }
 
 func TestSubscriptionRefresherSyncsContentAndTriggersPendingTest(t *testing.T) {
@@ -141,7 +188,7 @@ func TestSubscriptionRefresherSyncsContentAndTriggersPendingTest(t *testing.T) {
 			Type:     model.ProxyTypeTrojan,
 			Config:   `{"name":"created","server":"created.example","port":443}`,
 		}}}}, proxyRepo),
-		func(url string, options *util.DownloadOptions) ([]byte, error) {
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
 			require.Equal(t, "socks5://127.0.0.1:7890", options.ProxyURL)
 			return []byte("subscription-content"), nil
 		},
@@ -200,7 +247,7 @@ type fakePendingTester struct {
 	requests chan *TestRequest
 }
 
-func (f *fakePendingTester) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error) {
+func (f *fakePendingTester) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
 	return nil, nil
 }
 

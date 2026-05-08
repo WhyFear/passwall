@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,46 @@ func TestTaskManagerCancelTask(t *testing.T) {
 	assert.True(t, cancelled)
 	assert.False(t, timedOut)
 	assert.ErrorIs(t, ctx.Err(), context.Canceled)
+	assert.True(t, manager.IsRunning(TaskTypeCheckIp))
+	status := manager.GetStatus(TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, TaskStateCanceling, status.State)
+
+	_, duplicate := manager.StartTask(context.Background(), TaskTypeCheckIp, 1)
+	assert.False(t, duplicate)
+
+	manager.FinishTask(TaskTypeCheckIp, TaskCanceledMessage)
+	assert.False(t, manager.IsRunning(TaskTypeCheckIp))
+	_, restarted := manager.StartTask(context.Background(), TaskTypeCheckIp, 1)
+	assert.True(t, restarted)
+}
+
+func TestTaskManagerCancelTaskTimeoutKeepsTaskCanceling(t *testing.T) {
+	manager := NewTaskManager()
+	originalTimeout := cancelWaitTimeout
+	cancelWaitTimeout = 10 * time.Millisecond
+	t.Cleanup(func() {
+		cancelWaitTimeout = originalTimeout
+	})
+
+	_, started := manager.StartTask(context.Background(), TaskTypeSpeedTest, 1)
+	require.True(t, started)
+
+	cancelled, timedOut := manager.CancelTask(TaskTypeSpeedTest, true)
+
+	assert.True(t, cancelled)
+	assert.True(t, timedOut)
+	assert.True(t, manager.IsRunning(TaskTypeSpeedTest))
+	status := manager.GetStatus(TaskTypeSpeedTest)
+	require.NotNil(t, status)
+	assert.Equal(t, TaskStateCanceling, status.State)
+	assert.Contains(t, status.Error, "仍在清理中")
+
+	_, duplicate := manager.StartTask(context.Background(), TaskTypeSpeedTest, 1)
+	assert.False(t, duplicate)
+
+	manager.FinishTask(TaskTypeSpeedTest, TaskCanceledMessage)
+	assert.False(t, manager.IsRunning(TaskTypeSpeedTest))
 }
 
 func TestTaskRunAccumulatesProgressAndFinishesOnce(t *testing.T) {

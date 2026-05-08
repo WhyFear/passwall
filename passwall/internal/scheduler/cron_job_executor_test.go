@@ -79,7 +79,7 @@ type fakeCronProxyTester struct {
 	request *proxy.TestRequest
 }
 
-func (f *fakeCronProxyTester) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error) {
+func (f *fakeCronProxyTester) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
 	return nil, nil
 }
 
@@ -108,7 +108,7 @@ type fakeCronIPDetector struct {
 	req *service.BatchIPDetectorReq
 }
 
-func (f *fakeCronIPDetector) BatchDetect(req *service.BatchIPDetectorReq) error {
+func (f *fakeCronIPDetector) BatchDetect(ctx context.Context, req *service.BatchIPDetectorReq) error {
 	f.req = req
 	return nil
 }

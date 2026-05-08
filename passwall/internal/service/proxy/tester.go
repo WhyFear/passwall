@@ -31,7 +31,7 @@ type ProxyFilter struct {
 // Tester 代理测试服务接口
 type Tester interface {
 	// TestProxy 测试单个代理
-	TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error)
+	TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
 
 	// TestProxies 批量测试代理
 	TestProxies(ctx context.Context, request *TestRequest, async bool) error
@@ -61,9 +61,12 @@ func NewTester(
 }
 
 // TestProxy 测试单个代理
-func (t *testerImpl) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, error) {
+func (t *testerImpl) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
 	if proxy == nil {
 		return nil, fmt.Errorf("代理对象不能为空")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	// 获取速度测试器
@@ -73,8 +76,11 @@ func (t *testerImpl) TestProxy(proxy *model.Proxy) (*model.SpeedTestResult, erro
 	}
 
 	// 测试代理
-	result, err := tester.Test(proxy)
+	result, err := tester.Test(ctx, proxy)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		log.Errorln("测试代理失败[代理ID:%d]: %v", proxy.ID, err)
 		return nil, err
 	}
@@ -197,7 +203,7 @@ func (t *testerImpl) runTests(taskRun *task.TaskRun, proxies []*model.Proxy, con
 			defer func() {
 				taskRun.IncrementProgress("")
 			}()
-			t.testProxyAndUpdateDB(p)
+			t.testProxyAndUpdateDB(taskCtx, p)
 			return nil
 		})
 	}
@@ -219,20 +225,15 @@ func (t *testerImpl) runTests(taskRun *task.TaskRun, proxies []*model.Proxy, con
 			finishMessage = task.TaskTerminatedMessage
 		}
 
-		select {
-		case <-waitCh:
-			log.Infoln("所有测试已停止")
-		case <-time.After(20 * time.Second):
-			log.Warnln("等待测试完成超时，强制结束任务")
-			finishMessage = "等待测试完成超时，强制结束任务"
-		}
+		<-waitCh
+		log.Infoln("所有测试已停止")
 	case <-waitCh:
 		log.Infoln("所有测试已完成")
 	}
 }
 
 // testProxyAndUpdateDB 测试单个代理并更新数据库
-func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
+func (t *testerImpl) testProxyAndUpdateDB(ctx context.Context, p *model.Proxy) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorln("测试代理过程中发生panic[代理ID:%d]: %v", p.ID, r)
@@ -246,8 +247,12 @@ func (t *testerImpl) testProxyAndUpdateDB(p *model.Proxy) {
 
 	// 测试代理
 	testTime := time.Now()
-	result, err := t.TestProxy(p)
+	result, err := t.TestProxy(ctx, p)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			log.Infoln("测试代理已取消[代理ID:%d]", p.ID)
+			return
+		}
 		log.Errorln("测试代理失败[代理ID:%d]: %v", p.ID, err)
 		p.Status = model.ProxyStatusFailed
 

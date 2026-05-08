@@ -38,8 +38,8 @@ type IPDetectResp struct {
 }
 
 type IPDetectorService interface {
-	BatchDetect(req *BatchIPDetectorReq) error
-	Detect(req *IPDetectorReq) error
+	BatchDetect(ctx context.Context, req *BatchIPDetectorReq) error
+	Detect(ctx context.Context, req *IPDetectorReq) error
 	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
 	GetProxyIDsNotInIPAddress() ([]uint, error)
 	GetDistinctCountryCode() ([]string, error)
@@ -55,7 +55,7 @@ type ipDetectorImpl struct {
 	IPUnlockInfoRepo repository.IPUnlockInfoRepository
 	TaskManager      task.TaskManager
 	Persister        *ipDetectPersister
-	detectOne        func(req *IPDetectorReq) error
+	detectOne        func(ctx context.Context, req *IPDetectorReq) error
 }
 
 func NewIPDetector(configService ConfigService,
@@ -88,15 +88,18 @@ func (i ipDetectorImpl) getDetector() (*detector.DetectorManager, error) {
 	return detector.NewDetectorManager(*cfg), nil
 }
 
-func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
+func (i ipDetectorImpl) BatchDetect(ctx context.Context, req *BatchIPDetectorReq) error {
 	if req == nil || !req.Enabled {
 		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if req.Concurrent == 0 {
 		req.Concurrent = 20
 	}
 
-	taskRun, success := task.StartRun(context.Background(), i.TaskManager, task.TaskTypeCheckIp, len(req.ProxyIDList))
+	taskRun, success := task.StartRun(ctx, i.TaskManager, task.TaskTypeCheckIp, len(req.ProxyIDList))
 	if !success {
 		log.Errorln("start task failed, task type: %v", task.TaskTypeCheckIp)
 		return nil
@@ -136,7 +139,7 @@ detectLoop:
 				}
 				taskRun.IncrementProgress("")
 			}()
-			err := i.detect(&IPDetectorReq{
+			err := i.detect(ctx, &IPDetectorReq{
 				ProxyID:         pid,
 				Enabled:         true,
 				IPInfoEnable:    req.IPInfoEnable,
@@ -151,18 +154,24 @@ detectLoop:
 	return nil
 }
 
-func (i ipDetectorImpl) detect(req *IPDetectorReq) error {
+func (i ipDetectorImpl) detect(ctx context.Context, req *IPDetectorReq) error {
 	if i.detectOne != nil {
-		return i.detectOne(req)
+		return i.detectOne(ctx, req)
 	}
-	return i.Detect(req)
+	return i.Detect(ctx, req)
 }
 
-func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
+func (i ipDetectorImpl) Detect(ctx context.Context, req *IPDetectorReq) error {
 	log.Infoln("start to detect proxy ip, proxy id: %v", req.ProxyID)
 	if !req.Enabled {
 		log.Infoln("ip detector is disabled, proxy id: %v", req.ProxyID)
 		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	// get proxy
 	proxy, err := i.ProxyRepo.FindByID(req.ProxyID)
@@ -192,7 +201,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 			log.Errorln("get detector failed: %v", err)
 			return err
 		}
-		resp, err := det.DetectAll(req.IPProxy, false, false)
+		resp, err := det.DetectAll(ctx, req.IPProxy, false, false)
 		if err != nil {
 			log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
@@ -247,7 +256,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		log.Errorln("get detector failed: %v", err)
 		return err
 	}
-	resp, err := det.DetectAll(req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
+	resp, err := det.DetectAll(ctx, req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
 	if err != nil {
 		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err

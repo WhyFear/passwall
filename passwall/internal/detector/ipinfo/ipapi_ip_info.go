@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"context"
 	"errors"
 	"passwall/internal/model"
 	"passwall/internal/util"
@@ -18,15 +19,18 @@ func NewIPAPIRiskDetector() IPInfo {
 	return &IPAPIRiskDetector{}
 }
 
-func (i *IPAPIRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
+func (i *IPAPIRiskDetector) Detect(ctx context.Context, ipProxy *model.IPProxy) (*IPInfoResult, error) {
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("IPAPIRiskDetector Detect error: ipProxy is nil")
 		return nil, errors.New("ipProxy is nil")
 	}
 
 	score := -1.0
-	resp, err := util.GetUrl(ipProxy.ProxyClient, "https://api.ipapi.is/?q="+ipProxy.IP)
+	resp, err := util.GetUrlWithContext(ctx, ipProxy.ProxyClient, "https://api.ipapi.is/?q="+ipProxy.IP)
 	if err != nil {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return &IPInfoResult{
 			Detector: DetectorIPAPI,
 			Risk: RiskResult{

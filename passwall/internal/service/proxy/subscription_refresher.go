@@ -13,7 +13,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 )
 
-type downloadSubscriptionFunc func(string, *util.DownloadOptions) ([]byte, error)
+type downloadSubscriptionFunc func(context.Context, string, *util.DownloadOptions) ([]byte, error)
 
 type subscriptionRefresher struct {
 	subscriptionRepo repository.SubscriptionRepository
@@ -54,7 +54,7 @@ func (r *subscriptionRefresher) RefreshAsync(ctx context.Context, subscription *
 		finishMessage := ""
 		if started {
 			defer func() {
-				taskRun.Finish(finishMessage)
+				taskRun.FinishWithContextMessage(finishMessage)
 			}()
 		}
 
@@ -63,6 +63,10 @@ func (r *subscriptionRefresher) RefreshAsync(ctx context.Context, subscription *
 			return
 		}
 		if err != nil {
+			if taskCtx.Err() != nil {
+				finishMessage = task.MessageForContext(taskCtx)
+				return
+			}
 			log.Errorln("刷新订阅失败: %v", err)
 			finishMessage = err.Error()
 			taskRun.UpdateProgress(1, finishMessage)
@@ -128,6 +132,11 @@ subscriptionLoop:
 		}
 
 		if err := r.RefreshOne(ctx, subscription, options); err != nil {
+			if ctx.Err() != nil {
+				stoppedByContext = true
+				lastError = ctx.Err()
+				break subscriptionLoop
+			}
 			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
 			lastError = err
 		}
@@ -185,8 +194,11 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 	}
 
 	var content []byte
-	content, err = r.download(subscription.URL, downloadOptions)
+	content, err = r.download(taskCtx, subscription.URL, downloadOptions)
 	if err != nil {
+		if taskCtx.Err() != nil {
+			return taskCtx.Err()
+		}
 		log.Errorln("下载订阅内容失败: %v", err)
 		_ = markSubscriptionInvalid(r.subscriptionRepo, subscription)
 		return fmt.Errorf("下载订阅内容失败: %w", err)
@@ -194,6 +206,9 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 
 	result, err := r.proxySyncer.Sync(taskCtx, subscription, content)
 	if err != nil {
+		if taskCtx.Err() != nil {
+			return taskCtx.Err()
+		}
 		log.Errorln("解析订阅内容失败: %v", err)
 		_ = markSubscriptionInvalid(r.subscriptionRepo, subscription)
 		return err
@@ -204,7 +219,7 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 	}
 	logProxySyncResult(subscription, result)
 
-	r.triggerPendingProxyTest()
+	r.triggerPendingProxyTest(taskCtx)
 	r.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
 	return nil
 }
@@ -227,8 +242,11 @@ func buildDownloadOptions(options *util.DownloadOptions) *util.DownloadOptions {
 	return downloadOptions
 }
 
-func (r *subscriptionRefresher) triggerPendingProxyTest() {
+func (r *subscriptionRefresher) triggerPendingProxyTest(ctx context.Context) {
 	if r.proxyTester == nil {
+		return
+	}
+	if ctx != nil && ctx.Err() != nil {
 		return
 	}
 
@@ -245,7 +263,7 @@ func (r *subscriptionRefresher) triggerPendingProxyTest() {
 		Concurrent: concurrent,
 	}
 	go func() {
-		if err := r.proxyTester.TestProxies(context.Background(), testReq, false); err != nil {
+		if err := r.proxyTester.TestProxies(ctx, testReq, false); err != nil {
 			log.Errorln("自动测试代理失败: %v", err)
 		}
 	}()

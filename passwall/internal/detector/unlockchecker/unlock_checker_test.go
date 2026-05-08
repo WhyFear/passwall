@@ -1,6 +1,7 @@
 package unlockchecker
 
 import (
+	"context"
 	"fmt"
 	"passwall/internal/model"
 	"testing"
@@ -31,7 +32,7 @@ func TestChecker(t *testing.T) {
 				Config: config,
 			})
 
-			resp := tc.UnlockCheck.Check(ipProxy)
+			resp := tc.UnlockCheck.Check(context.Background(), ipProxy)
 			assert.NotNil(t, resp)
 			fmt.Printf("%s: %v", tc.name, resp)
 		})

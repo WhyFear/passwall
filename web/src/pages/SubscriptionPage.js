@@ -9,7 +9,7 @@ import {
   StopOutlined
 } from '@ant-design/icons';
 import {configApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {fetchTaskStatus, isTaskActive, TASK_STATE_CANCELING, stopTask} from '../utils/taskUtils';
 import SubscriptionForm from '../components/SubscriptionForm';
 import StatusTag from '../components/StatusTag';
 import IntervalSelector from '../components/IntervalSelector';
@@ -421,7 +421,7 @@ const SubscriptionPage = () => {
       onChange={setActiveTab}
       tabBarExtraContent={<div className="tab-bar-extra"
                                style={{display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap'}}>
-        {taskStatus && taskStatus.state === 0 && (<div style={{display: 'flex', alignItems: 'center'}}>
+        {isTaskActive(taskStatus) && (<div style={{display: 'flex', alignItems: 'center'}}>
           <Progress
             type="circle"
             percent={Math.round((taskStatus.completed / taskStatus.total) * 100)}
@@ -429,7 +429,7 @@ const SubscriptionPage = () => {
             style={{marginRight: 8}}
           />
           <span style={{marginRight: 8}}>
-            处理中: {taskStatus.completed}/{taskStatus.total}
+            {taskStatus.state === TASK_STATE_CANCELING ? '取消中' : '处理中'}: {taskStatus.completed}/{taskStatus.total}
           </span>
           <Button
             type="primary"

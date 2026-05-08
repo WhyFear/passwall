@@ -1,6 +1,7 @@
 package ipbaseinfo
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -62,6 +63,44 @@ func TestGetProxyIPRejectsNilClient(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, ipInfo)
+}
+
+func TestGetProxyIPWithContextCancelsRequests(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	requestStarted := make(chan struct{})
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			close(requestStarted)
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}),
+	}
+
+	originalServices := ipServices
+	ipServices = []IPService{{Name: "Blocked", URL: "https://example.test/blocked"}}
+	t.Cleanup(func() {
+		ipServices = originalServices
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := GetProxyIPWithContext(ctx, client)
+		done <- err
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("GetProxyIPWithContext did not stop after context cancellation")
+	}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

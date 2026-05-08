@@ -2,6 +2,7 @@ package unlockchecker
 
 import (
 	MediaUnlockTest "MediaUnlockTest/checks"
+	"context"
 	"passwall/internal/model"
 	"strings"
 
@@ -15,7 +16,10 @@ func NewOpenAIUnlockCheck() UnlockCheck {
 	return &OpenAIUnlockCheck{}
 }
 
-func (o *OpenAIUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
+func (o *OpenAIUnlockCheck) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(OpenAI)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("OpenAIUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
@@ -24,6 +28,9 @@ func (o *OpenAIUnlockCheck) Check(ipProxy *model.IPProxy) *CheckResult {
 		}
 	}
 	checkResult := MediaUnlockTest.ChatGPT(*ipProxy.ProxyClient)
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(OpenAI)
+	}
 	switch checkResult.Status {
 	case 1:
 		return &CheckResult{

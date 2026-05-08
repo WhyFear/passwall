@@ -1,6 +1,7 @@
 package ipbaseinfo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -46,18 +47,29 @@ var ipServices = []IPService{
 
 // GetProxyIP 从多个服务获取代理IP地址
 func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
+	return GetProxyIPWithContext(context.Background(), proxyClient)
+}
+
+// GetProxyIPWithContext 从多个服务获取代理IP地址，并响应调用方取消
+func GetProxyIPWithContext(ctx context.Context, proxyClient *http.Client) (*IPBaseInfo, error) {
 	if proxyClient == nil {
 		log.Errorln("GetProxyIP error: proxyClient is nil")
 		return nil, errors.New("proxyClient is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	var wg sync.WaitGroup
 	results := make(chan string, len(ipServices))
 
 	for _, service := range ipServices {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		go func(svc IPService) {
 			defer wg.Done()
-			resp, err := util.GetUrl(proxyClient, svc.URL)
+			resp, err := util.GetUrlWithContext(ctx, proxyClient, svc.URL)
 			if err != nil {
 				log.Infoln("IP服务 %s 获取IP失败: %v", svc.Name, err)
 				return
@@ -70,6 +82,9 @@ func GetProxyIP(proxyClient *http.Client) (*IPBaseInfo, error) {
 
 	wg.Wait()
 	close(results)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	ipInfo := &IPBaseInfo{}
 	ipv4Map := make(map[string]int)

@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"context"
 	"errors"
 	"passwall/config"
 	"passwall/internal/model"
@@ -20,7 +21,7 @@ func NewScamalyticsRiskDetector(cfg config.Scamalytics) IPInfo {
 	}
 }
 
-func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult, error) {
+func (s *ScamalyticsRiskDetector) Detect(ctx context.Context, ipProxy *model.IPProxy) (*IPInfoResult, error) {
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("ScamalyticsRiskDetector Detect error: ipProxy is nil")
 		return nil, errors.New("ipProxy is nil")
@@ -41,8 +42,11 @@ func (s *ScamalyticsRiskDetector) Detect(ipProxy *model.IPProxy) (*IPInfoResult,
 		}, nil
 	}
 
-	resp, err := util.GetUrl(ipProxy.ProxyClient, apiURL)
+	resp, err := util.GetUrlWithContext(ctx, ipProxy.ProxyClient, apiURL)
 	if err != nil {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		log.Warnln("ScamalyticsRiskDetector Detect error: %v", err)
 		return &IPInfoResult{
 			Detector: DetectorScamalytics,

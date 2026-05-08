@@ -115,7 +115,7 @@ func (e *cronJobExecutor) executeIPCheck(job config.CronJob) {
 	for _, singleProxy := range proxies {
 		proxyIDList = append(proxyIDList, singleProxy.ID)
 	}
-	err = e.ipDetectService.BatchDetect(&service.BatchIPDetectorReq{
+	err = e.ipDetectService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
 		ProxyIDList:     proxyIDList,
 		Enabled:         true,
 		IPInfoEnable:    job.IPCheck.IPInfo.Enable,

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,7 @@ func TestIPDetectorBatchDetectTracksProgress(t *testing.T) {
 	var mu sync.Mutex
 	detectorService := ipDetectorImpl{
 		TaskManager: taskManager,
-		detectOne: func(req *IPDetectorReq) error {
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
 			mu.Lock()
 			defer mu.Unlock()
 			detected = append(detected, req.ProxyID)
@@ -26,7 +27,7 @@ func TestIPDetectorBatchDetectTracksProgress(t *testing.T) {
 		},
 	}
 
-	err := detectorService.BatchDetect(&BatchIPDetectorReq{
+	err := detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
 		ProxyIDList:     []uint{1, 2, 3},
 		Enabled:         true,
 		IPInfoEnable:    true,
@@ -53,17 +54,21 @@ func TestIPDetectorBatchDetectCancellationStopsPendingDetects(t *testing.T) {
 	var calls atomic.Int32
 	detectorService := ipDetectorImpl{
 		TaskManager: taskManager,
-		detectOne: func(req *IPDetectorReq) error {
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
 			if calls.Add(1) == 1 {
 				close(started)
-				<-release
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-release:
+				}
 			}
 			return nil
 		},
 	}
 
 	go func() {
-		done <- detectorService.BatchDetect(&BatchIPDetectorReq{
+		done <- detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
 			ProxyIDList: []uint{1, 2, 3},
 			Enabled:     true,
 			Concurrent:  1,
@@ -82,7 +87,6 @@ func TestIPDetectorBatchDetectCancellationStopsPendingDetects(t *testing.T) {
 	cancelled, timedOut := taskManager.CancelTask(task.TaskTypeCheckIp, false)
 	require.True(t, cancelled)
 	require.False(t, timedOut)
-	close(release)
 
 	select {
 	case err := <-done:
@@ -102,7 +106,7 @@ func TestIPDetectorBatchDetectUsesDefaultConcurrency(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	detectorService := ipDetectorImpl{
 		TaskManager: taskManager,
-		detectOne: func(req *IPDetectorReq) error {
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
 			return nil
 		},
 	}
@@ -111,7 +115,7 @@ func TestIPDetectorBatchDetectUsesDefaultConcurrency(t *testing.T) {
 		Enabled:     true,
 	}
 
-	err := detectorService.BatchDetect(req)
+	err := detectorService.BatchDetect(context.Background(), req)
 
 	require.NoError(t, err)
 	assert.Equal(t, 20, req.Concurrent)

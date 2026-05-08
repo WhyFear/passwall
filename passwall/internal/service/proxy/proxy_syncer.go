@@ -91,7 +91,7 @@ func (s *proxySyncer) planProxyChanges(ctx context.Context, subscriptionID uint,
 	for _, newProxy := range proxies {
 		select {
 		case <-ctx.Done():
-			return nil, nil, skipped, fmt.Errorf("上下文已取消")
+			return nil, nil, skipped, ctx.Err()
 		default:
 		}
 

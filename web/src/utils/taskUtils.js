@@ -1,6 +1,13 @@
 import { message } from 'antd';
 import { taskApi } from '../api';
 
+export const TASK_STATE_RUNNING = 0;
+export const TASK_STATE_FINISHED = 1;
+export const TASK_STATE_CANCELING = 2;
+
+export const isTaskActive = (taskStatus) => taskStatus
+  && (taskStatus.state === TASK_STATE_RUNNING || taskStatus.state === TASK_STATE_CANCELING);
+
 // 获取任务状态的通用方法
 export const fetchTaskStatus = async (taskType, setTaskStatus) => {
   try {
@@ -19,11 +26,16 @@ export const fetchTaskStatus = async (taskType, setTaskStatus) => {
 // 停止任务的通用方法
 export const stopTask = async (taskType, setTaskStatus) => {
   try {
-    await taskApi.stopTask(taskType);
+    const data = await taskApi.stopTask(taskType);
+    if (data?.timed_out) {
+      message.warning(data.status_msg || '已请求取消，任务仍在清理中');
+      await fetchTaskStatus(taskType, setTaskStatus);
+      return;
+    }
     message.success(`已停止${taskType === 'speed_test' ? '测速' : ''}任务`);
-    setTaskStatus(null);
+    await fetchTaskStatus(taskType, setTaskStatus);
   } catch (error) {
     message.error(`停止任务失败: ${error.message}`);
     console.error(error);
   }
-}; 
+};

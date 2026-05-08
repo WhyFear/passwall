@@ -2,6 +2,7 @@ package unlockchecker
 
 import (
 	MediaUnlockTest "MediaUnlockTest/checks"
+	"context"
 	"passwall/internal/model"
 	"strings"
 
@@ -15,7 +16,10 @@ func NewDisneyPlusChecker() UnlockCheck {
 	return &DisneyPlusChecker{}
 }
 
-func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
+func (c *DisneyPlusChecker) Check(ctx context.Context, ipProxy *model.IPProxy) *CheckResult {
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(DisneyPlus)
+	}
 	if ipProxy == nil || ipProxy.ProxyClient == nil {
 		log.Errorln("DisneyPlusUnlockCheck IPCheck error: ipProxy is nil")
 		return &CheckResult{
@@ -24,6 +28,9 @@ func (c *DisneyPlusChecker) Check(ipProxy *model.IPProxy) *CheckResult {
 		}
 	}
 	checkResult := MediaUnlockTest.DisneyPlus(*ipProxy.ProxyClient)
+	if ctx != nil && ctx.Err() != nil {
+		return canceledCheckResult(DisneyPlus)
+	}
 	//var (
 	//	StatusOK         = 1
 	//	StatusNetworkErr = -1

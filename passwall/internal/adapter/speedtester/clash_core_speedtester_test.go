@@ -1,6 +1,7 @@
 package speedtester
 
 import (
+	"context"
 	"passwall/internal/model"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestClashCoreSpeedTester_SupportedTypes(t *testing.T) {
 // TestClashCoreSpeedTester_TestNilProxy 测试Test方法 - 空代理参数
 func TestClashCoreSpeedTester_TestNilProxy(t *testing.T) {
 	tester := NewClashCoreSpeedTester()
-	result, err := tester.Test(nil)
+	result, err := tester.Test(context.Background(), nil)
 
 	assert.Nil(t, result, "结果应该为nil")
 	assert.Error(t, err, "应该返回错误")
@@ -44,7 +45,7 @@ func TestClashCoreSpeedTester_TestInvalidConfig(t *testing.T) {
 		Config: "{invalid json",
 	}
 
-	result, err := tester.Test(proxy)
+	result, err := tester.Test(context.Background(), proxy)
 
 	assert.Nil(t, result, "结果应该为nil")
 	assert.Error(t, err, "应该返回错误")
@@ -63,7 +64,7 @@ func TestClashCoreSpeedTester_TestValidVMess(t *testing.T) {
 		Config: configString,
 	}
 
-	result, err := tester.Test(proxy)
+	result, err := tester.Test(context.Background(), proxy)
 
 	assert.NoError(t, err, "测试有效的配置不应该返回错误")
 	assert.NotNil(t, result, "结果不应为nil")
