@@ -47,6 +47,18 @@ func TestProxyServiceGetProxiesByFiltersUsesDefaults(t *testing.T) {
 	assert.Equal(t, "pinned desc,download_speed DESC", repo.query.OrderBy)
 }
 
+func TestProxyServiceGetProxiesByFiltersRejectsUnknownSortField(t *testing.T) {
+	repo := &capturingProxyRepository{
+		result: &repository.PageResult{},
+	}
+	service := NewProxyService(repo, nil, task.NewTaskManager())
+
+	_, _, err := service.GetProxiesByFilters(nil, "name; drop table proxies", "ascend", 1, 10)
+
+	require.NoError(t, err)
+	assert.Equal(t, "pinned desc,download_speed DESC", repo.query.OrderBy)
+}
+
 type capturingProxyRepository struct {
 	repository.ProxyRepository
 	query  repository.PageQuery

@@ -66,3 +66,39 @@ func TestTaskManagerCancelTask(t *testing.T) {
 	assert.False(t, timedOut)
 	assert.ErrorIs(t, ctx.Err(), context.Canceled)
 }
+
+func TestTaskRunAccumulatesProgressAndFinishesOnce(t *testing.T) {
+	manager := NewTaskManager()
+	run, started := StartRun(context.Background(), manager, TaskTypeCheckIp, 3)
+	require.True(t, started)
+
+	run.IncrementProgress("")
+	run.IncrementProgress("")
+
+	status := manager.GetStatus(TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, 2, status.Completed)
+	assert.Equal(t, 66, status.Progress)
+
+	run.Finish("first")
+	run.Finish("second")
+
+	status = manager.GetStatus(TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, TaskStateFinished, status.State)
+	assert.Equal(t, "first", status.Error)
+}
+
+func TestTaskRunFinishWithContextMessageUsesCancellationMessage(t *testing.T) {
+	manager := NewTaskManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	run, started := StartRun(ctx, manager, TaskTypeCheckIp, 1)
+	require.True(t, started)
+
+	cancel()
+	run.FinishWithContextMessage("")
+
+	status := manager.GetStatus(TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, TaskCanceledMessage, status.Error)
+}

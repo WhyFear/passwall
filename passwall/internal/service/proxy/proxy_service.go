@@ -68,18 +68,7 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}
 		Filters: filters,
 	}
 
-	// 设置排序
-	pageQuery.OrderBy = "pinned desc,"
-	if sort != "" {
-		if sortOrder == "ascend" || sortOrder == "asc" {
-			pageQuery.OrderBy += sort + " ASC"
-		} else {
-			pageQuery.OrderBy += sort + " DESC"
-		}
-	} else {
-		// 默认按下载速度降序排序
-		pageQuery.OrderBy += "download_speed DESC"
-	}
+	pageQuery.OrderBy = buildProxyOrderBy(sort, sortOrder)
 	// 限制返回的页数
 	if page > 0 {
 		pageQuery.Page = page
@@ -100,6 +89,27 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}
 		return nil, 0, err
 	}
 	return queryResult.Items, queryResult.Total, err
+}
+
+func buildProxyOrderBy(sort string, sortOrder string) string {
+	allowedSortFields := map[string]bool{
+		"id":               true,
+		"download_speed":   true,
+		"upload_speed":     true,
+		"ping":             true,
+		"latest_test_time": true,
+		"created_at":       true,
+		"updated_at":       true,
+	}
+	if !allowedSortFields[sort] {
+		sort = "download_speed"
+		sortOrder = "descend"
+	}
+	direction := "DESC"
+	if sortOrder == "ascend" || sortOrder == "asc" {
+		direction = "ASC"
+	}
+	return "pinned desc," + sort + " " + direction
 }
 
 func (s *DefaultProxyService) GetProxyByName(name string) (*model.Proxy, error) {

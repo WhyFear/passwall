@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"passwall/internal/adapter/speedtester"
@@ -143,7 +142,7 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 
 	// 开始任务
 	taskType := task.TaskTypeSpeedTest
-	ctx, started := t.taskManager.StartTask(ctx, taskType, len(proxies))
+	taskRun, started := task.StartRun(ctx, t.taskManager, taskType, len(proxies))
 	if !started {
 		return fmt.Errorf("启动任务失败")
 	}
@@ -155,48 +154,49 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 	}
 
 	if async {
-		go t.runTests(ctx, taskType, proxies, concurrent)
+		go t.runTests(taskRun, proxies, concurrent)
 	} else {
-		t.runTests(ctx, taskType, proxies, concurrent)
+		t.runTests(taskRun, proxies, concurrent)
 	}
 
 	return nil
 }
 
 // runTests 多线程执行测试
-func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxies []*model.Proxy, concurrent int) {
+func (t *testerImpl) runTests(taskRun *task.TaskRun, proxies []*model.Proxy, concurrent int) {
 	var finishMessage string
 	defer func() {
 		if r := recover(); r != nil {
 			finishMessage = fmt.Sprintf("测试代理任务发生panic: %v", r)
 			log.Errorln("%s", finishMessage)
 		}
-		t.taskManager.FinishTask(taskType, finishMessage)
+		taskRun.FinishWithContextMessage(finishMessage)
 		log.Infoln("测试任务执行完毕")
 	}()
 
 	// 使用限制并发的context
-	eg, ctx := errgroup.WithContext(ctx)
+	taskCtx := taskRun.Context()
+	eg, groupCtx := errgroup.WithContext(taskCtx)
 	eg.SetLimit(concurrent)
-	var completedCount int32
 
 	for _, proxy := range proxies {
-		if ctx.Err() != nil {
+		if taskCtx.Err() != nil || groupCtx.Err() != nil {
 			log.Infoln("测试任务已被取消，停止处理剩余代理")
 			break
 		}
 
 		p := proxy // 创建局部变量避免闭包问题
 		eg.Go(func() error {
-			defer func() {
-				completed := atomic.AddInt32(&completedCount, 1)
-				t.taskManager.UpdateProgress(taskType, int(completed), "")
-			}()
-
-			if ctx.Err() != nil {
-				return ctx.Err()
+			if taskCtx.Err() != nil {
+				return taskCtx.Err()
+			}
+			if groupCtx.Err() != nil {
+				return groupCtx.Err()
 			}
 
+			defer func() {
+				taskRun.IncrementProgress("")
+			}()
 			t.testProxyAndUpdateDB(p)
 			return nil
 		})
@@ -211,12 +211,12 @@ func (t *testerImpl) runTests(ctx context.Context, taskType task.TaskType, proxi
 
 	// 处理完成或取消情况
 	select {
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.Canceled) {
-			finishMessage = "任务被取消"
+	case <-taskCtx.Done():
+		if errors.Is(taskCtx.Err(), context.Canceled) {
+			finishMessage = task.TaskCanceledMessage
 			log.Infoln("任务已被取消，等待正在进行的测试完成")
 		} else {
-			finishMessage = "任务超时或其他原因终止"
+			finishMessage = task.TaskTerminatedMessage
 		}
 
 		select {

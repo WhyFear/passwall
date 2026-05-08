@@ -46,6 +46,15 @@ func TestSchedulerInitSkipsInvalidSchedules(t *testing.T) {
 	assert.NotContains(t, jobs, "invalid")
 }
 
+func TestSchedulerInitRequiresServices(t *testing.T) {
+	scheduler := NewScheduler()
+
+	err := scheduler.Init(config.Config{})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scheduler services are not set")
+}
+
 type fakeSubscriptionManager struct {
 	proxyservice.SubscriptionManager
 }

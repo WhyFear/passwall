@@ -2,13 +2,10 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"passwall/internal/detector"
-	"passwall/internal/detector/ipinfo"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
-	"strings"
 
 	"github.com/metacubex/mihomo/log"
 	"golang.org/x/sync/errgroup"
@@ -57,6 +54,8 @@ type ipDetectorImpl struct {
 	IPInfoRepo       repository.IPInfoRepository
 	IPUnlockInfoRepo repository.IPUnlockInfoRepository
 	TaskManager      task.TaskManager
+	Persister        *ipDetectPersister
+	detectOne        func(req *IPDetectorReq) error
 }
 
 func NewIPDetector(configService ConfigService,
@@ -77,6 +76,7 @@ func NewIPDetector(configService ConfigService,
 		IPInfoRepo:       ipInfoRepo,
 		IPUnlockInfoRepo: ipUnlockInfoRepo,
 		TaskManager:      taskManager,
+		Persister:        newIPDetectPersister(ipAddressRepo, proxyIPAddressRepo, ipBaseInfoRepo, ipInfoRepo, ipUnlockInfoRepo),
 	}
 }
 
@@ -89,47 +89,73 @@ func (i ipDetectorImpl) getDetector() (*detector.DetectorManager, error) {
 }
 
 func (i ipDetectorImpl) BatchDetect(req *BatchIPDetectorReq) error {
-	if !req.Enabled {
+	if req == nil || !req.Enabled {
 		return nil
 	}
 	if req.Concurrent == 0 {
 		req.Concurrent = 20
 	}
-	eg, ctx := errgroup.WithContext(context.Background())
-	eg.SetLimit(req.Concurrent)
 
-	_, success := i.TaskManager.StartTask(ctx, task.TaskTypeCheckIp, len(req.ProxyIDList))
+	taskRun, success := task.StartRun(context.Background(), i.TaskManager, task.TaskTypeCheckIp, len(req.ProxyIDList))
 	if !success {
 		log.Errorln("start task failed, task type: %v", task.TaskTypeCheckIp)
 		return nil
 	}
 
+	finishMessage := "batch detect proxy ip finished"
 	defer func() {
-		i.TaskManager.FinishTask(task.TaskTypeCheckIp, "batch detect proxy ip finished")
+		if recoverValue := recover(); recoverValue != nil {
+			finishMessage = "batch detect proxy ip panic"
+			log.Errorln("batch detect proxy ip panic: %v", recoverValue)
+		}
+		if contextMessage := task.MessageForContext(taskRun.Context()); contextMessage != "" {
+			finishMessage = contextMessage
+		}
+		taskRun.Finish(finishMessage)
 	}()
 
+	eg, ctx := errgroup.WithContext(taskRun.Context())
+	eg.SetLimit(req.Concurrent)
+
+detectLoop:
 	for _, proxyID := range req.ProxyIDList {
+		select {
+		case <-ctx.Done():
+			break detectLoop
+		default:
+		}
+
 		pid := proxyID
 		eg.Go(func() error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			defer func() {
 				if err := recover(); err != nil {
 					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", pid, err)
 				}
+				taskRun.IncrementProgress("")
 			}()
-			err := i.Detect(&IPDetectorReq{
+			err := i.detect(&IPDetectorReq{
 				ProxyID:         pid,
 				Enabled:         true,
 				IPInfoEnable:    req.IPInfoEnable,
 				APPUnlockEnable: req.APPUnlockEnable,
 				Refresh:         req.Refresh,
 			})
-			i.TaskManager.UpdateProgress(task.TaskTypeCheckIp, 1, "")
 			return err
 		})
 	}
 	_ = eg.Wait()
 	log.Infoln("batch detect proxy ip finished")
 	return nil
+}
+
+func (i ipDetectorImpl) detect(req *IPDetectorReq) error {
+	if i.detectOne != nil {
+		return i.detectOne(req)
+	}
+	return i.Detect(req)
 }
 
 func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
@@ -226,155 +252,7 @@ func (i ipDetectorImpl) Detect(req *IPDetectorReq) error {
 		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
 	}
-	if resp.BaseInfo == nil {
-		log.Warnln("ip base info is empty, proxy id: %v", req.ProxyID)
-		return nil
-	}
-	// 下面都是保存逻辑
-	ipAddressId4 := uint(0)
-	ipAddressId6 := uint(0)
-	if resp.BaseInfo.IPV4 != "" {
-		ipAddress := &model.IPAddress{
-			IP:     resp.BaseInfo.IPV4,
-			IPType: 4,
-		}
-		err = i.IPAddressRepo.CreateOrIgnore(ipAddress)
-		if err != nil {
-			log.Errorln("create or update ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
-			return err
-		}
-		ipAddressId4 = ipAddress.ID
-		// proxy ip address
-		err = i.ProxyIPAddress.CreateOrUpdate(&model.ProxyIPAddress{
-			ProxyID:       req.ProxyID,
-			IPAddressesID: ipAddress.ID,
-			IPType:        4,
-		})
-		if err != nil {
-			log.Errorln("create or update proxy ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
-			return err
-		}
-	}
-	if resp.BaseInfo.IPV6 != "" {
-		ipAddress := &model.IPAddress{
-			IP:     resp.BaseInfo.IPV6,
-			IPType: 6,
-		}
-		err = i.IPAddressRepo.CreateOrIgnore(ipAddress)
-		if err != nil {
-			log.Errorln("create or update ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
-			return err
-		}
-		ipAddressId6 = ipAddress.ID
-		// proxy ip address
-		err = i.ProxyIPAddress.CreateOrUpdate(&model.ProxyIPAddress{
-			ProxyID:       req.ProxyID,
-			IPAddressesID: ipAddress.ID,
-			IPType:        6,
-		})
-		if err != nil {
-			log.Errorln("create or update proxy ip address failed, proxy id: %v, err: %v", req.ProxyID, err)
-			return err
-		}
-	}
-	if ipAddressId4 == 0 && ipAddressId6 == 0 {
-		log.Infoln("ip address is empty, skip..., proxy id: %v", req.ProxyID)
-		return nil
-	}
-
-	if resp.IPInfoResultMap == nil {
-		log.Infoln("ip info result map is empty, proxy id: %v", req.ProxyID)
-		return nil
-	}
-	// IPInfoResultMap
-	for ip, ipInfoResultList := range resp.IPInfoResultMap {
-		ipAddressId := uint(0)
-		if ip == resp.BaseInfo.IPV4 {
-			ipAddressId = ipAddressId4
-		}
-		if ip == resp.BaseInfo.IPV6 {
-			ipAddressId = ipAddressId6
-		}
-		if ipAddressId == 0 {
-			log.Errorln("ip address id is empty, proxy id: %v, ip: %v", req.ProxyID, ip)
-			continue
-		}
-		if ipInfoResultList != nil && len(ipInfoResultList) > 0 {
-			ipInfoList := make([]*model.IPInfo, len(ipInfoResultList))
-			riskLevelMap := make(map[ipinfo.IPRiskType]int)
-			countryCodeMap := make(map[string]int)
-
-			for _, ipInfo := range ipInfoResultList {
-				if ipInfo.Risk.IPRiskType != ipinfo.IPRiskTypeDetectFailed {
-					riskLevelMap[ipInfo.Risk.IPRiskType]++
-				}
-				if ipInfo.Geo.CountryCode != "" {
-					countryCodeMap[ipInfo.Geo.CountryCode]++
-				}
-				riskJson, _ := json.Marshal(ipInfo.Risk)
-				geoJson, _ := json.Marshal(ipInfo.Geo)
-				ipInfoList = append(ipInfoList, &model.IPInfo{
-					IPAddressesID: ipAddressId,
-					Detector:      string(ipInfo.Detector),
-					Risk:          riskJson,
-					Geo:           geoJson,
-					Raw:           ipInfo.Raw,
-				})
-			}
-			err = i.IPInfoRepo.BatchCreateOrUpdate(ipInfoList)
-			if err != nil {
-				log.Errorln("create or update ip info failed, proxy id: %v, err: %v", req.ProxyID, err)
-			}
-			// ip base info 取出最大值
-			// riskLevelMap和countryCodeMap都为空，就不保存
-			if len(riskLevelMap) == 0 && len(countryCodeMap) == 0 {
-				log.Infoln("ip base info is empty, skip..., proxy id: %v", req.ProxyID)
-			} else {
-				var riskLevel ipinfo.IPRiskType
-				var riskLevelCount int
-				for k, v := range riskLevelMap {
-					if v > riskLevelCount {
-						riskLevel = k
-						riskLevelCount = v
-					}
-				}
-				var countryCode string
-				var countryCodeCount int
-				for k, v := range countryCodeMap {
-					if v > countryCodeCount {
-						countryCode = k
-						countryCodeCount = v
-					}
-				}
-				ipBaseInfo := &model.IPBaseInfo{
-					IPAddressesID: ipAddressId,
-					RiskLevel:     string(riskLevel),
-					CountryCode:   countryCode,
-				}
-				err = i.IPBaseInfoRepo.CreateOrUpdate(ipBaseInfo)
-				if err != nil {
-					log.Errorln("create or update ip base info failed, proxy id: %v, err: %v", req.ProxyID, err)
-				}
-			}
-		}
-		// ip unlock info
-		if resp.UnlockResult != nil && len(resp.UnlockResult) > 0 {
-			ipUnlockInfoList := make([]*model.IPUnlockInfo, len(resp.UnlockResult))
-			for i, unlockResult := range resp.UnlockResult {
-				ipUnlockInfoList[i] = &model.IPUnlockInfo{
-					IPAddressesID: ipAddressId,
-					AppName:       string(unlockResult.APPName),
-					Status:        string(unlockResult.Status),
-					Region:        strings.ToUpper(unlockResult.Region),
-				}
-			}
-			err = i.IPUnlockInfoRepo.BatchCreateOrUpdate(ipUnlockInfoList)
-			if err != nil {
-				log.Errorln("create or update ip unlock info failed, proxy id: %v, err: %v", req.ProxyID, err)
-			}
-		}
-	}
-	return nil
+	return i.Persister.Persist(req.ProxyID, resp)
 }
 
 func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {

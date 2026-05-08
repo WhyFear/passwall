@@ -204,12 +204,15 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 					continue
 				}
 			}
-			db = db.Where(key, value)
 		}
 	}
 	db = db.Where("status != ?", model.ProxyStatusBanned)
 
-	if err := db.Count(&total).Error; err != nil {
+	countDB := db
+	if joinIPInfo {
+		countDB = countDB.Distinct("proxies.id")
+	}
+	if err := countDB.Count(&total).Error; err != nil {
 		return nil, err
 	}
 
