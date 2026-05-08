@@ -64,7 +64,7 @@ func (dm *DetectorManager) DetectAll(ctx context.Context, ipProxy *model.IPProxy
 		// 第一步：获取基础IP信息（强依赖）
 		baseInfo, err = ipbaseinfo.GetProxyIPWithContext(ctx, ipProxy.ProxyClient)
 		if err != nil {
-			log.Errorln("DetectAll GetProxyIP error: %v", err)
+			log.Errorln("DetectAll GetProxyIPWithContext error: %v", err)
 			return nil, err
 		}
 		if baseInfo.IPV4 == "" && baseInfo.IPV6 == "" {

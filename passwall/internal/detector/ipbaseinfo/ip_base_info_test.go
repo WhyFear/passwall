@@ -50,7 +50,7 @@ func TestGetProxyIP(t *testing.T) {
 		ipServices = originalServices
 	})
 
-	ipInfo, err := GetProxyIP(client)
+	ipInfo, err := GetProxyIPWithContext(context.Background(), client)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, ipInfo)
@@ -59,7 +59,7 @@ func TestGetProxyIP(t *testing.T) {
 }
 
 func TestGetProxyIPRejectsNilClient(t *testing.T) {
-	ipInfo, err := GetProxyIP(nil)
+	ipInfo, err := GetProxyIPWithContext(context.Background(), nil)
 
 	assert.Error(t, err)
 	assert.Nil(t, ipInfo)
@@ -119,7 +119,7 @@ func TestGetAllProxyIPsIntegration(t *testing.T) {
 	}
 
 	// 测试实际调用外部URL
-	ipInfo, err := GetProxyIP(client)
+	ipInfo, err := GetProxyIPWithContext(context.Background(), client)
 
 	if err != nil {
 		t.Logf("获取IP失败: %v", err)
