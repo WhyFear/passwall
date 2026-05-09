@@ -43,36 +43,13 @@ func newSubscriptionRefresher(
 }
 
 func (r *subscriptionRefresher) RefreshAsync(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) {
-	taskType := task.TaskTypeReloadSubs
-	taskCtx := ctx
-	taskRun, started := task.StartRun(ctx, r.taskManager, taskType, 1)
-	if started {
-		taskCtx = taskRun.Context()
-	}
-
 	go func() {
-		finishMessage := ""
-		if started {
-			defer func() {
-				taskRun.FinishWithContextMessage(finishMessage)
-			}()
-		}
-
-		err := r.RefreshOne(taskCtx, subscription, options)
-		if !started {
-			return
-		}
-		if err != nil {
-			if taskCtx.Err() != nil {
-				finishMessage = task.MessageForContext(taskCtx)
+		if err := r.RefreshOne(ctx, subscription, options); err != nil {
+			if ctx.Err() != nil {
 				return
 			}
 			log.Errorln("刷新订阅失败: %v", err)
-			finishMessage = err.Error()
-			taskRun.UpdateProgress(1, finishMessage)
-			return
 		}
-		taskRun.UpdateProgress(1, "")
 	}()
 }
 
@@ -83,12 +60,20 @@ func (r *subscriptionRefresher) RefreshMany(ctx context.Context, subscriptions [
 	}
 
 	taskType := task.TaskTypeReloadSubs
-	taskCtx := ctx
-	taskRun, started := task.StartRun(ctx, r.taskManager, taskType, len(subscriptions))
-	if started {
-		taskCtx = taskRun.Context()
+	taskRun, started := task.StartRunWithSpec(ctx, r.taskManager, task.TaskSpec{
+		Type:  taskType,
+		Total: len(subscriptions),
+		Accesses: []task.TaskAccess{
+			{Resource: task.ResourceSubscriptions, Mode: task.AccessModeWrite},
+			{Resource: task.ResourceProxies, Mode: task.AccessModeWrite},
+		},
+	})
+	if !started {
+		log.Infoln("全量订阅刷新任务已在运行或存在冲突，本次跳过")
+		return
 	}
 
+	taskCtx := taskRun.Context()
 	run := func() {
 		r.refreshMany(taskCtx, taskRun, subscriptions, options)
 	}
@@ -101,16 +86,18 @@ func (r *subscriptionRefresher) RefreshMany(ctx context.Context, subscriptions [
 
 func (r *subscriptionRefresher) refreshMany(ctx context.Context, taskRun *task.TaskRun, subscriptions []*model.Subscription, options *util.DownloadOptions) {
 	var finishMessage string
+	shouldTriggerPendingTest := false
 
 	defer func() {
-		if taskRun == nil {
-			return
-		}
 		if recoverValue := recover(); recoverValue != nil {
 			finishMessage = fmt.Sprintf("刷新订阅任务发生panic: %v", recoverValue)
 			log.Errorln("%s", finishMessage)
+			shouldTriggerPendingTest = false
 		}
 		taskRun.FinishWithContextMessage(finishMessage)
+		if shouldTriggerPendingTest {
+			r.triggerPendingProxyTest(ctx)
+		}
 	}()
 
 	var lastError error
@@ -131,7 +118,8 @@ subscriptionLoop:
 		default:
 		}
 
-		if err := r.RefreshOne(ctx, subscription, options); err != nil {
+		triggerPendingTest, err := r.refreshOneWithContext(ctx, subscription, options)
+		if err != nil {
 			if ctx.Err() != nil {
 				stoppedByContext = true
 				lastError = ctx.Err()
@@ -140,12 +128,13 @@ subscriptionLoop:
 			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
 			lastError = err
 		}
+		if triggerPendingTest {
+			shouldTriggerPendingTest = true
+		}
 
 		jobsDone++
 		completed++
-		if taskRun != nil {
-			taskRun.UpdateProgress(completed, "")
-		}
+		taskRun.UpdateProgress(completed, "")
 	}
 
 	if stoppedByContext {
@@ -154,14 +143,10 @@ subscriptionLoop:
 		finishMessage = lastError.Error()
 	}
 
-	if taskRun != nil {
-		taskRun.FinishWithContextMessage(finishMessage)
-	}
-
 	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 错误: %v", jobsTotal, jobsDone, lastError)
 }
 
-func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) error {
+func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) (retErr error) {
 	taskType := task.TaskTypeReloadSubs
 	taskCtx, started := r.taskManager.StartTaskWithSpec(ctx, task.TaskSpec{
 		Type:       taskType,
@@ -177,29 +162,43 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 		return fmt.Errorf("订阅[ID:%d]正在刷新或存在冲突任务", subscription.ID)
 	}
 
-	var err error
-	triggerPendingTest := false
+	shouldTriggerPendingTest := false
 	defer func() {
-		if triggerPendingTest {
+		if recoverValue := recover(); recoverValue != nil {
+			retErr = fmt.Errorf("刷新订阅发生panic: %v", recoverValue)
+			log.Errorln("刷新订阅[ID:%d]发生panic: %v", subscription.ID, recoverValue)
+			r.taskManager.FinishResourceTask(taskType, subscription.ID, retErr.Error())
+			return
+		}
+		if retErr == nil {
+			r.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
+		}
+		errMsg := ""
+		if retErr != nil {
+			errMsg = retErr.Error()
+		}
+		r.taskManager.FinishResourceTask(taskType, subscription.ID, errMsg)
+		if retErr == nil && shouldTriggerPendingTest {
 			r.triggerPendingProxyTest(taskCtx)
 		}
 	}()
-	defer func() {
-		errMsg := ""
-		if err != nil {
-			errMsg = err.Error()
-		}
-		r.taskManager.FinishResourceTask(taskType, subscription.ID, errMsg)
-	}()
+	shouldTriggerPendingTest, retErr = r.refreshOneWithContext(taskCtx, subscription, options)
+	return retErr
+}
+
+// refreshOneWithContext runs the core refresh logic using a pre-acquired context.
+// It does NOT create or finish a task — the caller is responsible for task lifecycle.
+func (r *subscriptionRefresher) refreshOneWithContext(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) (bool, error) {
+	var err error
 
 	log.Infoln("开始刷新订阅: %s", subscription.URL)
 	if subscription.URL == "" {
 		err = fmt.Errorf("订阅为空")
-		return err
+		return false, err
 	}
 	if !strings.HasPrefix(subscription.URL, "http") {
 		log.Infoln("非下载链接，无需刷新")
-		return nil
+		return false, nil
 	}
 
 	downloadOptions := buildDownloadOptions(options)
@@ -208,34 +207,32 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 	}
 
 	var content []byte
-	content, err = r.download(taskCtx, subscription.URL, downloadOptions)
+	content, err = r.download(ctx, subscription.URL, downloadOptions)
 	if err != nil {
-		if taskCtx.Err() != nil {
-			return taskCtx.Err()
+		if ctx.Err() != nil {
+			return false, ctx.Err()
 		}
 		log.Errorln("下载订阅内容失败: %v", err)
 		_ = markSubscriptionInvalid(r.subscriptionRepo, subscription)
-		return fmt.Errorf("下载订阅内容失败: %w", err)
+		return false, fmt.Errorf("下载订阅内容失败: %w", err)
 	}
 
-	result, err := r.proxySyncer.Sync(taskCtx, subscription, content)
+	result, err := r.proxySyncer.Sync(ctx, subscription, content)
 	if err != nil {
-		if taskCtx.Err() != nil {
-			return taskCtx.Err()
+		if ctx.Err() != nil {
+			return false, ctx.Err()
 		}
 		log.Errorln("解析订阅内容失败: %v", err)
 		_ = markSubscriptionInvalid(r.subscriptionRepo, subscription)
-		return err
+		return false, err
 	}
 
 	if err = markSubscriptionOK(r.subscriptionRepo, subscription, content); err != nil {
-		return err
+		return false, err
 	}
 	logProxySyncResult(subscription, result)
 
-	triggerPendingTest = true
-	r.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
-	return nil
+	return true, nil
 }
 
 func buildDownloadOptions(options *util.DownloadOptions) *util.DownloadOptions {

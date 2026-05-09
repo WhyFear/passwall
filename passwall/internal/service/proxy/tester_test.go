@@ -131,6 +131,15 @@ type fakeTesterProxyRepo struct {
 	updated []*model.Proxy
 }
 
+func (r *fakeTesterProxyRepo) FindByID(id uint) (*model.Proxy, error) {
+	for _, p := range r.proxies {
+		if p.ID == id {
+			return p, nil
+		}
+	}
+	return nil, nil
+}
+
 func (r *fakeTesterProxyRepo) FindAll() ([]*model.Proxy, error) {
 	return r.proxies, nil
 }
@@ -178,4 +187,176 @@ func (t *fakeTesterSpeedTester) Test(ctx context.Context, proxy *model.Proxy) (*
 
 func (t *fakeTesterSpeedTester) SupportedTypes() []model.ProxyType {
 	return []model.ProxyType{model.ProxyTypeVMess}
+}
+
+func TestTesterAllowsConcurrentDifferentProxyIDs(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	started1 := make(chan struct{})
+	started2 := make(chan struct{})
+	release := make(chan struct{})
+	done1 := make(chan struct{})
+	done2 := make(chan struct{})
+	var calls atomic.Int32
+
+	tester := NewTester(
+		&fakeTesterProxyRepo{proxies: []*model.Proxy{
+			{ID: 1, Type: model.ProxyTypeVMess},
+			{ID: 2, Type: model.ProxyTypeVMess},
+		}},
+		&fakeTesterHistoryRepo{},
+		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
+			testFunc: func(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
+				if calls.Add(1) == 1 {
+					close(started1)
+				} else {
+					close(started2)
+				}
+				<-release
+				return &model.SpeedTestResult{Ping: 10, DownloadSpeed: 1024, UploadSpeed: 512}, nil
+			},
+		}},
+		taskManager,
+	)
+
+	go func() {
+		_ = tester.TestProxies(context.Background(), &TestRequest{ProxyIDs: []int64{1}, Concurrent: 1}, false)
+		close(done1)
+	}()
+	go func() {
+		_ = tester.TestProxies(context.Background(), &TestRequest{ProxyIDs: []int64{2}, Concurrent: 1}, false)
+		close(done2)
+	}()
+
+	<-started1
+	<-started2
+	assert.Equal(t, int32(2), calls.Load())
+
+	close(release)
+	<-done1
+	<-done2
+}
+
+func TestTesterRejectsSameProxyID(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	var calls atomic.Int32
+
+	tester := NewTester(
+		&fakeTesterProxyRepo{proxies: []*model.Proxy{
+			{ID: 1, Type: model.ProxyTypeVMess},
+		}},
+		&fakeTesterHistoryRepo{},
+		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
+			testFunc: func(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
+				if calls.Add(1) == 1 {
+					close(started)
+					<-release
+				}
+				return &model.SpeedTestResult{Ping: 10, DownloadSpeed: 1024, UploadSpeed: 512}, nil
+			},
+		}},
+		taskManager,
+	)
+
+	go func() {
+		_ = tester.TestProxies(context.Background(), &TestRequest{ProxyIDs: []int64{1}, Concurrent: 1}, false)
+		close(done)
+	}()
+
+	<-started
+
+	err := tester.TestProxies(context.Background(), &TestRequest{ProxyIDs: []int64{1}, Concurrent: 1}, false)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, task.ErrTaskConflict))
+
+	assert.Equal(t, int32(1), calls.Load())
+
+	close(release)
+	<-done
+}
+
+func TestTesterMutualExclusionGlobalVsResource(t *testing.T) {
+	t.Run("global running blocks resource", func(t *testing.T) {
+		taskManager := task.NewTaskManager()
+		started := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan struct{})
+		var calls atomic.Int32
+
+		tester := NewTester(
+			&fakeTesterProxyRepo{proxies: []*model.Proxy{
+				{ID: 1, Type: model.ProxyTypeVMess},
+				{ID: 2, Type: model.ProxyTypeVMess},
+			}},
+			&fakeTesterHistoryRepo{},
+			&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
+				testFunc: func(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
+					if calls.Add(1) == 1 {
+						close(started)
+						<-release
+					}
+					return &model.SpeedTestResult{Ping: 10, DownloadSpeed: 1024, UploadSpeed: 512}, nil
+				},
+			}},
+			taskManager,
+		)
+
+		go func() {
+			_ = tester.TestProxies(context.Background(), &TestRequest{Concurrent: 1}, false) // global (FindAll)
+			close(done)
+		}()
+
+		<-started
+
+		err := tester.TestProxies(context.Background(), &TestRequest{ProxyIDs: []int64{2}, Concurrent: 1}, false) // resource
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, task.ErrTaskConflict))
+		assert.Equal(t, int32(1), calls.Load())
+
+		close(release)
+		<-done
+	})
+
+	t.Run("resource running blocks global", func(t *testing.T) {
+		taskManager := task.NewTaskManager()
+		started := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan struct{})
+		var calls atomic.Int32
+
+		tester := NewTester(
+			&fakeTesterProxyRepo{proxies: []*model.Proxy{
+				{ID: 1, Type: model.ProxyTypeVMess},
+				{ID: 2, Type: model.ProxyTypeVMess},
+			}},
+			&fakeTesterHistoryRepo{},
+			&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
+				testFunc: func(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
+					if calls.Add(1) == 1 {
+						close(started)
+						<-release
+					}
+					return &model.SpeedTestResult{Ping: 10, DownloadSpeed: 1024, UploadSpeed: 512}, nil
+				},
+			}},
+			taskManager,
+		)
+
+		go func() {
+			_ = tester.TestProxies(context.Background(), &TestRequest{ProxyIDs: []int64{1}, Concurrent: 1}, false) // resource
+			close(done)
+		}()
+
+		<-started
+
+		err := tester.TestProxies(context.Background(), &TestRequest{Concurrent: 1}, false) // global (FindAll)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, task.ErrTaskConflict))
+		assert.Equal(t, int32(1), calls.Load())
+
+		close(release)
+		<-done
+	})
 }
