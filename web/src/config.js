@@ -1,11 +1,11 @@
 // 应用配置
 const config = {
   // API基础URL
-  apiBaseUrl: `/web/api`,
+  apiBaseUrl: process.env.REACT_APP_API_BASE_URL || '/web/api',
 
   // 其他配置
   appName: 'PassWall',
   version: '0.1.0',
 };
 
-export default config; 
+export default config;
