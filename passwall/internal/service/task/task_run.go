@@ -12,11 +12,13 @@ const (
 	TaskTerminatedMessage = "任务超时或其他原因终止"
 )
 
-// TaskRun wraps a global task lifecycle with progress accumulation and
-// idempotent finishing. It keeps TaskManager's public interface unchanged.
+// TaskRun wraps a task lifecycle with progress accumulation and idempotent
+// finishing. When resourceID is non-zero it delegates to resource-aware
+// manager methods; otherwise it uses the global (resourceID=0) methods.
 type TaskRun struct {
 	manager    TaskManager
 	taskType   TaskType
+	resourceID uint
 	ctx        context.Context
 	completed  atomic.Int32
 	finishOnce sync.Once
@@ -35,9 +37,10 @@ func StartRunWithSpec(ctx context.Context, manager TaskManager, spec TaskSpec) (
 		return nil, false
 	}
 	return &TaskRun{
-		manager:  manager,
-		taskType: spec.Type,
-		ctx:      taskCtx,
+		manager:    manager,
+		taskType:   spec.Type,
+		resourceID: spec.ResourceID,
+		ctx:        taskCtx,
 	}, true
 }
 
@@ -47,18 +50,30 @@ func (r *TaskRun) Context() context.Context {
 
 func (r *TaskRun) IncrementProgress(errMsg string) int {
 	completed := int(r.completed.Add(1))
-	r.manager.UpdateProgress(r.taskType, completed, errMsg)
+	if r.resourceID != 0 {
+		r.manager.UpdateResourceProgress(r.taskType, r.resourceID, completed, errMsg)
+	} else {
+		r.manager.UpdateProgress(r.taskType, completed, errMsg)
+	}
 	return completed
 }
 
 func (r *TaskRun) UpdateProgress(completed int, errMsg string) {
 	r.completed.Store(int32(completed))
-	r.manager.UpdateProgress(r.taskType, completed, errMsg)
+	if r.resourceID != 0 {
+		r.manager.UpdateResourceProgress(r.taskType, r.resourceID, completed, errMsg)
+	} else {
+		r.manager.UpdateProgress(r.taskType, completed, errMsg)
+	}
 }
 
 func (r *TaskRun) Finish(errMsg string) {
 	r.finishOnce.Do(func() {
-		r.manager.FinishTask(r.taskType, errMsg)
+		if r.resourceID != 0 {
+			r.manager.FinishResourceTask(r.taskType, r.resourceID, errMsg)
+		} else {
+			r.manager.FinishTask(r.taskType, errMsg)
+		}
 	})
 }
 

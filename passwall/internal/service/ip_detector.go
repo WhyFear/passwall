@@ -30,6 +30,7 @@ type BatchIPDetectorReq struct {
 	APPUnlockEnable bool
 	Refresh         bool
 	Concurrent      int
+	TaskResourceID  uint // 0 = global batch task; non-zero = resource-level task keyed by this ID
 }
 
 type IPDetectResp struct {
@@ -116,11 +117,12 @@ func (i ipDetectorImpl) BatchDetect(ctx context.Context, req *BatchIPDetectorReq
 	}
 
 	taskRun, success := task.StartRunWithSpec(ctx, i.TaskManager, task.TaskSpec{
-		Type:  task.TaskTypeCheckIp,
-		Total: len(req.ProxyIDList),
+		Type:       task.TaskTypeCheckIp,
+		ResourceID: req.TaskResourceID,
+		Total:      len(req.ProxyIDList),
 		Accesses: []task.TaskAccess{
 			{Resource: task.ResourceProxies, Mode: task.AccessModeRead},
-			{Resource: task.ResourceIPDetection, Mode: task.AccessModeWrite},
+			{Resource: task.ResourceIPDetection, Mode: task.AccessModeWrite, ResourceID: req.TaskResourceID},
 		},
 	})
 	if !success {

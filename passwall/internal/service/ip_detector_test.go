@@ -399,3 +399,182 @@ type fakeDetectIPInfoRepo struct {
 type fakeDetectUnlockInfoRepo struct {
 	repository.IPUnlockInfoRepository
 }
+
+func TestIPDetectorBatchDetectAllowsConcurrentDifferentResourceIDs(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	started1 := make(chan struct{})
+	started2 := make(chan struct{})
+	release := make(chan struct{})
+	done1 := make(chan struct{})
+	done2 := make(chan struct{})
+	var calls atomic.Int32
+
+	detectorService := ipDetectorImpl{
+		TaskManager: taskManager,
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+			if calls.Add(1) == 1 {
+				close(started1)
+			} else {
+				close(started2)
+			}
+			<-release
+			return nil
+		},
+	}
+
+	go func() {
+		_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+			ProxyIDList:    []uint{1},
+			Enabled:        true,
+			Concurrent:     1,
+			TaskResourceID: 1,
+		})
+		close(done1)
+	}()
+	go func() {
+		_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+			ProxyIDList:    []uint{2},
+			Enabled:        true,
+			Concurrent:     1,
+			TaskResourceID: 2,
+		})
+		close(done2)
+	}()
+
+	<-started1
+	<-started2
+	assert.Equal(t, int32(2), calls.Load())
+
+	close(release)
+	<-done1
+	<-done2
+}
+
+func TestIPDetectorBatchDetectRejectsSameResourceID(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	var calls atomic.Int32
+
+	detectorService := ipDetectorImpl{
+		TaskManager: taskManager,
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+			if calls.Add(1) == 1 {
+				close(started)
+				<-release
+			}
+			return nil
+		},
+	}
+
+	go func() {
+		_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+			ProxyIDList:    []uint{1},
+			Enabled:        true,
+			Concurrent:     1,
+			TaskResourceID: 100,
+		})
+		close(done)
+	}()
+
+	<-started
+
+	_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+		ProxyIDList:    []uint{2},
+		Enabled:        true,
+		Concurrent:     1,
+		TaskResourceID: 100,
+	})
+
+	assert.Equal(t, int32(1), calls.Load())
+
+	close(release)
+	<-done
+}
+
+func TestIPDetectorBatchDetectMutualExclusionGlobalVsResource(t *testing.T) {
+	taskManager := task.NewTaskManager()
+
+	t.Run("global running blocks resource", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan struct{})
+		var calls atomic.Int32
+
+		detectorService := ipDetectorImpl{
+			TaskManager: taskManager,
+			detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+				if calls.Add(1) == 1 {
+					close(started)
+					<-release
+				}
+				return nil
+			},
+		}
+
+		go func() {
+			_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+				ProxyIDList:    []uint{1},
+				Enabled:        true,
+				Concurrent:     1,
+				TaskResourceID: 0,
+			})
+			close(done)
+		}()
+
+		<-started
+
+		_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+			ProxyIDList:    []uint{2},
+			Enabled:        true,
+			Concurrent:     1,
+			TaskResourceID: 200,
+		})
+		assert.Equal(t, int32(1), calls.Load())
+
+		close(release)
+		<-done
+	})
+
+	t.Run("resource running blocks global", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		done := make(chan struct{})
+		var calls atomic.Int32
+
+		detectorService := ipDetectorImpl{
+			TaskManager: taskManager,
+			detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+				if calls.Add(1) == 1 {
+					close(started)
+					<-release
+				}
+				return nil
+			},
+		}
+
+		go func() {
+			_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+				ProxyIDList:    []uint{1},
+				Enabled:        true,
+				Concurrent:     1,
+				TaskResourceID: 300,
+			})
+			close(done)
+		}()
+
+		<-started
+
+		_ = detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+			ProxyIDList:    []uint{2},
+			Enabled:        true,
+			Concurrent:     1,
+			TaskResourceID: 0,
+		})
+		assert.Equal(t, int32(1), calls.Load())
+
+		close(release)
+		<-done
+	})
+}

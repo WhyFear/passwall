@@ -264,3 +264,61 @@ func TestTaskRunFinishWithContextMessageUsesCancellationMessage(t *testing.T) {
 	require.NotNil(t, status)
 	assert.Equal(t, TaskCanceledMessage, status.Error)
 }
+
+func TestTaskRunWithResourceIDUpdatesResourceProgressAndFinish(t *testing.T) {
+	manager := NewTaskManager()
+	run, started := StartRunWithSpec(context.Background(), manager, TaskSpec{
+		Type:       TaskTypeCheckIp,
+		ResourceID: 42,
+		Total:      5,
+	})
+	require.True(t, started)
+
+	run.IncrementProgress("")
+	run.IncrementProgress("")
+
+	status := manager.GetStatus(TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, 2, status.Completed)
+	assert.Equal(t, 40, status.Progress)
+
+	run.Finish("resource done")
+	run.Finish("should not overwrite")
+
+	assert.False(t, manager.IsResourceRunning(TaskTypeCheckIp, 42))
+	allStatus := manager.GetAllStatus()
+	var finishedStatus *TaskStatus
+	for _, s := range allStatus {
+		if s.Type == TaskTypeCheckIp && s.ResourceID == 42 {
+			finishedStatus = s
+			break
+		}
+	}
+	require.NotNil(t, finishedStatus)
+	assert.Equal(t, TaskStateFinished, finishedStatus.State)
+	assert.Equal(t, "resource done", finishedStatus.Error)
+}
+
+func TestTaskRunDifferentResourceIDsCompleteIndependently(t *testing.T) {
+	manager := NewTaskManager()
+
+	run1, started1 := StartRunWithSpec(context.Background(), manager, TaskSpec{
+		Type:       TaskTypeCheckIp,
+		ResourceID: 1,
+		Total:      1,
+	})
+	run2, started2 := StartRunWithSpec(context.Background(), manager, TaskSpec{
+		Type:       TaskTypeCheckIp,
+		ResourceID: 2,
+		Total:      1,
+	})
+	require.True(t, started1)
+	require.True(t, started2)
+
+	run1.Finish("done 1")
+	assert.False(t, manager.IsResourceRunning(TaskTypeCheckIp, 1))
+	assert.True(t, manager.IsResourceRunning(TaskTypeCheckIp, 2))
+
+	run2.Finish("done 2")
+	assert.False(t, manager.IsResourceRunning(TaskTypeCheckIp, 2))
+}
