@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
@@ -129,7 +128,7 @@ func dedupeProxies(proxies []*model.Proxy) []*model.Proxy {
 	exist := make(map[string]bool, len(proxies))
 
 	for _, proxy := range proxies {
-		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port) + ":" + proxy.Password
+		key := proxy.DedupKey()
 		if exist[key] {
 			log.Infoln("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password)
 			continue

@@ -4,13 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 
 	"github.com/metacubex/mihomo/log"
 
 	"passwall/internal/model"
 	"passwall/internal/util"
 )
+
+const defaultHysteriaSpeed = 100 * 1024 * 1024
 
 // Parser 解析器接口
 type Parser interface {
@@ -116,45 +120,11 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 			}
 		}
 	}
-	// fixme 特化处理hysteria的up和down在mihomo里不能为0的问题
-	if singleProxy.Type == model.ProxyTypeHysteria {
-		speed := 100 * 1024 * 1024
-		if proxy["up"] != nil {
-			switch proxy["up"].(type) {
-			case int:
-				if proxy["up"].(int) == 0 {
-					proxy["up"] = speed
-				}
-			case int64:
-				if proxy["up"].(int64) == 0 {
-					proxy["up"] = speed
-				}
-			case string:
-				if proxy["up"].(string) == "" {
-					proxy["up"] = strconv.Itoa(speed)
-				}
-			default:
-				log.Errorln("不支持的hysteria.up类型: %T", proxy["up"])
-			}
-		}
-		if proxy["down"] != nil {
-			switch proxy["down"].(type) {
-			case int:
-				if proxy["down"].(int) == 0 {
-					proxy["down"] = speed
-				}
-			case int64:
-				if proxy["down"].(int64) == 0 {
-					proxy["down"] = speed
-				}
-			case string:
-				if proxy["down"].(string) == "" {
-					proxy["down"] = strconv.Itoa(speed)
-				}
-			default:
-				log.Errorln("不支持的hysteria.up类型: %T", proxy["up"])
-			}
-		}
+	// fixme 特化处理hysteria的up和down在mihomo里不能为0，且不能为科学计数法的问题
+	if singleProxy.Type == model.ProxyTypeHysteria || singleProxy.Type == model.ProxyTypeHysteria2 {
+		defaultZero := singleProxy.Type == model.ProxyTypeHysteria
+		normalizeHysteriaSpeedField(proxy, "up", defaultZero)
+		normalizeHysteriaSpeedField(proxy, "down", defaultZero)
 	}
 
 	// 提取密码字段用于唯一键区分
@@ -169,4 +139,80 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 
 	singleProxy.Config = string(jsonData)
 	return &singleProxy, nil
+}
+
+func normalizeHysteriaSpeedField(proxy map[string]any, field string, defaultZero bool) {
+	value, exists := proxy[field]
+	if !exists || value == nil {
+		return
+	}
+
+	normalized, ok := normalizeHysteriaSpeedValue(value, defaultZero)
+	if !ok {
+		log.Errorln("不支持的hysteria.%s类型: %T", field, value)
+		return
+	}
+	proxy[field] = normalized
+}
+
+func normalizeHysteriaSpeedValue(value any, defaultZero bool) (any, bool) {
+	switch v := value.(type) {
+	case int:
+		return normalizeHysteriaIntegerSpeed(int64(v), defaultZero), true
+	case int64:
+		return normalizeHysteriaIntegerSpeed(v, defaultZero), true
+	case float64:
+		return normalizeHysteriaFloatSpeed(v, defaultZero), true
+	case float32:
+		return normalizeHysteriaFloatSpeed(float64(v), defaultZero), true
+	case string:
+		return normalizeHysteriaStringSpeed(v, defaultZero), true
+	default:
+		return nil, false
+	}
+}
+
+func normalizeHysteriaIntegerSpeed(value int64, defaultZero bool) any {
+	if value == 0 && defaultZero {
+		return defaultHysteriaSpeed
+	}
+	return value
+}
+
+func normalizeHysteriaFloatSpeed(value float64, defaultZero bool) any {
+	if value == 0 && defaultZero {
+		return defaultHysteriaSpeed
+	}
+	if normalized, ok := decimalIntegerSpeed(value); ok {
+		return normalized
+	}
+	return value
+}
+
+func normalizeHysteriaStringSpeed(value string, defaultZero bool) any {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		if defaultZero {
+			return strconv.Itoa(defaultHysteriaSpeed)
+		}
+		return value
+	}
+
+	if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		if parsed == 0 && defaultZero {
+			return strconv.Itoa(defaultHysteriaSpeed)
+		}
+		if normalized, ok := decimalIntegerSpeed(parsed); ok {
+			return normalized
+		}
+	}
+
+	return trimmed
+}
+
+func decimalIntegerSpeed(value float64) (string, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value != math.Trunc(value) {
+		return "", false
+	}
+	return strconv.FormatFloat(value, 'f', 0, 64), true
 }

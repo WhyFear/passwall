@@ -37,7 +37,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	{
 		// 公开API
 		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))
-		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.TaskManager, services.ProxyTester))
+		apiGroup.POST("/test_proxy_server", handler.TestProxyServer(services.ProxyTester))
 		apiGroup.POST("/stop_task", handler.StopTask(services.TaskManager))
 		apiGroup.POST("/reload_subscription", handler.ReloadSubscription(ctx, services.SubscriptionManager, services.ConfigService))
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestShareURLParser_Parse(t *testing.T) {
@@ -24,6 +25,21 @@ func TestShareURLParser_Parse(t *testing.T) {
 	proxies, _ := p.Parse(content)
 
 	assert.Equal(t, len(contentList), len(proxies))
+}
+
+func TestShareURLParser_NormalizesHysteriaScientificSpeed(t *testing.T) {
+	content := []byte("hysteria://127.0.0.1:46938?auth=baidu.com&upmbps=5E%2B02&downmbps=5E%2B02#test")
+
+	p := NewShareURLParser()
+	proxies, err := p.Parse(content)
+
+	require.NoError(t, err)
+	require.Len(t, proxies, 1)
+
+	config := make(map[string]any)
+	require.NoError(t, json.Unmarshal([]byte(proxies[0].Config), &config))
+	assert.Equal(t, "500", config["up"])
+	assert.Equal(t, "500", config["down"])
 }
 
 func TestShareURLParser_CanNotParse(t *testing.T) {

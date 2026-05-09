@@ -54,6 +54,7 @@ func DetectIPQuality(configService service.ConfigService, ipDetectorService serv
 				APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
 				Refresh:         true,
 				Concurrent:      1,
+				TaskResourceID:  req.ProxyID,
 			})
 		}()
 

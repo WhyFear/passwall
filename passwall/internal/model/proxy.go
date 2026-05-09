@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strconv"
 	"time"
 )
 
@@ -56,6 +57,11 @@ type Proxy struct {
 	UpdatedAt      time.Time   `json:"updated_at"`
 
 	ProxyIPAddresses []ProxyIPAddress `json:"proxy_ip_addresses" gorm:"foreignKey:ProxyID"`
+}
+
+// DedupKey returns the composite deduplication key (domain:port:password).
+func (p *Proxy) DedupKey() string {
+	return p.Domain + ":" + strconv.Itoa(p.Port) + ":" + p.Password
 }
 
 // SpeedTestResult 测速结果

@@ -1,4 +1,4 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {message} from 'antd';
 import {subscriptionApi} from '../../api';
 import {buildNodeListParams} from './nodeQueryUtils';
@@ -20,13 +20,30 @@ export const useNodesQuery = (api = subscriptionApi) => {
   const [pagination, setPagination] = useState(DEFAULT_NODE_PAGINATION);
   const [sorter, setSorter] = useState(DEFAULT_NODE_SORTER);
   const [filters, setFilters] = useState({});
+  const abortRef = useRef(null);
+
+  // Cancel in-flight requests on unmount.
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+    };
+  }, []);
 
   const fetchNodes = useCallback(async (page, pageSize, sort, filter) => {
+    // Cancel any previous in-flight request.
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       setLoading(true);
       const params = buildNodeListParams(page, pageSize, sort, filter);
-      const data = await api.getProxies({params});
-      setNodes([]);
+      const data = await api.getProxies({params, signal: controller.signal});
+      if (controller.signal.aborted) return;
       const nodeList = Array.isArray(data.items) ? data.items : [];
       setNodes(nodeList);
       setPagination(prev => ({
@@ -36,10 +53,13 @@ export const useNodesQuery = (api = subscriptionApi) => {
         total: data.total || nodeList.length,
       }));
     } catch (error) {
+      if (controller.signal.aborted) return;
       message.error('获取节点列表失败');
       console.error(error);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [api]);
 

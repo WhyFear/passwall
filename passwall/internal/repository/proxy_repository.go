@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"passwall/internal/model"
-	"strconv"
 	"time"
 
 	"github.com/metacubex/mihomo/log"
@@ -174,6 +173,10 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 				}
 			}
 			if key == "country_code" {
+				countryCodeArray, ok := value.([]string)
+				if !ok || len(countryCodeArray) == 0 {
+					continue
+				}
 				if !joinIPInfo {
 					// 预加载关联表
 					db = db.Preload("ProxyIPAddresses.IPAddress.IPBaseInfo")
@@ -182,14 +185,14 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 					// 联查ip_base_info表
 					joinIPInfo = true
 				}
-				// id in
-				if countryCodeArray, ok := value.([]string); ok && len(countryCodeArray) > 0 {
-					// 联查ip_base_info表
-					db = db.Where("ip_base_infos.country_code IN ?", countryCodeArray)
-					continue
-				}
+				db = db.Where("ip_base_infos.country_code IN ?", countryCodeArray)
+				continue
 			}
 			if key == "risk_level" {
+				riskLevelArray, ok := value.([]string)
+				if !ok || len(riskLevelArray) == 0 {
+					continue
+				}
 				if !joinIPInfo {
 					// 预加载关联表
 					db = db.Preload("ProxyIPAddresses.IPAddress.IPBaseInfo")
@@ -198,11 +201,8 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 					// 联查ip_base_info表
 					joinIPInfo = true
 				}
-				if riskLevelArray, ok := value.([]string); ok && len(riskLevelArray) > 0 {
-					// 联查ip_base_info表
-					db = db.Where("ip_base_infos.risk_level IN ?", riskLevelArray)
-					continue
-				}
+				db = db.Where("ip_base_infos.risk_level IN ?", riskLevelArray)
+				continue
 			}
 		}
 	}
@@ -267,7 +267,7 @@ func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 	uniqueProxies := make([]*model.Proxy, 0)
 	exist := make(map[string]bool)
 	for _, proxy := range proxies {
-		key := proxy.Domain + ":" + strconv.Itoa(proxy.Port) + ":" + proxy.Password
+		key := proxy.DedupKey()
 		if !exist[key] {
 			exist[key] = true
 			uniqueProxies = append(uniqueProxies, proxy)

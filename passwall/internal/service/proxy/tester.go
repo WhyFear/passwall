@@ -98,11 +98,8 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 	if request == nil {
 		return fmt.Errorf("请求参数不能为空")
 	}
-
-	// 如果已有任务在运行，返回错误
-	if t.taskManager.IsRunning(task.TaskTypeSpeedTest) {
-		log.Infoln("已有其他任务正在运行")
-		return fmt.Errorf("已有其他任务正在运行")
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	// 根据请求参数获取需要测试的代理
@@ -146,11 +143,33 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 		return nil
 	}
 
-	// 开始任务
+	// 开始任务：单代理使用资源级任务，批量/筛选使用全局任务
 	taskType := task.TaskTypeSpeedTest
-	taskRun, started := task.StartRun(ctx, t.taskManager, taskType, len(proxies))
+	var spec task.TaskSpec
+	if len(request.ProxyIDs) == 1 {
+		proxyID := uint(request.ProxyIDs[0])
+		spec = task.TaskSpec{
+			Type:       taskType,
+			ResourceID: proxyID,
+			Total:      len(proxies),
+			Accesses: []task.TaskAccess{
+				{Resource: task.ResourceProxies, ResourceID: proxyID, Mode: task.AccessModeWrite},
+				{Resource: task.ResourceSpeedHistory, ResourceID: proxyID, Mode: task.AccessModeWrite},
+			},
+		}
+	} else {
+		spec = task.TaskSpec{
+			Type:  taskType,
+			Total: len(proxies),
+			Accesses: []task.TaskAccess{
+				{Resource: task.ResourceProxies, Mode: task.AccessModeWrite},
+				{Resource: task.ResourceSpeedHistory, Mode: task.AccessModeWrite},
+			},
+		}
+	}
+	taskRun, started := task.StartRunWithSpec(ctx, t.taskManager, spec)
 	if !started {
-		return fmt.Errorf("启动任务失败")
+		return task.ErrTaskConflict
 	}
 
 	// 设置并发数

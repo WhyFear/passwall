@@ -1,10 +1,14 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/assert"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClashParser_Parse(t *testing.T) {
@@ -24,6 +28,52 @@ func TestClashParser_Parse(t *testing.T) {
 	proxies, _ := p.Parse(content)
 
 	assert.Equal(t, len(contentList), len(proxies))
+}
+
+func TestClashParser_NormalizesHysteriaScientificSpeed(t *testing.T) {
+	content := []byte(`proxies:
+  - name: test
+    server: 127.0.0.1
+    port: 46938
+    type: hysteria
+    auth-str: baidu.com
+    up: "5E+02"
+    down: "5e+02"
+`)
+
+	p := NewClashParser()
+	proxies, err := p.Parse(content)
+
+	require.NoError(t, err)
+	require.Len(t, proxies, 1)
+
+	config := make(map[string]any)
+	require.NoError(t, json.Unmarshal([]byte(proxies[0].Config), &config))
+	assert.Equal(t, "500", config["up"])
+	assert.Equal(t, "500", config["down"])
+}
+
+func TestClashParser_DefaultsEmptyHysteriaSpeed(t *testing.T) {
+	content := []byte(`proxies:
+  - name: test
+    server: 127.0.0.1
+    port: 46938
+    type: hysteria
+    auth-str: baidu.com
+    up: ""
+    down: ""
+`)
+
+	p := NewClashParser()
+	proxies, err := p.Parse(content)
+
+	require.NoError(t, err)
+	require.Len(t, proxies, 1)
+
+	config := make(map[string]any)
+	require.NoError(t, json.Unmarshal([]byte(proxies[0].Config), &config))
+	assert.Equal(t, strconv.Itoa(defaultHysteriaSpeed), config["up"])
+	assert.Equal(t, strconv.Itoa(defaultHysteriaSpeed), config["down"])
 }
 
 func TestClashParser_CanNotParse(t *testing.T) {

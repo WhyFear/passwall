@@ -2,11 +2,11 @@ package handler
 
 import (
 	"net/http"
-	"passwall/internal/service/task"
 
 	"github.com/gin-gonic/gin"
 
 	"passwall/internal/service"
+	"passwall/internal/service/task"
 )
 
 // TestProxyServerRequest 测试代理服务器请求
@@ -20,7 +20,7 @@ type TestProxyServerRequest struct {
 }
 
 // TestProxyServer 测试代理服务器处理器
-func TestProxyServer(taskManager task.TaskManager, proxyTester service.ProxyTester) gin.HandlerFunc {
+func TestProxyServer(proxyTester service.ProxyTester) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req TestProxyServerRequest
 
@@ -39,16 +39,6 @@ func TestProxyServer(taskManager task.TaskManager, proxyTester service.ProxyTest
 			req.Concurrent = 5
 		}
 
-		// 检查是否有任务在运行
-		if taskManager.IsAnyRunning() {
-			c.JSON(http.StatusConflict, gin.H{
-				"result":      "task_running",
-				"status_code": http.StatusConflict,
-				"status_msg":  "Another task is already running",
-			})
-			return
-		}
-
 		// 创建测试请求
 		testRequest := &service.TestProxyRequest{
 			TestAll:    req.TestAll,
@@ -60,6 +50,14 @@ func TestProxyServer(taskManager task.TaskManager, proxyTester service.ProxyTest
 
 		// 执行测试
 		if err := proxyTester.TestProxies(testRequest, true); err != nil {
+			if task.IsConflictError(err) {
+				c.JSON(http.StatusConflict, gin.H{
+					"result":      "task_running",
+					"status_code": http.StatusConflict,
+					"status_msg":  "Another task is already running",
+				})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
