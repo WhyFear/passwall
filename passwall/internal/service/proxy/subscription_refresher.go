@@ -163,13 +163,27 @@ subscriptionLoop:
 
 func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) error {
 	taskType := task.TaskTypeReloadSubs
-	taskCtx, started := r.taskManager.StartResourceTask(ctx, taskType, subscription.ID, 1)
+	taskCtx, started := r.taskManager.StartTaskWithSpec(ctx, task.TaskSpec{
+		Type:       taskType,
+		ResourceID: subscription.ID,
+		Total:      1,
+		Accesses: []task.TaskAccess{
+			{Resource: task.ResourceSubscriptions, ResourceID: subscription.ID, Mode: task.AccessModeWrite},
+			{Resource: task.ResourceProxies, ResourceID: subscription.ID, Mode: task.AccessModeWrite},
+		},
+	})
 	if !started {
 		log.Infoln("订阅[ID:%d]正在刷新中，本次跳过", subscription.ID)
-		return nil
+		return fmt.Errorf("订阅[ID:%d]正在刷新或存在冲突任务", subscription.ID)
 	}
 
 	var err error
+	triggerPendingTest := false
+	defer func() {
+		if triggerPendingTest {
+			r.triggerPendingProxyTest(taskCtx)
+		}
+	}()
 	defer func() {
 		errMsg := ""
 		if err != nil {
@@ -219,7 +233,7 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 	}
 	logProxySyncResult(subscription, result)
 
-	r.triggerPendingProxyTest(taskCtx)
+	triggerPendingTest = true
 	r.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
 	return nil
 }

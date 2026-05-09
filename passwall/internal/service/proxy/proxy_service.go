@@ -3,10 +3,11 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"math"
+
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
-	"strconv"
 
 	"github.com/metacubex/mihomo/log"
 )
@@ -144,10 +145,17 @@ func (s *DefaultProxyService) PinProxy(id uint, pin bool) error {
 func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) error {
 	var finishMessage string
 
-	taskCtx, success := s.taskManager.StartTask(ctx, task.TaskTypeBanProxy, 0)
+	taskCtx, success := s.taskManager.StartTaskWithSpec(ctx, task.TaskSpec{
+		Type:  task.TaskTypeBanProxy,
+		Total: 0,
+		Accesses: []task.TaskAccess{
+			{Resource: task.ResourceProxies, Mode: task.AccessModeWrite},
+			{Resource: task.ResourceSpeedHistory, Mode: task.AccessModeRead},
+		},
+	})
 	if !success {
-		log.Warnln("已有批量封禁代理任务正在运行")
-		return nil
+		log.Warnln("已有冲突的代理任务正在运行")
+		return task.ErrTaskConflict
 	}
 
 	// 确保在函数返回时完成任务
@@ -237,8 +245,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 			}
 		}
 		successRate := float64(successCount) / float64(req.TestTimes) * 100
-		// 转换为两位小数
-		successRate, _ = strconv.ParseFloat(strconv.FormatFloat(successRate, 'f', 2, 64), 64)
+		successRate = math.Trunc(successRate*100) / 100
 		if successRate <= req.SuccessRateThreshold {
 			log.Infoln("代理 %d 的成功数为 %v，成功率为 %.2f，低于阈值 %v，将被封禁", proxy.ID, successCount, successRate, req.SuccessRateThreshold)
 			proxiesToBan = append(proxiesToBan, proxy.ID)

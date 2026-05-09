@@ -55,6 +55,132 @@ func TestTaskManagerResourceTasksAreIndependent(t *testing.T) {
 	assert.True(t, manager.IsResourceRunning(TaskTypeReloadSubs, 2))
 }
 
+func TestTaskManagerAllowsConcurrentReadsOnSameResource(t *testing.T) {
+	manager := NewTaskManager()
+
+	_, startedOne := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:  TaskTypeCheckIp,
+		Total: 1,
+		Accesses: []TaskAccess{{
+			Resource: ResourceProxies,
+			Mode:     AccessModeRead,
+		}},
+	})
+	_, startedTwo := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:       TaskTypeReloadSubs,
+		ResourceID: 1,
+		Total:      1,
+		Accesses: []TaskAccess{{
+			Resource: ResourceProxies,
+			Mode:     AccessModeRead,
+		}},
+	})
+
+	assert.True(t, startedOne)
+	assert.True(t, startedTwo)
+}
+
+func TestTaskManagerRejectsReadWriteConflictOnSameResource(t *testing.T) {
+	manager := NewTaskManager()
+
+	_, startedWrite := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:  TaskTypeSpeedTest,
+		Total: 1,
+		Accesses: []TaskAccess{{
+			Resource: ResourceProxies,
+			Mode:     AccessModeWrite,
+		}},
+	})
+	_, startedRead := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:       TaskTypeReloadSubs,
+		ResourceID: 1,
+		Total:      1,
+		Accesses: []TaskAccess{{
+			Resource: ResourceProxies,
+			Mode:     AccessModeRead,
+		}},
+	})
+
+	assert.True(t, startedWrite)
+	assert.False(t, startedRead)
+}
+
+func TestTaskManagerAllowsWritesOnDifferentResourceIDs(t *testing.T) {
+	manager := NewTaskManager()
+
+	_, startedOne := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:       TaskTypeReloadSubs,
+		ResourceID: 1,
+		Total:      1,
+		Accesses: []TaskAccess{{
+			Resource:   ResourceProxies,
+			ResourceID: 1,
+			Mode:       AccessModeWrite,
+		}},
+	})
+	_, startedTwo := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:       TaskTypeReloadSubs,
+		ResourceID: 2,
+		Total:      1,
+		Accesses: []TaskAccess{{
+			Resource:   ResourceProxies,
+			ResourceID: 2,
+			Mode:       AccessModeWrite,
+		}},
+	})
+	_, startedGlobalWrite := manager.StartTaskWithSpec(context.Background(), TaskSpec{
+		Type:  TaskTypeBanProxy,
+		Total: 1,
+		Accesses: []TaskAccess{{
+			Resource: ResourceProxies,
+			Mode:     AccessModeWrite,
+		}},
+	})
+
+	assert.True(t, startedOne)
+	assert.True(t, startedTwo)
+	assert.False(t, startedGlobalWrite)
+}
+
+func TestTaskManagerAggregatesResourceStatusForTaskType(t *testing.T) {
+	manager := NewTaskManager()
+
+	_, startedOne := manager.StartResourceTask(context.Background(), TaskTypeReloadSubs, 1, 2)
+	_, startedTwo := manager.StartResourceTask(context.Background(), TaskTypeReloadSubs, 2, 2)
+	require.True(t, startedOne)
+	require.True(t, startedTwo)
+
+	manager.UpdateResourceProgress(TaskTypeReloadSubs, 1, 1, "")
+	manager.UpdateResourceProgress(TaskTypeReloadSubs, 2, 2, "")
+
+	status := manager.GetStatus(TaskTypeReloadSubs)
+	require.NotNil(t, status)
+	assert.Equal(t, TaskStateRunning, status.State)
+	assert.Equal(t, 4, status.Total)
+	assert.Equal(t, 3, status.Completed)
+	assert.Equal(t, 75, status.Progress)
+}
+
+func TestTaskManagerCancelTaskCancelsActiveResourceTasks(t *testing.T) {
+	manager := NewTaskManager()
+
+	ctxOne, startedOne := manager.StartResourceTask(context.Background(), TaskTypeReloadSubs, 1, 1)
+	ctxTwo, startedTwo := manager.StartResourceTask(context.Background(), TaskTypeReloadSubs, 2, 1)
+	require.True(t, startedOne)
+	require.True(t, startedTwo)
+
+	cancelled, timedOut := manager.CancelTask(TaskTypeReloadSubs, false)
+
+	assert.True(t, cancelled)
+	assert.False(t, timedOut)
+	assert.ErrorIs(t, ctxOne.Err(), context.Canceled)
+	assert.ErrorIs(t, ctxTwo.Err(), context.Canceled)
+	status := manager.GetStatus(TaskTypeReloadSubs)
+	require.NotNil(t, status)
+	assert.Equal(t, TaskStateCanceling, status.State)
+	assert.Equal(t, 2, status.Total)
+}
+
 func TestTaskManagerCancelTask(t *testing.T) {
 	manager := NewTaskManager()
 
@@ -81,12 +207,7 @@ func TestTaskManagerCancelTask(t *testing.T) {
 }
 
 func TestTaskManagerCancelTaskTimeoutKeepsTaskCanceling(t *testing.T) {
-	manager := NewTaskManager()
-	originalTimeout := cancelWaitTimeout
-	cancelWaitTimeout = 10 * time.Millisecond
-	t.Cleanup(func() {
-		cancelWaitTimeout = originalTimeout
-	})
+	manager := NewTaskManagerWithTimeout(10 * time.Millisecond)
 
 	_, started := manager.StartTask(context.Background(), TaskTypeSpeedTest, 1)
 	require.True(t, started)

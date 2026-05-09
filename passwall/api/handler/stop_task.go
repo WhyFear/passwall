@@ -31,16 +31,6 @@ func StopTask(taskManager task.TaskManager) gin.HandlerFunc {
 		// 将字符串转换为TaskType
 		taskType := task.TaskType(req.TaskType)
 
-		// 检查任务是否存在且正在运行
-		if !taskManager.IsRunning(taskType) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"result":      "fail",
-				"status_code": http.StatusNotFound,
-				"status_msg":  "指定的任务不存在或未在运行",
-			})
-			return
-		}
-
 		// 默认情况下等待任务清理完成，但不超过任务管理器的取消等待超时
 		// 客户端可以通过设置wait=false来立即返回
 		wait := true
@@ -51,10 +41,10 @@ func StopTask(taskManager task.TaskManager) gin.HandlerFunc {
 		// 取消任务
 		cancelled, timedOut := taskManager.CancelTask(taskType, wait)
 		if !cancelled {
-			c.JSON(http.StatusInternalServerError, gin.H{
+			c.JSON(http.StatusNotFound, gin.H{
 				"result":      "fail",
-				"status_code": http.StatusInternalServerError,
-				"status_msg":  "停止任务失败",
+				"status_code": http.StatusNotFound,
+				"status_msg":  "指定的任务不存在或未在运行",
 			})
 			return
 		}

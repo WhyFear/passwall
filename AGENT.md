@@ -51,7 +51,7 @@ cd web; npm test
 cd web; npm test -- --testNamePattern="test name"
 ```
 
-前端 API 基础地址在 `web/src/config.js` 中配置，当前指向 `http://127.0.0.1:9080/web/api`。如果后端监听端口或部署路径变化，需要同步更新这里。
+前端 API 基础地址在 `web/src/config.js` 中配置，当前指向 `/web/api`（相对路径，生产环境应与后端同源）。`process.env.REACT_APP_API_BASE_URL` 可覆盖。
 
 ### Docker
 
@@ -99,7 +99,7 @@ docker compose up -d
 - parser factory 注册 `share_url` 和 `clash` 解析器，代码在 `passwall/internal/adapter/parser/`。
 - generator factory 注册 `clash` 和 `share_link` 生成器，代码在 `passwall/internal/adapter/generator/`。
 - speed tester factory 注册 Clash core 测速器，代码在 `passwall/internal/adapter/speedtester/`。
-- task manager 在 `passwall/internal/service/task/` 中管理异步任务状态。
+- task manager 在 `passwall/internal/service/task/` 中管理异步任务状态和资源访问冲突检测。
 - 订阅与代理服务主要在 `passwall/internal/service/proxy/` 中。
 - IP 信息与流媒体解锁检测在 `passwall/internal/detector/` 和 `passwall/internal/service/ip_detector.go` 中。
 
@@ -108,9 +108,39 @@ docker compose up -d
 - `sqlite` 模式会对主要模型执行 AutoMigrate，并设置 WAL/busy_timeout 等 PRAGMA。
 - `postgres` 模式只自动迁移 `SubscriptionConfig` 和 `SystemConfig`，避免干扰已有业务表结构。
 
+### 任务管理器与资源访问控制
+
+`passwall/internal/service/task/task_manager.go` 管理全局任务和资源级任务的生命周期。关键接口 `TaskManager` 提供 `StartTaskWithSpec`、`CancelTask`、`FinishTask`、`GetAllStatus` 等方法。
+
+**资源访问声明**：通过 `TaskSpec.Accesses` 声明任务所需资源和访问模式（`AccessModeRead` / `AccessModeWrite`）。预定义资源有 `ResourceProxies`、`ResourceSubscriptions`、`ResourceSpeedHistory`、`ResourceIPDetection`。启动时，有冲突（同资源写-写或读-写）的活跃任务会拒绝新任务。
+
+**哨兵错误**：`ErrTaskConflict`（资源访问冲突）和 `ErrTaskAlreadyRunning`（同类型任务已在运行）。Handler 应使用 `errors.Is()` 判断，不要用字符串匹配错误消息。
+
+**TaskRun 包装器**：`StartRunWithSpec` 返回 `*TaskRun`，封装进度累加（`IncrementProgress`）和幂等完成（`Finish`/`FinishWithContextMessage`）。
+
+**测试支持**：`NewTaskManagerWithTimeout` 创建带自定义取消超时的任务管理器，避免并行测试下修改包级变量。
+
+**并发策略**：同一资源的只读操作允许并发；涉及写入的任务互斥执行。详见 `internal/service/task/task_manager.go:hasConflictingAccessLocked`。
+
 ### 调度器
 
 `passwall/internal/scheduler/scheduler.go` 使用 `robfig/cron/v3` 且启用秒级 cron 表达式。调度器会加载全局 `cron_jobs`，并为启用自动更新的订阅配置创建独立任务。修改系统配置或订阅配置时，相关 service 会把 scheduler 注入后触发重载或更新任务。
+
+`cron_job_executor.go` 负责执行单个 cron job 的完整流程：依次执行测速、自动封禁、IP 检测、webhook。panic 恢复时会遍历 `GetAllStatus()` 清理所有活跃任务（全局和资源级）。
+
+### 代理服务子模块
+
+`passwall/internal/service/proxy/` 包含多个职责分离的文件：
+
+- `proxy_service.go` — 对外代理操作（筛选查询、封禁、置顶等）。
+- `tester.go` — 代理测速（单代理和批量，支持并发限制和取消）。
+- `proxy_syncer.go` — 订阅解析后的代理同步（增/改/跳过/去重）。
+- `subscription_refresher.go` — 订阅刷新（下载、解析、同步、触发后续测试）。
+- `subscription_status.go` — 订阅状态标记（有效/无效）和同步结果日志。
+
+### IP 检测
+
+`passwall/internal/service/ip_detector.go` 提供单体检测（`Detect`）和批量检测（`BatchDetect`）。批量检测支持并发控制、取消，失败数量会汇总到任务完成消息。检测结果通过 `ip_detect_persister.go` 持久化（IP 地址、基础信息、解锁信息）。
 
 ### 前端结构
 
@@ -120,6 +150,15 @@ docker compose up -d
 - `/nodes`：节点列表页，页面文件 `web/src/pages/NodesPage.js`。
 - `/config`：系统配置页，页面文件 `web/src/pages/ConfigPage.js`。
 
+节点列表页拆分为多个模块，位于 `web/src/pages/nodes/`：
+- `useNodesQuery.js` — 数据请求 hook（支持 AbortController 取消）。
+- `nodeColumns.js` — 表格列定义和列设置菜单生成。
+- `nodeFormatters.js` — 速度、流量、风险等格式化函数。
+- `nodeTags.js` — 状态标签和状态信息组件。
+- `nodeQueryUtils.js` — 查询参数构建工具。
+- `NodeBatchActions.js` — 批量操作区域组件。
+- `NodeDetailModal.js` — 节点详情弹窗组件。
+
 API 封装集中在 `web/src/api/index.js`，导出 `subscriptionApi`、`nodeApi`、`taskApi`、`configApi`。通用组件在 `web/src/components/`，token、cron、时间和任务相关工具在 `web/src/utils/`。
 
 ## 项目特定注意事项
@@ -128,3 +167,6 @@ API 封装集中在 `web/src/api/index.js`，导出 `subscriptionApi`、`nodeApi
 - 当前仓库包含已安装的 `web/node_modules/`，代码搜索和架构梳理时通常应排除它。
 - Gin 会在后端中服务 `./web/build`，生产构建或 Docker 镜像需要先生成前端 build。
 - 后端 cron 表达式使用 6 字段（含秒），例如 `0 0 6,18 * * *`。
+- Handler 与 service 之间的错误传递应使用 sentinel error（如 `task.ErrTaskConflict`）+ `errors.Is()`，不要依赖字符串匹配。
+- 任务访问冲突需要区分错误类型：`ErrTaskAlreadyRunning`（同类型任务已在运行）和 `ErrTaskConflict`（资源访问冲突），两者在 HTTP 层都返回 "task running" 语义。
+- 前端 `useNodesQuery` 使用 `AbortController`：新请求自动取消旧请求，组件卸载时取消 in-flight 请求。向 `api.getProxies` 传递 `signal` 参数。

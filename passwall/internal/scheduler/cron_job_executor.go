@@ -42,11 +42,6 @@ func (e *cronJobExecutor) Execute(job config.CronJob) {
 	log.Infoln("Executing job: %s", job.Name)
 	defer e.recoverJob(job)
 
-	if e.taskManager.IsAnyRunning() {
-		log.Infoln("Another task is running, skipping job: %s", job.Name)
-		return
-	}
-
 	ctx := context.Background()
 	e.executeProxyTest(ctx, job)
 	e.executeAutoBan(ctx, job)
@@ -62,11 +57,16 @@ func (e *cronJobExecutor) recoverJob(job config.CronJob) {
 		log.Infoln("Job %s panic: %v", job.Name, r)
 	}
 
-	for _, taskType := range []task.TaskType{task.TaskTypeSpeedTest, task.TaskTypeReloadSubs} {
-		if e.taskManager.IsRunning(taskType) {
-			e.taskManager.FinishTask(taskType, "任务执行过程中发生严重错误")
-			log.Infoln("Forced task %s to finish due to panic", taskType)
+	for _, status := range e.taskManager.GetAllStatus() {
+		if status.State != task.TaskStateRunning && status.State != task.TaskStateCanceling {
+			continue
 		}
+		if status.ResourceID == 0 {
+			e.taskManager.FinishTask(status.Type, "任务执行过程中发生严重错误")
+		} else {
+			e.taskManager.FinishResourceTask(status.Type, status.ResourceID, "任务执行过程中发生严重错误")
+		}
+		log.Infoln("Forced task %s (resource=%d) to finish due to panic", status.Type, status.ResourceID)
 	}
 }
 

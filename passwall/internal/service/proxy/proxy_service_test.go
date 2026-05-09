@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"passwall/internal/model"
@@ -57,6 +59,25 @@ func TestProxyServiceGetProxiesByFiltersRejectsUnknownSortField(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "pinned desc,download_speed DESC", repo.query.OrderBy)
+}
+
+func TestProxyServiceBanProxyReturnsConflictWhenProxyWriteTaskIsActive(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	_, started := taskManager.StartTaskWithSpec(context.Background(), task.TaskSpec{
+		Type:  task.TaskTypeSpeedTest,
+		Total: 1,
+		Accesses: []task.TaskAccess{{
+			Resource: task.ResourceProxies,
+			Mode:     task.AccessModeWrite,
+		}},
+	})
+	require.True(t, started)
+	service := NewProxyService(&capturingProxyRepository{}, nil, taskManager)
+
+	err := service.BanProxy(context.Background(), BanProxyReq{})
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, task.ErrTaskConflict), "expected ErrTaskConflict, got: %v", err)
 }
 
 type capturingProxyRepository struct {

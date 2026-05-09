@@ -2,12 +2,15 @@ package handler
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
 	"net/http"
-	"passwall/internal/model"
-	"passwall/internal/service/proxy"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"passwall/internal/model"
+	"passwall/internal/service/proxy"
+	"passwall/internal/service/task"
 )
 
 type TestProxyReq struct {
@@ -68,7 +71,7 @@ func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
 		// 测试代理
 		err := proxyTester.TestProxies(ctx, request, true)
 		if err != nil {
-			if err.Error() == "已有其他任务正在运行" {
+			if task.IsConflictError(err) {
 				c.JSON(http.StatusOK, gin.H{
 					"result":      "error",
 					"status_code": http.StatusOK,

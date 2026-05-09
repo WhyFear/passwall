@@ -1,98 +1,32 @@
 import {
   DeleteOutlined,
   EditOutlined,
-  EyeOutlined,
-  InfoCircleOutlined,
-  LinkOutlined,
-  PushpinFilled,
-  PushpinOutlined,
-  ReloadOutlined,
-  SettingOutlined,
-  StopOutlined
+  LinkOutlined
 } from '@ant-design/icons';
 import {
   Button,
   Card,
-  Checkbox,
-  Dropdown,
   Form,
   Input,
   InputNumber,
   message,
   Modal,
-  Progress,
   Select,
   Space,
   Switch,
   Table,
   Tabs,
-  Tag,
-  Tooltip
+  Tag
 } from 'antd';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {nodeApi, shareConfigApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, isTaskActive, TASK_STATE_CANCELING, stopTask} from '../utils/taskUtils';
+import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
-import {DEFAULT_VISIBLE_COLUMNS, formatRisk, formatSpeed, formatTraffic} from './nodes/nodeFormatters';
+import {DEFAULT_VISIBLE_COLUMNS, formatRisk} from './nodes/nodeFormatters';
+import NodeBatchActions from './nodes/NodeBatchActions';
+import NodeDetailModal from './nodes/NodeDetailModal';
+import {createColumnSettingMenu, createNodeColumns} from './nodes/nodeColumns';
 import {DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER, useNodesQuery} from './nodes/useNodesQuery';
-
-// 状态标签组件
-const StatusTag = ({status}) => {
-  let color = 'default';
-  let text = '未知';
-
-  if (status === -1) {
-    color = 'default';
-    text = '未测试';
-  } else if (status === 1) {
-    color = 'success';
-    text = '正常';
-  } else if (status === 2) {
-    color = 'error';
-    text = '失败';
-  } else if (status === 3) {
-    color = 'warning';
-    text = '未知错误';
-  }
-
-  return <Tag color={color}>{text}</Tag>;
-};
-
-const AppUnlockStatusTag = ({status}) => {
-  let color = 'default';
-  let text = '未知';
-  // fail unlock forbidden
-  if (status === "fail") {
-    color = 'error';
-    text = '失败';
-  } else if (status === "unlock") {
-    color = 'success';
-    text = '解锁';
-  } else if (status === "forbidden") {
-    color = 'warning';
-    text = '屏蔽';
-  } else if (status === "rateLimit") {
-    color = 'warning';
-    text = '限流';
-  }
-
-  return <Tag color={color}>{text}</Tag>;
-};
-
-// 信息项组件，用于显示节点详情中的每一项
-const InfoItem = ({label, value}) => {
-  return (<div style={{display: 'flex', alignItems: 'center', marginBottom: '8px'}}>
-    <strong style={{width: '100px', textAlign: 'right', marginRight: '8px'}}>{label}:</strong>
-    <span style={{
-      flex: 1,
-      backgroundColor: '#f5f5f5',
-      padding: '4px 8px',
-      borderRadius: '4px',
-      border: '1px solid #e8e8e8',
-      wordBreak: 'break-all'
-    }}>{value}</span>
-  </div>);
-};
 
 const NodesPage = () => {
   const [shareForm] = Form.useForm();
@@ -107,7 +41,7 @@ const NodesPage = () => {
   const [nodeTypes, setNodeTypes] = useState([]);
   const [taskStatus, setTaskStatus] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
-  const [countryCodes, setCountryCodes] = useState({});
+  const [countryCodes, setCountryCodes] = useState([]);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [shareConfigs, setShareConfigs] = useState([]);
   const [shareLoading, setShareLoading] = useState(false);
@@ -189,7 +123,7 @@ const NodesPage = () => {
       }
     } catch (error) {
       console.error('获取国家代码失败');
-      setCountryCodes({});
+      setCountryCodes([]);
       console.error(error);
     }
   }, []);
@@ -663,30 +597,6 @@ const NodesPage = () => {
 
   const [visibleColumns, setVisibleColumns] = useState({});
 
-  // 定义所有列的配置
-  const allColumns = [{key: 'index', title: '序号', fixed: false, hideable: false}, {
-    key: 'subscription_url', title: '订阅链接', fixed: false, hideable: true
-  }, {
-    key: 'name', title: '名称', fixed: false, hideable: true
-  }, {
-    key: 'address', title: '节点', fixed: false, hideable: true
-  }, {
-    key: 'type', title: '节点类型', fixed: false, hideable: true
-  }, {
-    key: 'status', title: '状态', fixed: false, hideable: true
-  }, {key: 'ping', title: 'Ping', fixed: false, hideable: true}, {
-    key: 'download_speed', title: '下载速度', fixed: false, hideable: true
-  }, {key: 'upload_speed', title: '上传速度', fixed: false, hideable: true}, {
-    key: 'latest_test_time', title: '测试时间', fixed: false, hideable: true
-  }, {key: 'success_rate', title: '成功率', fixed: false, hideable: true}, {
-    key: 'risk', title: '风险等级', fixed: false, hideable: true
-  }, {key: 'country_code', title: '国家/地区', fixed: false, hideable: true}, {
-    key: 'action', title: '操作', fixed: true, hideable: false
-  }];
-
-  // 默认显示的列（不可隐藏的列+一些默认显示的可隐藏列）
-
-
   // 保存列设置到本地存储
   const saveColumnSettings = (newSettings) => {
     try {
@@ -703,221 +613,35 @@ const NodesPage = () => {
     saveColumnSettings(newSettings);
   };
 
-  // 表格列配置
-  const columns = [{
-    title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1, hidden: !visibleColumns['index']
-  }, {
-    title: '订阅链接',
-    dataIndex: 'subscription_url',
-    key: 'subscription_url',
-    width: 300,
-    ellipsis: true,
-    hidden: !visibleColumns['subscription_url']
-  }, {
-    title: '名称', dataIndex: 'name', key: 'name', width: 200, ellipsis: true, hidden: !visibleColumns['name']
-  }, {
-    title: '节点', dataIndex: 'address', key: 'address', width: 200, hidden: !visibleColumns['address']
-  }, {
-    title: '节点类型',
-    dataIndex: 'type',
-    key: 'type',
-    width: 120,
-    ellipsis: true,
-    sorter: true,
-    filterMode: 'tree',
-    filters: nodeTypes.length > 0 ? nodeTypes : [{text: 'vmess', value: 'vmess'}, {text: 'vless', value: 'vless'}],
-    filterMultiple: true,
-    hidden: !visibleColumns['type']
-  }, {
-    title: '状态',
-    dataIndex: 'status',
-    key: 'status',
-    width: 100,
-    render: (status) => <StatusTag status={status}/>,
-    sorter: true,
-    filters: [{text: '未测试', value: -1}, {text: '正常', value: 1}, {text: '失败', value: 2}, {
-      text: '未知错误', value: 3
-    }],
-    filterMultiple: true,
-    hidden: !visibleColumns['status']
-  }, {
-    title: 'Ping',
-    dataIndex: 'ping',
-    key: 'ping',
-    width: 120,
-    render: (ping) => ping ? `${ping}ms` : '-',
-    sorter: true,
-    hidden: !visibleColumns['ping']
-  }, {
-    title: '下载速度',
-    dataIndex: 'download_speed',
-    key: 'download_speed',
-    width: 120,
-    render: (speed) => formatSpeed(speed),
-    sorter: true,
-    defaultSortOrder: 'descend',
-    hidden: !visibleColumns['download_speed']
-  }, {
-    title: '上传速度',
-    dataIndex: 'upload_speed',
-    key: 'upload_speed',
-    width: 110,
-    render: (speed) => formatSpeed(speed),
-    sorter: true,
-    hidden: !visibleColumns['upload_speed']
-  }, {
-    title: '测试时间',
-    dataIndex: 'latest_test_time',
-    key: 'latest_test_time',
-    width: 160,
-    render: (text) => formatDate(text),
-    sorter: true,
-    hidden: !visibleColumns['latest_test_time']
-  }, {
-    title: '成功率',
-    dataIndex: 'success_rate',
-    key: 'success_rate',
-    align: 'right',
-    render: (rate) => `${rate}%`,
-    width: 80,
-    hidden: !visibleColumns['success_rate']
-  }, {
-    title: <Tooltip
-      title="风险等级由IPV4及IPV6分别计算，优先展示IPV4的风险等级，可能出现筛选低风险但出现高风险情况"><span>风险等级 <InfoCircleOutlined/></span></Tooltip>,
-    dataIndex: ['ip_info', 'risk'],
-    key: 'risk',
-    width: 110,
-    render: (risk) => formatRisk(risk),
-    filters: [{text: formatRisk('very_low'), value: 'very_low'}, {text: formatRisk('low'), value: 'low'}, {
-      text: formatRisk('medium'), value: 'medium'
-    }, {text: formatRisk('high'), value: 'high'}, {text: formatRisk('very_high'), value: 'very_high'}],
-    filterMultiple: true,
-    hidden: !visibleColumns['risk']
-  }, {
-    title: '国家/地区',
-    dataIndex: ['ip_info', 'country_code'],
-    key: 'country',
-    width: 100,
-    render: (country) => country ? country : "-",
-    filterMode: 'tree',
-    filters: countryCodes.length > 0 ? countryCodes : [],
-    filterMultiple: true,
-    hidden: !visibleColumns['country_code']
-  }, {
-    title: '操作',
-    key: 'action',
-    width: 130,
-    fixed: isMobile ? undefined : 'right',
-    render: (_, record) => (<div className="table-action">
-      <Tooltip title="查看详情">
-        <Button
-          type="text"
-          icon={<EyeOutlined/>}
-          onClick={() => handleViewNode(record)}
-        />
-      </Tooltip>
-      <Tooltip title="测速">
-        <Button
-          type="text"
-          icon={<ReloadOutlined/>}
-          onClick={() => handleTestProxy(record.id)}
-        />
-      </Tooltip>
-      <Tooltip title="检测IP">
-        <Button
-          type="text"
-          icon={<InfoCircleOutlined/>}
-          onClick={() => handleDetectIP(record.id)}
-        />
-      </Tooltip>
-      <Tooltip title={record.pinned ? "取消置顶" : "置顶"}>
-        <Button
-          type="text"
-          icon={record.pinned ? <PushpinFilled/> : <PushpinOutlined/>}
-          onClick={() => handlePinProxy(record.id, record.pinned)}
-        />
-      </Tooltip>
-      <Tooltip title="禁用">
-        <Button
-          type="text"
-          icon={<DeleteOutlined/>}
-          onClick={() => handleBanProxy(record.id)}
-        />
-      </Tooltip>
-    </div>),
-    hidden: !visibleColumns['action']
-  }].filter(column => !column.hidden);
+  const columns = createNodeColumns({
+    visibleColumns,
+    nodeTypes,
+    countryCodes,
+    isMobile,
+    onViewNode: handleViewNode,
+    onTestProxy: handleTestProxy,
+    onDetectIP: handleDetectIP,
+    onPinProxy: handlePinProxy,
+    onBanProxy: handleBanProxy,
+  });
 
-  // 列设置菜单
-  const columnSettingMenu = allColumns.map(column => ({
-    key: column.key, label: (<Checkbox
-      checked={visibleColumns[column.key] ?? DEFAULT_VISIBLE_COLUMNS.includes(column.key)}
-      onChange={e => handleColumnVisibilityChange(column.key, e.target.checked)}
-      disabled={!column.hideable}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {column.title}
-    </Checkbox>)
-  }));
+  const columnSettingMenu = createColumnSettingMenu({
+    visibleColumns,
+    onColumnVisibilityChange: handleColumnVisibilityChange,
+  });
 
   return (<div>
     <Tabs
       activeKey={activeTab}
       onChange={setActiveTab}
-      tabBarExtraContent={<div className="tab-bar-extra"
-                               style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
-        {isTaskActive(taskStatus) && (<div style={{display: 'flex', alignItems: 'center'}}>
-          <Progress
-            type="circle"
-            percent={Math.round((taskStatus.completed / taskStatus.total) * 100)}
-            size="small"
-            style={{marginRight: 8}}
-          />
-          <span style={{marginRight: 8}}>
-            {taskStatus.state === TASK_STATE_CANCELING ? '测速取消中' : '测速进行中'}: {taskStatus.completed}/{taskStatus.total}
-          </span>
-          <Button
-            type="primary"
-            danger
-            icon={<StopOutlined/>}
-            onClick={handleStopTask}
-            style={{margin: 0}}
-          >
-            停止任务
-          </Button>
-        </div>)}
-        <Button
-          type="primary"
-          danger
-          onClick={() => handleBanProxy(null)}
-          style={{margin: 0}}
-        >
-          批量禁用节点
-        </Button>
-        <Button
-          type="primary"
-          onClick={() => handleTestProxy(null)}
-          style={{margin: 0}}
-        >
-          按当前参数进行测速
-        </Button>
-        <Button
-          type="primary"
-          onClick={handleExportSubscriptionUrl}
-          style={{margin: 0}}
-        >
-          分享管理
-        </Button>
-        <Dropdown menu={{items: columnSettingMenu}} trigger={['click']}>
-          <Button
-            type="primary"
-            icon={<SettingOutlined/>}
-            style={{margin: 0}}
-          >
-            列设置
-          </Button>
-        </Dropdown>
-      </div>}
+      tabBarExtraContent={<NodeBatchActions
+        taskStatus={taskStatus}
+        onStopTask={handleStopTask}
+        onBanProxy={handleBanProxy}
+        onTestProxy={handleTestProxy}
+        onExportSubscriptionUrl={handleExportSubscriptionUrl}
+        columnSettingMenu={columnSettingMenu}
+      />}
     >
       <Tabs.TabPane tab="所有节点" key="2">
         <div style={{overflowX: 'auto', width: '100%'}}>
@@ -1005,7 +729,7 @@ const NodesPage = () => {
                 mode="multiple"
                 allowClear
                 showSearch
-                options={(Array.isArray(countryCodes) ? countryCodes : []).map(item => ({label: item.text, value: item.value}))}
+                options={countryCodes.map(item => ({label: item.text, value: item.value}))}
               />
             </Form.Item>
             <Form.Item name="risk_level" label="风险等级">
@@ -1034,86 +758,15 @@ const NodesPage = () => {
       />
     </Modal>
 
-    {/* 节点详情弹窗，这两个弹窗写的跟shit一样 */}
-    <Modal
-      title="节点详情"
+    <NodeDetailModal
       open={modalVisible}
-      onCancel={() => setModalVisible(false)}
-      footer={[<Button key="close" type="primary" onClick={() => setModalVisible(false)}>
-        关闭
-      </Button>,
-      ]}
-      width={800}
-    >
-      {currentNode && (<div>
-        <Card title="基本信息" style={{marginBottom: 5}}>
-          <InfoItem label="名称" value={currentNode.name || '未命名'}/>
-          <InfoItem label="订阅链接" value={currentNode.subscription_url}/>
-          <InfoItem label="地址" value={currentNode.address}/>
-          <InfoItem label="节点类型" value={currentNode.type}/>
-          <InfoItem label="状态" value={<StatusTag status={currentNode.status}/>}/>
-          <InfoItem label="Ping" value={currentNode.ping ? `${currentNode.ping}ms` : '-'}/>
-          <InfoItem label="下载速度" value={formatSpeed(currentNode.download_speed)}/>
-          <InfoItem label="上传速度" value={formatSpeed(currentNode.upload_speed)}/>
-          <InfoItem label="节点创建时间" value={formatDate(currentNode.created_at)}/>
-          <InfoItem label="最近测试时间" value={formatDate(currentNode.latest_test_time)}/>
-          <InfoItem label="分享链接" value={currentNode.share_url} isMultiLine={true}/>
-          <InfoItem label="总计下载流量" value={formatTraffic(currentNode.download_total)}/>
-          <InfoItem label="总计上传流量" value={formatTraffic(currentNode.upload_total)}/>
-          {currentNode.ip_info?.ipv4 && (<InfoItem label="IPV4地址" value={currentNode.ip_info?.ipv4}/>)}
-          {currentNode.ip_info?.ipv6 && (<InfoItem label="IPV6地址" value={currentNode.ip_info?.ipv6}/>)}
-          {currentNode.ip_info?.risk && (<InfoItem label="风险等级" value={currentNode.ip_info?.risk}/>)}
-          {currentNode.ip_info?.country_code && (
-            <InfoItem label="国家/地区代码" value={currentNode.ip_info?.country_code}/>)}
-        </Card>
-
-        {currentNode?.ip_info?.app_unlock && currentNode.ip_info?.app_unlock.length > 0 && (
-          <Card title="应用解锁" style={{marginBottom: 5}}>
-            <Table
-              columns={[{
-                title: '应用名称', dataIndex: 'app_name', key: 'app_name'
-              }, {
-                title: '解锁状态',
-                dataIndex: 'status',
-                key: 'status',
-                render: (status) => <AppUnlockStatusTag status={status}/>
-              }, {
-                title: '地区', dataIndex: 'region', key: 'region', render: (region) => region || '-'
-              }]}
-              dataSource={currentNode.ip_info?.app_unlock || []}
-              pagination={false}
-            />
-          </Card>)}
-
-        {nodeHistory && nodeHistory.length > 0 && <Card title="历史记录" style={{marginBottom: 5}}>
-          <Table
-            columns={[{
-              title: '测试时间', dataIndex: 'tested_at', key: 'tested_at', render: (text) => formatDate(text)
-            }, {
-              title: 'Ping', dataIndex: 'ping', key: 'ping', render: (ping) => ping ? `${ping}ms` : '-'
-            }, {
-              title: '下载速度',
-              dataIndex: 'download_speed',
-              key: 'download_speed',
-              render: (speed) => formatSpeed(speed)
-            }, {
-              title: '上传速度', dataIndex: 'upload_speed', key: 'upload_speed', render: (speed) => formatSpeed(speed)
-            },]}
-            dataSource={nodeHistory}
-            rowKey="id"
-            loading={historyLoading}
-            pagination={{
-              ...historyPagination,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total) => `共 ${total} 条记录`,
-              pageSizeOptions: ['5', '10', '20']
-            }}
-            onChange={handleHistoryTableChange}
-          />
-        </Card>}
-      </div>)}
-    </Modal>
+      node={currentNode}
+      nodeHistory={nodeHistory}
+      historyLoading={historyLoading}
+      historyPagination={historyPagination}
+      onClose={() => setModalVisible(false)}
+      onHistoryTableChange={handleHistoryTableChange}
+    />
   </div>);
 };
 

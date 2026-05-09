@@ -47,9 +47,11 @@ describe('api client', () => {
     errorSpy.mockRestore();
   });
 
-  test('uses relative web API base URL by default', () => {
+  test('uses configured API base URL', () => {
+    const config = require('../config').default;
+
     expect(axios.create).toHaveBeenCalledWith(expect.objectContaining({
-      baseURL: '/web/api',
+      baseURL: config.apiBaseUrl,
       timeout: 10000,
     }));
   });

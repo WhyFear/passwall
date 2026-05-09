@@ -211,6 +211,35 @@ func TestSubscriptionRefresherSyncsContentAndTriggersPendingTest(t *testing.T) {
 	}
 }
 
+func TestSubscriptionRefresherReturnsConflictWhenProxyWriteTaskIsActive(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	_, started := taskManager.StartTaskWithSpec(context.Background(), task.TaskSpec{
+		Type:  task.TaskTypeSpeedTest,
+		Total: 1,
+		Accesses: []task.TaskAccess{{
+			Resource: task.ResourceProxies,
+			Mode:     task.AccessModeWrite,
+		}},
+	})
+	require.True(t, started)
+	refresher := newSubscriptionRefresher(
+		&fakeSubscriptionStatusRepository{},
+		taskManager,
+		&fakeConfigProvider{},
+		nil,
+		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
+		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
+			t.Fatal("download should not be called while a conflicting task is active")
+			return nil, nil
+		},
+	)
+
+	err := refresher.RefreshOne(context.Background(), &model.Subscription{ID: 1, URL: "https://example.test/sub"}, nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "存在冲突任务")
+}
+
 type fakeSubscriptionStatusRepository struct {
 	repository.SubscriptionRepository
 	status  model.SubscriptionStatus

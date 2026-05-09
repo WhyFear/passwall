@@ -23,13 +23,20 @@ type TaskRun struct {
 }
 
 func StartRun(ctx context.Context, manager TaskManager, taskType TaskType, total int) (*TaskRun, bool) {
-	taskCtx, started := manager.StartTask(ctx, taskType, total)
+	return StartRunWithSpec(ctx, manager, TaskSpec{
+		Type:  taskType,
+		Total: total,
+	})
+}
+
+func StartRunWithSpec(ctx context.Context, manager TaskManager, spec TaskSpec) (*TaskRun, bool) {
+	taskCtx, started := manager.StartTaskWithSpec(ctx, spec)
 	if !started {
 		return nil, false
 	}
 	return &TaskRun{
 		manager:  manager,
-		taskType: taskType,
+		taskType: spec.Type,
 		ctx:      taskCtx,
 	}, true
 }

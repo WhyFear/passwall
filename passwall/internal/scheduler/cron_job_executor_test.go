@@ -52,7 +52,7 @@ func TestCronJobExecutorRunsConfiguredSteps(t *testing.T) {
 	assert.Equal(t, 3, ipDetector.req.Concurrent)
 }
 
-func TestCronJobExecutorSkipsWhenAnotherTaskIsRunning(t *testing.T) {
+func TestCronJobExecutorDoesNotUseGlobalTaskSkip(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	_, started := taskManager.StartTask(context.Background(), task.TaskTypeSpeedTest, 1)
 	require.True(t, started)
@@ -64,7 +64,7 @@ func TestCronJobExecutorSkipsWhenAnotherTaskIsRunning(t *testing.T) {
 		TestProxy: config.TestProxyConfig{Enable: true},
 	})
 
-	assert.Nil(t, proxyTester.request)
+	require.NotNil(t, proxyTester.request)
 }
 
 func TestBuildProxyFilterIgnoresInvalidStatuses(t *testing.T) {

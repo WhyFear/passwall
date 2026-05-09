@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -96,6 +97,31 @@ func TestTesterCancellationStopsPendingTests(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 	assert.Empty(t, proxyRepo.updated)
 	assert.Empty(t, historyRepo.created)
+}
+
+func TestTesterRejectsWhenProxyWriteTaskIsActive(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	_, started := taskManager.StartTaskWithSpec(context.Background(), task.TaskSpec{
+		Type:  task.TaskTypeBanProxy,
+		Total: 1,
+		Accesses: []task.TaskAccess{{
+			Resource: task.ResourceProxies,
+			Mode:     task.AccessModeWrite,
+		}},
+	})
+	require.True(t, started)
+
+	tester := NewTester(
+		&fakeTesterProxyRepo{proxies: []*model.Proxy{{ID: 1, Type: model.ProxyTypeVMess}}},
+		&fakeTesterHistoryRepo{},
+		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{}},
+		taskManager,
+	)
+
+	err := tester.TestProxies(context.Background(), &TestRequest{Concurrent: 1}, false)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, task.ErrTaskConflict), "expected ErrTaskConflict, got: %v", err)
 }
 
 type fakeTesterProxyRepo struct {

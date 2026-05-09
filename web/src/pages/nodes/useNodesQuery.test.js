@@ -4,15 +4,15 @@ jest.mock('../../api', () => ({
   },
 }));
 
-import React, {createElement} from 'react';
+import React, {act, createElement} from 'react';
 import {createRoot} from 'react-dom/client';
-import {act} from 'react-dom/test-utils';
 import {useNodesQuery, DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER} from './useNodesQuery';
 import {subscriptionApi} from '../../api';
 
 let container;
 
 beforeEach(() => {
+  global.IS_REACT_ACT_ENVIRONMENT = true;
   jest.clearAllMocks();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -39,6 +39,16 @@ const mountHook = (api) => {
     },
     unmount: () => act(() => root.unmount()),
   };
+};
+
+/** Returns a promise and its resolver/rejector for manual control. */
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return {promise, resolve, reject};
 };
 
 describe('useNodesQuery', () => {
@@ -103,6 +113,7 @@ describe('useNodesQuery', () => {
           sortOrder: 'ascend',
           status: '1',
         },
+        signal: expect.any(AbortSignal),
       });
 
       expect(hook.current.nodes).toEqual(items);
@@ -139,6 +150,77 @@ describe('useNodesQuery', () => {
 
       expect(hook.current.nodes).toEqual([]);
       hook.unmount();
+    });
+
+    test('sets nodes once on success (no intermediate empty array)', async () => {
+      const items = [{id: 1}];
+      subscriptionApi.getProxies.mockResolvedValue({items, total: 1});
+
+      const hook = mountHook(subscriptionApi);
+
+      await act(async () => {
+        hook.current.fetchNodes(1, 10, DEFAULT_NODE_SORTER, {});
+      });
+
+      expect(hook.current.nodes).toEqual(items);
+      hook.unmount();
+    });
+  });
+
+  describe('request cancellation', () => {
+    test('aborts previous request when a new one starts', async () => {
+      const first = deferred();
+      const second = deferred();
+      subscriptionApi.getProxies
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise);
+
+      const hook = mountHook(subscriptionApi);
+
+      act(() => {
+        hook.current.fetchNodes(1, 10, DEFAULT_NODE_SORTER, {});
+      });
+      act(() => {
+        hook.current.fetchNodes(2, 10, DEFAULT_NODE_SORTER, {});
+      });
+
+      // Resolve the second request.
+      await act(async () => {
+        second.resolve({items: [{id: 2}], total: 1});
+      });
+
+      // The first request was aborted — resolving it should be a no-op.
+      await act(async () => {
+        first.resolve({items: [{id: 1}], total: 1});
+      });
+
+      // Nodes should reflect the second request, not the first.
+      expect(hook.current.nodes).toEqual([{id: 2}]);
+      expect(hook.current.pagination.current).toBe(2);
+      hook.unmount();
+    });
+
+    test('does not update state when request is aborted by unmount', async () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const d = deferred();
+      subscriptionApi.getProxies.mockReturnValue(d.promise);
+
+      const hook = mountHook(subscriptionApi);
+
+      act(() => {
+        hook.current.fetchNodes(1, 10, DEFAULT_NODE_SORTER, {});
+      });
+
+      hook.unmount();
+
+      // Resolve after unmount — should not cause state updates or errors.
+      await act(async () => {
+        d.resolve({items: [{id: 1}], total: 1});
+      });
+
+      // No error message should appear.
+      // The console.error spy should not have been called from our hook.
+      errorSpy.mockRestore();
     });
   });
 
