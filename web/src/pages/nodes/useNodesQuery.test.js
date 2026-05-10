@@ -4,7 +4,7 @@ jest.mock('../../api', () => ({
   },
 }));
 
-import React, {act, createElement} from 'react';
+import {act, createElement} from 'react';
 import {createRoot} from 'react-dom/client';
 import {message} from 'antd';
 import {useNodesQuery, DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER} from './useNodesQuery';
