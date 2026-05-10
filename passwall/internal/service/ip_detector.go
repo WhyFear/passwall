@@ -351,6 +351,7 @@ func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 	return resp, nil
 }
 
+// BatchGetInfo 批量获取代理ip信息，不会返回AppUnlock结果
 func (i ipDetectorImpl) BatchGetInfo(proxyIDList []uint) (map[uint]*IPDetectResp, error) {
 	result := make(map[uint]*IPDetectResp)
 	if len(proxyIDList) == 0 {

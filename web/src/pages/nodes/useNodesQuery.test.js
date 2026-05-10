@@ -26,8 +26,9 @@ afterEach(() => {
 
 const mountHook = (api, options) => {
   let hookResult;
+  let currentOptions = options;
   const TestComponent = () => {
-    hookResult = useNodesQuery(api, options);
+    hookResult = useNodesQuery(api, currentOptions);
     return null;
   };
   const root = createRoot(container);
@@ -38,6 +39,10 @@ const mountHook = (api, options) => {
     get current() {
       return hookResult;
     },
+    rerender: (nextOptions) => act(() => {
+      currentOptions = nextOptions;
+      root.render(createElement(TestComponent));
+    }),
     unmount: () => act(() => root.unmount()),
   };
 };
@@ -258,6 +263,20 @@ describe('useNodesQuery', () => {
 
       messageSpy.mockRestore();
       errorSpy.mockRestore();
+      hook.unmount();
+    });
+
+    test('keeps fetchNodes stable when metadata includes change', async () => {
+      const api = {
+        getProxies: jest.fn().mockResolvedValue({items: [{id: 1}], total: 1}),
+        getProxyMetadata: jest.fn().mockResolvedValue({items: {'1': {success_rate: 80}}}),
+      };
+      const hook = mountHook(api, {metadataIncludes: ['success_rate']});
+      const initialFetchNodes = hook.current.fetchNodes;
+
+      hook.rerender({metadataIncludes: ['success_rate', 'ip_info']});
+
+      expect(hook.current.fetchNodes).toBe(initialFetchNodes);
       hook.unmount();
     });
   });

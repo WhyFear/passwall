@@ -42,6 +42,7 @@ export const useNodesQuery = (api = subscriptionApi, options = {}) => {
     () => metadataIncludeKey ? metadataIncludeKey.split(',') : [],
     [metadataIncludeKey],
   );
+  const metadataIncludesRef = useRef(metadataIncludes);
 
   // Cancel in-flight requests on unmount.
   useEffect(() => {
@@ -59,7 +60,11 @@ export const useNodesQuery = (api = subscriptionApi, options = {}) => {
     nodesRef.current = nodes;
   }, [nodes]);
 
-  const fetchNodeMetadata = useCallback(async (nodeList, includes = metadataIncludes) => {
+  useEffect(() => {
+    metadataIncludesRef.current = metadataIncludes;
+  }, [metadataIncludes]);
+
+  const fetchNodeMetadata = useCallback(async (nodeList, includes = metadataIncludesRef.current) => {
     if (!api.getProxyMetadata || !Array.isArray(nodeList) || nodeList.length === 0 || includes.length === 0) {
       return;
     }
@@ -112,7 +117,7 @@ export const useNodesQuery = (api = subscriptionApi, options = {}) => {
           : node
       )));
     }
-  }, [api, metadataIncludes]);
+  }, [api]);
 
   const fetchNodes = useCallback(async (page, pageSize, sort, filter) => {
     // Cancel any previous in-flight request.
@@ -131,7 +136,8 @@ export const useNodesQuery = (api = subscriptionApi, options = {}) => {
       const data = await api.getProxies({params, signal: controller.signal});
       if (controller.signal.aborted) return;
       const nodeList = Array.isArray(data.items) ? data.items : [];
-      const hasMetadataRequest = Boolean(api.getProxyMetadata) && nodeList.length > 0 && metadataIncludes.length > 0;
+      const includes = metadataIncludesRef.current;
+      const hasMetadataRequest = Boolean(api.getProxyMetadata) && nodeList.length > 0 && includes.length > 0;
       setNodes(withMetadataLoading(nodeList, hasMetadataRequest));
       setPagination(prev => ({
         ...prev,
@@ -140,7 +146,7 @@ export const useNodesQuery = (api = subscriptionApi, options = {}) => {
         total: data.total || nodeList.length,
       }));
       if (hasMetadataRequest) {
-        fetchNodeMetadata(nodeList, metadataIncludes);
+        fetchNodeMetadata(nodeList, includes);
       }
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -151,7 +157,7 @@ export const useNodesQuery = (api = subscriptionApi, options = {}) => {
         setLoading(false);
       }
     }
-  }, [api, fetchNodeMetadata, metadataIncludes]);
+  }, [api, fetchNodeMetadata]);
 
   useEffect(() => {
     const currentNodes = nodesRef.current;
