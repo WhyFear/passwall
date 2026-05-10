@@ -65,6 +65,29 @@ describe('node columns', () => {
     expect(columns.find(column => column.key === 'action').fixed).toBeUndefined();
   });
 
+  test('renders metadata cells as loading, empty, and loaded values', () => {
+    const columns = createNodeColumns({
+      visibleColumns: allVisible,
+      nodeTypes: [],
+      countryCodes: [],
+      isMobile: false,
+      ...handlers,
+    });
+
+    const successColumn = columns.find(column => column.key === 'success_rate');
+    const riskColumn = columns.find(column => column.key === 'risk');
+    const countryColumn = columns.find(column => column.key === 'country');
+
+    expect(successColumn.render(null, {metadata_loading: true}).props.active).toBe(true);
+    expect(successColumn.render(null, {metadata_loading: false})).toBe('-');
+    expect(successColumn.render(0, {metadata_loading: false})).toBe('0%');
+    expect(successColumn.render(80, {metadata_loading: false})).toBe('80%');
+    expect(riskColumn.render(null, {metadata_loading: true}).props.active).toBe(true);
+    expect(riskColumn.render('low', {metadata_loading: false})).toBe('低');
+    expect(countryColumn.render(null, {metadata_loading: true}).props.active).toBe(true);
+    expect(countryColumn.render('US', {metadata_loading: false})).toBe('US');
+  });
+
   test('builds column setting items from default visibility', () => {
     const onColumnVisibilityChange = jest.fn();
 

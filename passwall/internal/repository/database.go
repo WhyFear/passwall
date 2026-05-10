@@ -88,6 +88,23 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 		}
 	}
 
+	if err := ensurePerformanceIndexes(DB); err != nil {
+		return nil, err
+	}
+
 	log.Println("数据库初始化成功")
 	return DB, nil
+}
+
+func ensurePerformanceIndexes(db *gorm.DB) error {
+	indexStatements := []string{
+		"CREATE INDEX IF NOT EXISTS idx_speed_test_histories_proxy_created ON speed_test_histories (proxy_id, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_proxy_ip_addresses_proxy_latest_type ON proxy_ip_addresses (proxy_id, latest, ip_type)",
+	}
+	for _, statement := range indexStatements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("ensure performance index failed: %w", err)
+		}
+	}
+	return nil
 }

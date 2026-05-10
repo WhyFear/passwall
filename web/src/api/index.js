@@ -62,7 +62,10 @@ export const subscriptionApi = {
   getSubscriptionDetail: (id, content = true) => api.get(`/subscriptions?id=${id}&content=${content}`),
 
   // 获取所有代理节点
-  getProxies: (params) => api.get('/get_proxies', params),
+  getProxies: (params) => api.get('/proxies', params),
+
+  // 获取代理节点列表附加展示数据
+  getProxyMetadata: (params) => api.get('/proxies/metadata', params),
 
   createProxy: (data) => api.post('/create_proxy', data),
 
@@ -94,6 +97,7 @@ export const nodeApi = {
     }
   }), // 获取代理分享链接
   getProxyShareUrl: (id) => api.get(`/subscribe?type=share_link&id=${id}`),
+  getProxyDetails: (id) => api.get(`/proxies/${id}/details`),
   getTypes: () => api.get('/get_types'),
   testProxy: (params) => api.post('/test_proxy_server', params),
   pinProxy: (id, pinned) => api.post('/pin_proxy', {id: id, pinned: pinned}),

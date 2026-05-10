@@ -323,6 +323,51 @@ func TestIPDetectorDetectSkipsMissingProxy(t *testing.T) {
 	assert.False(t, called)
 }
 
+func TestIPDetectorBatchGetInfoUsesIPv4BaseInfoFirst(t *testing.T) {
+	detectorService := newDetectTestService()
+	detectorService.ProxyIPAddress = &fakeDetectProxyIPRepo{
+		latestRecords: []*model.ProxyIPAddress{
+			{
+				ProxyID: 1, IPAddressesID: 10, IPType: 6, Latest: true,
+				IPAddress: model.IPAddress{ID: 10, IP: "2001:db8::1", IPType: 6, IPBaseInfo: model.IPBaseInfo{ID: 10, CountryCode: "JP", RiskLevel: "high"}},
+			},
+			{
+				ProxyID: 1, IPAddressesID: 11, IPType: 4, Latest: true,
+				IPAddress: model.IPAddress{ID: 11, IP: "203.0.113.1", IPType: 4, IPBaseInfo: model.IPBaseInfo{ID: 11, CountryCode: "US", RiskLevel: "low"}},
+			},
+			{
+				ProxyID: 2, IPAddressesID: 20, IPType: 6, Latest: true,
+				IPAddress: model.IPAddress{ID: 20, IP: "2001:db8::2", IPType: 6, IPBaseInfo: model.IPBaseInfo{ID: 20, CountryCode: "SG", RiskLevel: "medium"}},
+			},
+		},
+	}
+
+	result, err := detectorService.BatchGetInfo([]uint{1, 2, 3})
+
+	require.NoError(t, err)
+	require.Contains(t, result, uint(1))
+	assert.Equal(t, "203.0.113.1", result[1].IPv4)
+	assert.Equal(t, "2001:db8::1", result[1].IPv6)
+	assert.Equal(t, "US", result[1].CountryCode)
+	assert.Equal(t, "low", result[1].Risk)
+	require.Contains(t, result, uint(2))
+	assert.Equal(t, "2001:db8::2", result[2].IPv6)
+	assert.Equal(t, "SG", result[2].CountryCode)
+	assert.NotContains(t, result, uint(3))
+}
+
+func TestIPDetectorBatchGetInfoEmptyInputDoesNotQuery(t *testing.T) {
+	repo := &fakeDetectProxyIPRepo{}
+	detectorService := newDetectTestService()
+	detectorService.ProxyIPAddress = repo
+
+	result, err := detectorService.BatchGetInfo(nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, result)
+	assert.False(t, repo.latestCalled)
+}
+
 func newDetectTestService() ipDetectorImpl {
 	proxyIPRepo := &fakeDetectProxyIPRepo{}
 	addressRepo := &fakeDetectAddressRepo{byIP: map[string]*model.IPAddress{}}
@@ -347,13 +392,20 @@ func (r *fakeDetectProxyRepo) FindByID(id uint) (*model.Proxy, error) {
 
 type fakeDetectProxyIPRepo struct {
 	repository.ProxyIPAddressRepository
-	records []*model.ProxyIPAddress
-	saved   []*model.ProxyIPAddress
-	findErr error
+	records       []*model.ProxyIPAddress
+	latestRecords []*model.ProxyIPAddress
+	saved         []*model.ProxyIPAddress
+	findErr       error
+	latestCalled  bool
 }
 
 func (r *fakeDetectProxyIPRepo) FindByProxyID(proxyID uint) ([]*model.ProxyIPAddress, error) {
 	return r.records, r.findErr
+}
+
+func (r *fakeDetectProxyIPRepo) FindLatestByProxyIDList(proxyIDList []uint) ([]*model.ProxyIPAddress, error) {
+	r.latestCalled = true
+	return r.latestRecords, r.findErr
 }
 
 func (r *fakeDetectProxyIPRepo) CreateOrUpdate(proxyIPAddress *model.ProxyIPAddress) error {
