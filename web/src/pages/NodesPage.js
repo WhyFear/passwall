@@ -26,6 +26,7 @@ import {DEFAULT_VISIBLE_COLUMNS, formatRisk} from './nodes/nodeFormatters';
 import NodeBatchActions from './nodes/NodeBatchActions';
 import NodeDetailModal from './nodes/NodeDetailModal';
 import {createColumnSettingMenu, createNodeColumns} from './nodes/nodeColumns';
+import {buildShareDefaults, buildSharePayload, normalizeShareMultiValue} from './nodes/shareConfigUtils';
 import {DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER, useNodesQuery} from './nodes/useNodesQuery';
 
 const NodesPage = () => {
@@ -213,16 +214,6 @@ const NodesPage = () => {
     }
   };
 
-  const splitShareValue = (value) => {
-    if (!value) return [];
-    return value.split(',').map(item => item.trim()).filter(Boolean);
-  };
-
-  const joinShareValue = (value) => {
-    if (!Array.isArray(value)) return value || '';
-    return value.join(',');
-  };
-
   const getShareUrl = (slug) => `${window.location.origin}/s/${slug}`;
 
   const copyText = async (text, successMessage = '已复制到剪贴板') => {
@@ -247,40 +238,6 @@ const NodesPage = () => {
     }
   };
 
-  const buildShareDefaults = () => ({
-    name: '节点分享',
-    type: 'share_link',
-    status: filters.status || [],
-    proxy_type: filters.type || [],
-    country_code: filters.country || [],
-    risk_level: filters.risk || [],
-    sort: sorter.field || 'download_speed',
-    sort_order: sorter.order || 'descend',
-    limit: 0,
-    with_index: true,
-  });
-
-  const buildSharePayload = (values, enabled) => {
-    const payload = {
-      name: values.name,
-      type: values.type,
-      status: joinShareValue(values.status),
-      proxy_type: joinShareValue(values.proxy_type),
-      country_code: joinShareValue(values.country_code),
-      risk_level: joinShareValue(values.risk_level),
-      sort: values.sort,
-      sort_order: values.sort_order,
-      limit: values.limit ?? 0,
-      with_index: values.with_index,
-    };
-
-    if (typeof enabled === 'boolean') {
-      payload.enabled = enabled;
-    }
-
-    return payload;
-  };
-
   const fetchShareConfigs = async () => {
     try {
       setShareLoading(true);
@@ -296,7 +253,7 @@ const NodesPage = () => {
 
   const openShareModal = async () => {
     setEditingShareConfig(null);
-    shareForm.setFieldsValue(buildShareDefaults());
+    shareForm.setFieldsValue(buildShareDefaults(filters, sorter));
     setShareModalVisible(true);
     await fetchShareConfigs();
   };
@@ -305,16 +262,16 @@ const NodesPage = () => {
     setEditingShareConfig(record);
     shareForm.setFieldsValue({
       ...record,
-      status: splitShareValue(record.status),
-      proxy_type: splitShareValue(record.proxy_type),
-      country_code: splitShareValue(record.country_code),
-      risk_level: splitShareValue(record.risk_level),
+      status: normalizeShareMultiValue(record.status),
+      proxy_type: normalizeShareMultiValue(record.proxy_type),
+      country_code: normalizeShareMultiValue(record.country_code),
+      risk_level: normalizeShareMultiValue(record.risk_level),
     });
   };
 
   const handleResetShareForm = () => {
     setEditingShareConfig(null);
-    shareForm.setFieldsValue(buildShareDefaults());
+    shareForm.setFieldsValue(buildShareDefaults(filters, sorter));
   };
 
   const handleSaveShareConfig = async () => {
