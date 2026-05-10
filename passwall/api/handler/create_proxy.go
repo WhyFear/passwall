@@ -171,9 +171,14 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			go func() {
 				for _, u := range req.URLList {
 					if content, err := proc.download(u); err == nil {
-						_, _, _ = proc.run(u, req.Type, content)
+						_, i, err := proc.run(u, req.Type, content)
+						if err != nil {
+							log.Errorln("订阅 [%s] 处理时错！ error：%v", u, err.Error())
+						} else {
+							log.Infoln("订阅 [%s] 处理成功，共 %d 个节点", u, i)
+						}
 					} else {
-						log.Errorln("批量下载失败 [%s]: %v", u, err)
+						log.Errorln("订阅 [%s] 下载失败: %v", u, err)
 					}
 				}
 			}()
@@ -182,12 +187,14 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		} else if req.URL != "" { // 分支 2: 单个 URL 导入 (同步)
 			content, err := proc.download(req.URL)
 			if err != nil {
+				log.Errorln("订阅 [%s] 下载失败: %v", req.URL, err)
 				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅下载失败: " + err.Error()})
 				return
 			}
 			sub, count, err := proc.run(req.URL, req.Type, content)
 			if err != nil && sub == nil {
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": err.Error()})
+				log.Errorln("订阅 [%s] 处理失败: %v", req.URL, err)
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": "订阅处理失败: " + err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
@@ -200,7 +207,8 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			pseudoURL := util.MD5(string(content))[:20]
 			sub, count, err := proc.run(pseudoURL, req.Type, content)
 			if err != nil && sub == nil {
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": err.Error()})
+				log.Errorln("订阅 [%s] 处理失败: %v", pseudoURL, err)
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": "订阅处理失败: " + err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})

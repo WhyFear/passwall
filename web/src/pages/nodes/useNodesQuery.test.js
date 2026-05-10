@@ -6,6 +6,7 @@ jest.mock('../../api', () => ({
 
 import React, {act, createElement} from 'react';
 import {createRoot} from 'react-dom/client';
+import {message} from 'antd';
 import {useNodesQuery, DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER} from './useNodesQuery';
 import {subscriptionApi} from '../../api';
 
@@ -23,10 +24,10 @@ afterEach(() => {
   container = null;
 });
 
-const mountHook = (api) => {
+const mountHook = (api, options) => {
   let hookResult;
   const TestComponent = () => {
-    hookResult = useNodesQuery(api);
+    hookResult = useNodesQuery(api, options);
     return null;
   };
   const root = createRoot(container);
@@ -163,6 +164,100 @@ describe('useNodesQuery', () => {
       });
 
       expect(hook.current.nodes).toEqual(items);
+      hook.unmount();
+    });
+
+    test('fetches metadata after main list and merges by id', async () => {
+      const api = {
+        getProxies: jest.fn().mockResolvedValue({items: [{id: 1}, {id: 2}], total: 2}),
+        getProxyMetadata: jest.fn().mockResolvedValue({
+          items: {
+            '1': {success_rate: 80, ip_info: {country_code: 'US'}},
+            '2': {success_rate: 0},
+          },
+        }),
+      };
+      const hook = mountHook(api, {metadataIncludes: ['success_rate', 'ip_info']});
+
+      await act(async () => {
+        await hook.current.fetchNodes(1, 10, DEFAULT_NODE_SORTER, {});
+      });
+      await act(async () => {});
+
+      expect(api.getProxyMetadata).toHaveBeenCalledWith({
+        params: {
+          proxy_ids: '1,2',
+          include: 'ip_info,success_rate',
+        },
+        signal: expect.any(AbortSignal),
+      });
+      expect(hook.current.nodes[0]).toEqual(expect.objectContaining({
+        id: 1,
+        success_rate: 80,
+        ip_info: {country_code: 'US'},
+        metadata_loading: false,
+        metadata_error: false,
+      }));
+      expect(hook.current.nodes[1]).toEqual(expect.objectContaining({
+        id: 2,
+        success_rate: 0,
+        metadata_loading: false,
+        metadata_error: false,
+      }));
+      hook.unmount();
+    });
+
+    test('keeps metadata loading state until metadata resolves', async () => {
+      const metadata = deferred();
+      const api = {
+        getProxies: jest.fn().mockResolvedValue({items: [{id: 1}], total: 1}),
+        getProxyMetadata: jest.fn().mockReturnValue(metadata.promise),
+      };
+      const hook = mountHook(api);
+
+      await act(async () => {
+        await hook.current.fetchNodes(1, 10, DEFAULT_NODE_SORTER, {});
+      });
+
+      expect(hook.current.nodes[0]).toEqual(expect.objectContaining({
+        id: 1,
+        metadata_loading: true,
+      }));
+
+      await act(async () => {
+        metadata.resolve({items: {'1': {success_rate: 100}}});
+      });
+
+      expect(hook.current.nodes[0]).toEqual(expect.objectContaining({
+        success_rate: 100,
+        metadata_loading: false,
+      }));
+      hook.unmount();
+    });
+
+    test('metadata failure keeps main list and shows one lightweight error', async () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const messageSpy = jest.spyOn(message, 'error').mockImplementation(() => {});
+      const api = {
+        getProxies: jest.fn().mockResolvedValue({items: [{id: 1}], total: 1}),
+        getProxyMetadata: jest.fn().mockRejectedValue(new Error('metadata failed')),
+      };
+      const hook = mountHook(api);
+
+      await act(async () => {
+        await hook.current.fetchNodes(1, 10, DEFAULT_NODE_SORTER, {});
+      });
+      await act(async () => {});
+
+      expect(hook.current.nodes[0]).toEqual(expect.objectContaining({
+        id: 1,
+        metadata_loading: false,
+        metadata_error: true,
+      }));
+      expect(messageSpy).toHaveBeenCalledWith('附加数据加载失败');
+
+      messageSpy.mockRestore();
+      errorSpy.mockRestore();
       hook.unmount();
     });
   });

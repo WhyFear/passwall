@@ -46,6 +46,10 @@ const NodesPage = () => {
   const [shareConfigs, setShareConfigs] = useState([]);
   const [shareLoading, setShareLoading] = useState(false);
   const [editingShareConfig, setEditingShareConfig] = useState(null);
+  const [visibleColumns, setVisibleColumns] = useState({});
+  const nodeMetadataIncludes = visibleColumns.risk || visibleColumns.country_code
+    ? ['success_rate', 'ip_info']
+    : ['success_rate'];
   const {
     nodes,
     loading,
@@ -54,7 +58,7 @@ const NodesPage = () => {
     filters,
     fetchNodes,
     handleTableChange,
-  } = useNodesQuery(subscriptionApi);
+  } = useNodesQuery(subscriptionApi, {metadataIncludes: nodeMetadataIncludes});
 
   const timerRef = useRef(null);
 
@@ -93,6 +97,24 @@ const NodesPage = () => {
       console.error(error);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  const fetchNodeDetails = async (nodeId) => {
+    try {
+      const data = await nodeApi.getProxyDetails(nodeId);
+      setCurrentNode(prev => {
+        if (!prev || prev.id !== nodeId) return prev;
+        return {
+          ...prev,
+          download_total: data?.traffic?.download_total,
+          upload_total: data?.traffic?.upload_total,
+          ip_info: data?.ip_info || prev.ip_info,
+        };
+      });
+    } catch (error) {
+      message.error('获取节点详情失败');
+      console.error(error);
     }
   };
 
@@ -500,6 +522,7 @@ const NodesPage = () => {
     }));
     fetchNodeHistory(node.id, 1, 5);
     fetchNodeShareUrl(node.id);
+    fetchNodeDetails(node.id);
     setModalVisible(true);
   };
 
@@ -593,9 +616,6 @@ const NodesPage = () => {
       console.error(error);
     }
   };
-
-
-  const [visibleColumns, setVisibleColumns] = useState({});
 
   // 保存列设置到本地存储
   const saveColumnSettings = (newSettings) => {

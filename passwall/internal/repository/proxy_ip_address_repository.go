@@ -12,6 +12,7 @@ import (
 type ProxyIPAddressRepository interface {
 	FindByID(id uint) (*model.ProxyIPAddress, error)
 	FindByProxyID(proxyID uint) ([]*model.ProxyIPAddress, error)
+	FindLatestByProxyIDList(proxyIDList []uint) ([]*model.ProxyIPAddress, error)
 	FindByIPAddressID(ipAddressID uint) ([]*model.ProxyIPAddress, error)
 	GetDistinctProxyIDs() ([]uint, error)
 	CreateOrUpdate(proxyIPAddress *model.ProxyIPAddress) error
@@ -53,6 +54,24 @@ func (r *GormProxyIPAddressRepository) FindByID(id uint) (*model.ProxyIPAddress,
 func (r *GormProxyIPAddressRepository) FindByProxyID(proxyID uint) ([]*model.ProxyIPAddress, error) {
 	var proxyIPAddresses []*model.ProxyIPAddress
 	err := r.db.Where("proxy_id = ?", proxyID).Find(&proxyIPAddresses).Error
+	if err != nil {
+		return nil, err
+	}
+	return proxyIPAddresses, nil
+}
+
+func (r *GormProxyIPAddressRepository) FindLatestByProxyIDList(proxyIDList []uint) ([]*model.ProxyIPAddress, error) {
+	if len(proxyIDList) == 0 {
+		return []*model.ProxyIPAddress{}, nil
+	}
+
+	var proxyIPAddresses []*model.ProxyIPAddress
+	err := r.db.
+		Preload("IPAddress").
+		Preload("IPAddress.IPBaseInfo").
+		Where("proxy_id IN ? AND latest = ?", proxyIDList, true).
+		Order("proxy_id ASC, ip_type ASC").
+		Find(&proxyIPAddresses).Error
 	if err != nil {
 		return nil, err
 	}

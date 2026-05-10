@@ -6,7 +6,7 @@ import {
   PushpinOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import {Button, Checkbox, Tooltip} from 'antd';
+import {Button, Checkbox, Skeleton, Tooltip} from 'antd';
 import {formatDate} from '../../utils/timeUtils';
 import {DEFAULT_VISIBLE_COLUMNS, formatRisk, formatSpeed} from './nodeFormatters';
 import {StatusTag} from './nodeTags';
@@ -127,7 +127,12 @@ export const createNodeColumns = ({
   dataIndex: 'success_rate',
   key: 'success_rate',
   align: 'right',
-  render: (rate) => `${rate}%`,
+  render: (rate, record) => {
+    if (record.metadata_loading && rate == null) {
+      return <Skeleton.Input active size="small" style={{width: 42, minWidth: 42}}/>;
+    }
+    return rate == null ? '-' : `${rate}%`;
+  },
   width: 80,
   hidden: !visibleColumns['success_rate']
 }, {
@@ -136,7 +141,12 @@ export const createNodeColumns = ({
   dataIndex: ['ip_info', 'risk'],
   key: 'risk',
   width: 110,
-  render: (risk) => formatRisk(risk),
+  render: (risk, record) => {
+    if (record.metadata_loading && risk == null) {
+      return <Skeleton.Input active size="small" style={{width: 56, minWidth: 56}}/>;
+    }
+    return formatRisk(risk);
+  },
   filters: [{text: formatRisk('very_low'), value: 'very_low'}, {text: formatRisk('low'), value: 'low'}, {
     text: formatRisk('medium'), value: 'medium'
   }, {text: formatRisk('high'), value: 'high'}, {text: formatRisk('very_high'), value: 'very_high'}],
@@ -147,7 +157,12 @@ export const createNodeColumns = ({
   dataIndex: ['ip_info', 'country_code'],
   key: 'country',
   width: 100,
-  render: (country) => country ? country : '-',
+  render: (country, record) => {
+    if (record.metadata_loading && country == null) {
+      return <Skeleton.Input active size="small" style={{width: 42, minWidth: 42}}/>;
+    }
+    return country ? country : '-';
+  },
   filterMode: 'tree',
   filters: countryCodes.length > 0 ? countryCodes : [],
   filterMultiple: true,

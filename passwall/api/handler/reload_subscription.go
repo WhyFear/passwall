@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/metacubex/mihomo/log"
 
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
@@ -31,8 +32,17 @@ func ReloadSubscription(ctx context.Context, subscriptionManager proxy.Subscript
 
 		// 获取当前配置以检查是否使用代理
 		cfg, err := configService.GetConfig()
+		if err != nil {
+			log.Errorln("获取配置失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"result":      "error",
+				"status_code": http.StatusInternalServerError,
+				"status_msg":  "内部系统错误",
+			})
+			return
+		}
 		var downloadOptions *util.DownloadOptions
-		if err == nil && cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
+		if cfg.Proxy.Enabled && cfg.Proxy.URL != "" {
 			downloadOptions = &util.DownloadOptions{
 				ProxyURL: cfg.Proxy.URL,
 			}

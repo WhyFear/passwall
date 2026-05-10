@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"passwall/internal/model"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -13,11 +14,18 @@ type SpeedTestHistoryPageResult struct {
 	Items []*model.SpeedTestHistory
 }
 
+type SpeedTestHistorySummary struct {
+	ProxyID       uint
+	DownloadSpeed int
+	CreatedAt     time.Time
+}
+
 // SpeedTestHistoryRepository 测速历史记录仓库接口
 type SpeedTestHistoryRepository interface {
 	FindByID(id uint) (*model.SpeedTestHistory, error)
 	FindByProxyID(proxyID uint, page PageQuery) (SpeedTestHistoryPageResult, error)
 	BatchFindByProxyIDList(proxyIDList []uint) (map[uint][]model.SpeedTestHistory, error)
+	BatchFindLatestSummariesByProxyIDList(proxyIDList []uint, limit int) (map[uint][]SpeedTestHistorySummary, error)
 	FindByTimeRange(proxyID uint, startTime, endTime time.Time) ([]*model.SpeedTestHistory, error)
 	Create(history *model.SpeedTestHistory) error
 	Delete(id uint) error
@@ -106,6 +114,71 @@ func (r *GormSpeedTestHistoryRepository) BatchFindByProxyIDList(proxyIDList []ui
 	result := make(map[uint][]model.SpeedTestHistory)
 	for _, history := range histories {
 		result[history.ProxyID] = append(result[history.ProxyID], history)
+	}
+	return result, nil
+}
+
+func (r *GormSpeedTestHistoryRepository) BatchFindLatestSummariesByProxyIDList(proxyIDList []uint, limit int) (map[uint][]SpeedTestHistorySummary, error) {
+	result := make(map[uint][]SpeedTestHistorySummary)
+	if len(proxyIDList) == 0 {
+		return result, nil
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+
+	if r.db.Dialector != nil && r.db.Dialector.Name() == "postgres" {
+		return r.batchFindLatestSummariesPostgres(proxyIDList, limit)
+	}
+	return r.batchFindLatestSummariesFallback(proxyIDList, limit)
+}
+
+func (r *GormSpeedTestHistoryRepository) batchFindLatestSummariesPostgres(proxyIDList []uint, limit int) (map[uint][]SpeedTestHistorySummary, error) {
+	values := make([]string, 0, len(proxyIDList))
+	for _, proxyID := range proxyIDList {
+		values = append(values, fmt.Sprintf("(%d)", proxyID))
+	}
+
+	var summaries []SpeedTestHistorySummary
+	err := r.db.Raw(`
+		SELECT h.proxy_id, h.download_speed, h.created_at
+		FROM (VALUES `+strings.Join(values, ",")+`) AS ids(proxy_id)
+		JOIN LATERAL (
+			SELECT proxy_id, download_speed, created_at
+			FROM speed_test_histories
+			WHERE proxy_id = ids.proxy_id
+			ORDER BY created_at DESC
+			LIMIT ?
+		) h ON true
+		ORDER BY h.proxy_id, h.created_at DESC
+	`, limit).Scan(&summaries).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[uint][]SpeedTestHistorySummary)
+	for _, summary := range summaries {
+		result[summary.ProxyID] = append(result[summary.ProxyID], summary)
+	}
+	return result, nil
+}
+
+func (r *GormSpeedTestHistoryRepository) batchFindLatestSummariesFallback(proxyIDList []uint, limit int) (map[uint][]SpeedTestHistorySummary, error) {
+	result := make(map[uint][]SpeedTestHistorySummary)
+	for _, proxyID := range proxyIDList {
+		var summaries []SpeedTestHistorySummary
+		err := r.db.Model(&model.SpeedTestHistory{}).
+			Select("proxy_id", "download_speed", "created_at").
+			Where("proxy_id = ?", proxyID).
+			Order("created_at DESC").
+			Limit(limit).
+			Find(&summaries).Error
+		if err != nil {
+			return nil, err
+		}
+		if len(summaries) > 0 {
+			result[proxyID] = summaries
+		}
 	}
 	return result, nil
 }

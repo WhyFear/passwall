@@ -45,6 +45,7 @@ type IPDetectorService interface {
 	BatchDetect(ctx context.Context, req *BatchIPDetectorReq) error
 	Detect(ctx context.Context, req *IPDetectorReq) error
 	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
+	BatchGetInfo(proxyIDList []uint) (map[uint]*IPDetectResp, error)
 	GetProxyIDsNotInIPAddress() ([]uint, error)
 	GetDistinctCountryCode() ([]string, error)
 }
@@ -348,6 +349,55 @@ func (i ipDetectorImpl) GetInfo(req *IPDetectorReq) (*IPDetectResp, error) {
 		resp.AppUnlock = appUnlockList
 	}
 	return resp, nil
+}
+
+func (i ipDetectorImpl) BatchGetInfo(proxyIDList []uint) (map[uint]*IPDetectResp, error) {
+	result := make(map[uint]*IPDetectResp)
+	if len(proxyIDList) == 0 {
+		return result, nil
+	}
+
+	proxyIPList, err := i.ProxyIPAddress.FindLatestByProxyIDList(proxyIDList)
+	if err != nil {
+		log.Errorln("find latest proxy ip address by proxy ids failed, err: %v", err)
+		return nil, err
+	}
+
+	selectedBaseInfoByProxyID := make(map[uint]*model.IPBaseInfo)
+	for _, proxyIP := range proxyIPList {
+		resp := result[proxyIP.ProxyID]
+		if resp == nil {
+			resp = &IPDetectResp{}
+			result[proxyIP.ProxyID] = resp
+		}
+
+		ipAddress := proxyIP.IPAddress
+		if proxyIP.IPType == 4 || ipAddress.IPType == 4 {
+			resp.IPv4 = ipAddress.IP
+			if ipAddress.IPBaseInfo.ID != 0 {
+				selectedBaseInfoByProxyID[proxyIP.ProxyID] = &ipAddress.IPBaseInfo
+			}
+			continue
+		}
+
+		if proxyIP.IPType == 6 || ipAddress.IPType == 6 {
+			resp.IPv6 = ipAddress.IP
+			if selectedBaseInfoByProxyID[proxyIP.ProxyID] == nil && ipAddress.IPBaseInfo.ID != 0 {
+				selectedBaseInfoByProxyID[proxyIP.ProxyID] = &ipAddress.IPBaseInfo
+			}
+		}
+	}
+
+	for proxyID, ipBaseInfo := range selectedBaseInfoByProxyID {
+		if ipBaseInfo == nil {
+			continue
+		}
+		if resp := result[proxyID]; resp != nil {
+			resp.CountryCode = ipBaseInfo.CountryCode
+			resp.Risk = ipBaseInfo.RiskLevel
+		}
+	}
+	return result, nil
 }
 
 func (i ipDetectorImpl) GetProxyIDsNotInIPAddress() ([]uint, error) {
