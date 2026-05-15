@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"encoding/binary"
 	"errors"
+	"hash/fnv"
 	"passwall/internal/model"
 	"time"
 
@@ -94,39 +96,64 @@ func (r *GormProxyIPAddressRepository) CreateOrUpdate(proxyIPAddress *model.Prox
 		return errors.New("proxy IP address cannot be nil")
 	}
 
-	// 先查proxy关联的所有latest记录，然后判断是否有关联到ip_addresses_id的记录，如果有就更新updatetime，如果没有则将latest设置为false，然后插入新表
-	var existing []*model.ProxyIPAddress
-	result := r.db.Where("proxy_id = ? AND latest = ? AND ip_type = ?", proxyIPAddress.ProxyID, true, proxyIPAddress.IPType).Find(&existing)
-	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return result.Error
-	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		// 创建新记录
-		proxyIPAddress.CreatedAt = time.Now()
-		proxyIPAddress.UpdatedAt = time.Now()
-		return r.db.Create(proxyIPAddress).Error
-	}
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
-		// 有记录，判断是否关联到ip_addresses_id的记录
-		for _, item := range existing {
-			if item.IPAddressesID == proxyIPAddress.IPAddressesID {
-				// 更新现有记录
-				item.UpdatedAt = time.Now()
-				return tx.Model(&item).Updates(item).Error
-			}
+		if err := lockProxyIPAddressWrite(tx, proxyIPAddress.ProxyID, proxyIPAddress.IPType); err != nil {
+			return err
 		}
-		// 走到这里，说明没有关联到ip_addresses_id的记录，需要将latest设置为false，然后插入新表
-		for _, item := range existing {
-			item.Latest = false
-			tx.Model(&item).Updates(item)
+
+		now := time.Now()
+		var existing model.ProxyIPAddress
+		findErr := tx.Where(
+			"proxy_id = ? AND ip_addresses_id = ? AND ip_type = ?",
+			proxyIPAddress.ProxyID,
+			proxyIPAddress.IPAddressesID,
+			proxyIPAddress.IPType,
+		).First(&existing).Error
+		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return findErr
 		}
-		// 插入新记录
+
+		deactivate := tx.Model(&model.ProxyIPAddress{}).
+			Where("proxy_id = ? AND ip_type = ? AND latest = ?", proxyIPAddress.ProxyID, proxyIPAddress.IPType, true)
+		if findErr == nil {
+			deactivate = deactivate.Where("id <> ?", existing.ID)
+		}
+		if err := deactivate.Updates(map[string]interface{}{
+			"latest":     false,
+			"updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+
+		if findErr == nil {
+			return tx.Model(&model.ProxyIPAddress{}).
+				Where("id = ?", existing.ID).
+				Updates(map[string]interface{}{
+					"latest":     true,
+					"updated_at": now,
+				}).Error
+		}
+
 		proxyIPAddress.CreatedAt = time.Now()
 		proxyIPAddress.UpdatedAt = time.Now()
+		proxyIPAddress.Latest = true
 		return tx.Create(proxyIPAddress).Error
 	})
+}
+
+func lockProxyIPAddressWrite(tx *gorm.DB, proxyID uint, ipType uint) error {
+	if tx.Dialector == nil || tx.Dialector.Name() != "postgres" {
+		return nil
+	}
+	return tx.Exec("SELECT pg_advisory_xact_lock(?)", proxyIPAddressLockKey(proxyID, ipType)).Error
+}
+
+func proxyIPAddressLockKey(proxyID uint, ipType uint) int64 {
+	var key [16]byte
+	binary.BigEndian.PutUint64(key[:8], uint64(proxyID))
+	binary.BigEndian.PutUint64(key[8:], uint64(ipType))
+
+	hash := fnv.New64a()
+	_, _ = hash.Write(key[:])
+	return int64(hash.Sum64())
 }
