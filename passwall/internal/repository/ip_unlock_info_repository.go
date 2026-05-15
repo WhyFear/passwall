@@ -12,6 +12,7 @@ import (
 type IPUnlockInfoRepository interface {
 	FindByID(id uint) (*model.IPUnlockInfo, error)
 	FindByIPAddressID(ipAddressID uint) ([]*model.IPUnlockInfo, error)
+	FindByIPAddressIDs(ipAddressIDs []uint) ([]*model.IPUnlockInfo, error)
 	FindByIPAddressIDAndAppName(ipAddressID uint, appName string) (*model.IPUnlockInfo, error)
 	CreateOrUpdate(ipUnlockInfo *model.IPUnlockInfo) error
 	BatchCreateOrUpdate(ipUnlockInfos []*model.IPUnlockInfo) error
@@ -44,6 +45,19 @@ func (r *GormIPUnlockInfoRepository) FindByID(id uint) (*model.IPUnlockInfo, err
 func (r *GormIPUnlockInfoRepository) FindByIPAddressID(ipAddressID uint) ([]*model.IPUnlockInfo, error) {
 	var ipUnlockInfos []*model.IPUnlockInfo
 	err := r.db.Where("ip_addresses_id = ?", ipAddressID).Find(&ipUnlockInfos).Error
+	if err != nil {
+		return nil, err
+	}
+	return ipUnlockInfos, nil
+}
+
+func (r *GormIPUnlockInfoRepository) FindByIPAddressIDs(ipAddressIDs []uint) ([]*model.IPUnlockInfo, error) {
+	if len(ipAddressIDs) == 0 {
+		return []*model.IPUnlockInfo{}, nil
+	}
+
+	var ipUnlockInfos []*model.IPUnlockInfo
+	err := r.db.Where("ip_addresses_id IN ?", ipAddressIDs).Find(&ipUnlockInfos).Error
 	if err != nil {
 		return nil, err
 	}

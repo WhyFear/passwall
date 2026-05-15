@@ -50,7 +50,7 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	router.GET("/proxies", GetProxyList(proxyService, subscriptionManager))
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/proxies?page=2&pageSize=20&sortField=ping&sortOrder=ascend&status=1&type=trojan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/proxies?page=2&pageSize=20&sortField=ping&sortOrder=ascend&status=1&type=trojan&app_unlock=Netflix,OpenAI", nil)
 	router.ServeHTTP(resp, req)
 
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -60,6 +60,7 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	assert.Equal(t, "ascend", proxyService.sortOrder)
 	assert.Equal(t, []string{"1"}, proxyService.filters["status"])
 	assert.Equal(t, []string{"trojan"}, proxyService.filters["type"])
+	assert.Equal(t, []string{"Netflix", "OpenAI"}, proxyService.filters["app_unlock"])
 
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
@@ -72,6 +73,24 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	assert.NotContains(t, item, "download_total")
 	assert.NotContains(t, item, "upload_total")
 	assert.NotContains(t, item, "ip_info")
+}
+
+func TestGetUnlockAppListReturnsSupportedApps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/get_unlock_apps", GetUnlockAppList())
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/get_unlock_apps", nil)
+	router.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
+	apps := body["data"].([]interface{})
+	assert.Contains(t, apps, "TikTok")
+	assert.Contains(t, apps, "Netflix")
+	assert.Contains(t, apps, "OpenAI")
 }
 
 func TestGetProxyMetadataReturnsRequestedFields(t *testing.T) {

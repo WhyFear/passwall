@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"passwall/internal/model"
+	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/log"
@@ -204,6 +205,26 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 				db = db.Where("ip_base_infos.risk_level IN ?", riskLevelArray)
 				continue
 			}
+			if key == "app_unlock" {
+				appUnlockArray, ok := value.([]string)
+				if !ok {
+					continue
+				}
+				appUnlockArray = normalizeStringFilterValues(appUnlockArray)
+				if len(appUnlockArray) == 0 {
+					continue
+				}
+				matchingProxyIDs := r.db.Model(&model.ProxyIPAddress{}).
+					Select("proxy_ip_addresses.proxy_id").
+					Joins("INNER JOIN ip_unlock_infos ON proxy_ip_addresses.ip_addresses_id = ip_unlock_infos.ip_addresses_id").
+					Where("proxy_ip_addresses.latest = ?", true).
+					Where("ip_unlock_infos.status = ?", "unlock").
+					Where("ip_unlock_infos.app_name IN ?", appUnlockArray).
+					Group("proxy_ip_addresses.proxy_id").
+					Having("COUNT(DISTINCT ip_unlock_infos.app_name) = ?", len(appUnlockArray))
+				db = db.Where("proxies.id IN (?)", matchingProxyIDs)
+				continue
+			}
 		}
 	}
 	db = db.Where("status != ?", model.ProxyStatusBanned)
@@ -238,6 +259,20 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	}
 	result = PageResult{Total: total, Items: proxies}
 	return &result, nil
+}
+
+func normalizeStringFilterValues(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }
 
 // FindByName 根据名称查询代理服务器

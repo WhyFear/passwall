@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"passwall/internal/detector/unlockchecker"
 	"passwall/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -160,6 +161,17 @@ func GetCountryCodeList(ipDetectorService service.IPDetectorService) gin.Handler
 			"status_code": http.StatusOK,
 			"status_msg":  "success",
 			"data":        countryCodes,
+		})
+	}
+}
+
+func GetUnlockAppList() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"result":      "success",
+			"status_code": http.StatusOK,
+			"status_msg":  "success",
+			"data":        unlockchecker.SupportedApplications(),
 		})
 	}
 }

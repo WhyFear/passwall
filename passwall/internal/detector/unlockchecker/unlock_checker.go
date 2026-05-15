@@ -19,6 +19,20 @@ const (
 	Claude         application = "Claude"
 )
 
+func SupportedApplications() []string {
+	return []string{
+		string(TikTok),
+		string(DisneyPlus),
+		string(Netflix),
+		string(YouTubePremium),
+		string(PrimeVideo),
+		string(Spotify),
+		string(OpenAI),
+		string(Gemini),
+		string(Claude),
+	}
+}
+
 type checkStatus string
 
 const (

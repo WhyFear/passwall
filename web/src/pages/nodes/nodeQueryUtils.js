@@ -22,5 +22,9 @@ export const buildNodeListParams = (page, pageSize, sort, filter = {}) => {
     params.risk_level = filter.risk.join(',');
   }
 
+  if (filter.app_unlock && filter.app_unlock.length > 0) {
+    params.app_unlock = filter.app_unlock.join(',');
+  }
+
   return params;
 };

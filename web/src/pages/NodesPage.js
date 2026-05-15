@@ -43,12 +43,13 @@ const NodesPage = () => {
   const [taskStatus, setTaskStatus] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
   const [countryCodes, setCountryCodes] = useState([]);
+  const [unlockApps, setUnlockApps] = useState([]);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [shareConfigs, setShareConfigs] = useState([]);
   const [shareLoading, setShareLoading] = useState(false);
   const [editingShareConfig, setEditingShareConfig] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState({});
-  const nodeMetadataIncludes = visibleColumns.risk || visibleColumns.country_code
+  const nodeMetadataIncludes = visibleColumns.risk || visibleColumns.country_code || visibleColumns.app_unlock
     ? ['success_rate', 'ip_info']
     : ['success_rate'];
   const {
@@ -150,6 +151,21 @@ const NodesPage = () => {
       console.error(error);
     }
   }, []);
+
+  const fetchUnlockApps = useCallback(async () => {
+    try {
+      const data = await nodeApi.getUnlockApps();
+      if (Array.isArray(data?.data)) {
+        setUnlockApps(data.data.map(app => ({
+          text: app, value: app
+        })));
+      }
+    } catch (error) {
+      console.error('获取App解锁列表失败');
+      setUnlockApps([]);
+      console.error(error);
+    }
+  }, []);
   // 获取任务状态
   const fetchTaskStatusHandler = useCallback(async () => {
     await fetchTaskStatus("speed_test", setTaskStatus);
@@ -167,6 +183,7 @@ const NodesPage = () => {
     fetchNodes(DEFAULT_NODE_PAGINATION.current, DEFAULT_NODE_PAGINATION.pageSize, DEFAULT_NODE_SORTER, {});
     fetchNodeTypes();
     fetchCountryCodes();
+    fetchUnlockApps();
 
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
@@ -185,7 +202,7 @@ const NodesPage = () => {
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchTaskStatusHandler]);
+  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchUnlockApps, fetchTaskStatusHandler]);
 
 
   // 初始化列显示状态
@@ -414,6 +431,9 @@ const NodesPage = () => {
       if (filters.risk && filters.risk.length > 0) {
         params.risk_level = filters.risk.join(',');
       }
+      if (filters.app_unlock && filters.app_unlock.length > 0) {
+        params.app_unlock = filters.app_unlock.join(',');
+      }
 
       if (nodeId) {
         params.id = nodeId;
@@ -594,6 +614,7 @@ const NodesPage = () => {
     visibleColumns,
     nodeTypes,
     countryCodes,
+    unlockApps,
     isMobile,
     onViewNode: handleViewNode,
     onTestProxy: handleTestProxy,

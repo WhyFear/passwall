@@ -28,6 +28,7 @@ type ProxyReq struct {
 	Type        string `form:"type"`
 	CountryCode string `form:"country_code"`
 	RiskLevel   string `form:"risk_level"`
+	AppUnlock   string `form:"app_unlock"`
 	SortField   string `form:"sortField"`
 	SortOrder   string `form:"sortOrder"`
 }
@@ -277,6 +278,9 @@ func buildProxyFilters(req ProxyReq) map[string]interface{} {
 	}
 	if len(req.RiskLevel) > 0 {
 		filters["risk_level"] = strings.Split(req.RiskLevel, ",")
+	}
+	if len(req.AppUnlock) > 0 {
+		filters["app_unlock"] = strings.Split(req.AppUnlock, ",")
 	}
 	return filters
 }

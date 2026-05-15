@@ -25,6 +25,7 @@ export const ALL_NODE_COLUMNS = [
   {key: 'success_rate', title: '成功率', fixed: false, hideable: true},
   {key: 'risk', title: '风险等级', fixed: false, hideable: true},
   {key: 'country_code', title: '国家/地区', fixed: false, hideable: true},
+  {key: 'app_unlock', title: 'App 解锁', fixed: false, hideable: true},
   {key: 'action', title: '操作', fixed: true, hideable: false},
 ];
 
@@ -34,6 +35,7 @@ export const createNodeColumns = ({
   visibleColumns,
   nodeTypes,
   countryCodes,
+  unlockApps = [],
   isMobile,
   onViewNode,
   onTestProxy,
@@ -167,6 +169,26 @@ export const createNodeColumns = ({
   filters: countryCodes.length > 0 ? countryCodes : [],
   filterMultiple: true,
   hidden: !visibleColumns['country_code']
+}, {
+  title: 'App 解锁',
+  dataIndex: ['ip_info', 'app_unlock'],
+  key: 'app_unlock',
+  width: 110,
+  render: (appUnlock, record) => {
+    if (record.metadata_loading && appUnlock == null) {
+      return <Skeleton.Input active size="small" style={{width: 72, minWidth: 72}}/>;
+    }
+    if (!Array.isArray(appUnlock)) {
+      return '-';
+    }
+    const unlockedApps = new Set(appUnlock
+      .filter(item => item?.status === 'unlock' && item?.app_name)
+      .map(item => item.app_name));
+    return `已解锁${unlockedApps.size}个`;
+  },
+  filters: unlockApps.map(app => (typeof app === 'string' ? {text: app, value: app} : app)),
+  filterMultiple: true,
+  hidden: !visibleColumns['app_unlock']
 }, {
   title: '操作',
   key: 'action',

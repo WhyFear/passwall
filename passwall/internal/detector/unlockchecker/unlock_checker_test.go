@@ -9,6 +9,20 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestSupportedApplicationsReturnsStableList(t *testing.T) {
+	assert.Equal(t, []string{
+		"TikTok",
+		"DisneyPlus",
+		"Netflix",
+		"YouTubePremium",
+		"PrimeVideo",
+		"Spotify",
+		"OpenAI",
+		"Gemini",
+		"Claude",
+	}, SupportedApplications())
+}
+
 func TestChecker(t *testing.T) {
 	config := `your config here`
 
