@@ -6,10 +6,10 @@ import {
   PushpinOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import {Button, Checkbox, Skeleton, Tooltip} from 'antd';
+import {Button, Checkbox, Popover, Skeleton, Tooltip} from 'antd';
 import {formatDate} from '../../utils/timeUtils';
 import {DEFAULT_VISIBLE_COLUMNS, formatRisk, formatSpeed} from './nodeFormatters';
-import {StatusTag} from './nodeTags';
+import {AppUnlockStatusTag, StatusTag} from './nodeTags';
 
 export const ALL_NODE_COLUMNS = [
   {key: 'index', title: '序号', fixed: false, hideable: false},
@@ -30,6 +30,99 @@ export const ALL_NODE_COLUMNS = [
 ];
 
 const defaultTypeFilters = [{text: 'vmess', value: 'vmess'}, {text: 'vless', value: 'vless'}];
+
+const countUnlockedApps = (appUnlock) => new Set(appUnlock
+  .filter(item => item?.status === 'unlock' && item?.app_name)
+  .map(item => item.app_name)).size;
+
+const AppUnlockDetails = ({appUnlock}) => (
+  <div style={{width: 300}}>
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+      paddingBottom: 6,
+      borderBottom: '1px solid #f0f0f0',
+    }}>
+      <span style={{fontWeight: 600, color: '#262626'}}>应用解锁详情</span>
+      <span style={{fontSize: 12, color: '#8c8c8c'}}>{appUnlock.length} 项检测</span>
+    </div>
+    <div style={{maxHeight: 360, overflowY: 'auto'}}>
+      {appUnlock.map((item, index) => (
+        <div
+          key={`${item?.app_name || 'app'}-${index}`}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 58px 44px',
+            alignItems: 'center',
+            columnGap: 8,
+            padding: '7px 9px',
+            marginBottom: index === appUnlock.length - 1 ? 0 : 5,
+            background: '#fafafa',
+            border: '1px solid #f0f0f0',
+            borderRadius: 6,
+          }}
+        >
+          <div style={{
+            minWidth: 0,
+            color: '#262626',
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {item?.app_name || '-'}
+          </div>
+          <span style={{display: 'inline-flex', justifyContent: 'center'}}>
+            <AppUnlockStatusTag status={item?.status} style={{marginInlineEnd: 0}}/>
+          </span>
+          <span style={{
+            display: 'inline-flex',
+            justifyContent: 'center',
+            color: '#595959',
+            fontSize: 12,
+            fontWeight: 500,
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {item?.region || '-'}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const AppUnlockSummary = ({appUnlock}) => {
+  const unlockedCount = countUnlockedApps(appUnlock);
+
+  return (
+    <Popover
+      trigger="hover"
+      placement="topLeft"
+      content={<AppUnlockDetails appUnlock={appUnlock}/>}
+      overlayInnerStyle={{padding: 12}}
+    >
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        maxWidth: '100%',
+        padding: '2px 8px',
+        color: '#1677ff',
+        background: '#f0f7ff',
+        border: '1px solid #d6e9ff',
+        borderRadius: 6,
+        cursor: 'default',
+        whiteSpace: 'nowrap',
+      }}>
+        <span>已解锁</span>
+        <strong style={{fontVariantNumeric: 'tabular-nums'}}>{unlockedCount}</strong>
+        <span style={{color: '#8c8c8c'}}>/ {appUnlock.length}</span>
+      </div>
+    </Popover>
+  );
+};
 
 export const createNodeColumns = ({
   visibleColumns,
@@ -178,13 +271,10 @@ export const createNodeColumns = ({
     if (record.metadata_loading && appUnlock == null) {
       return <Skeleton.Input active size="small" style={{width: 72, minWidth: 72}}/>;
     }
-    if (!Array.isArray(appUnlock)) {
+    if (!Array.isArray(appUnlock) || appUnlock.length === 0) {
       return '-';
     }
-    const unlockedApps = new Set(appUnlock
-      .filter(item => item?.status === 'unlock' && item?.app_name)
-      .map(item => item.app_name));
-    return `已解锁${unlockedApps.size}个`;
+    return <AppUnlockSummary appUnlock={appUnlock}/>;
   },
   filters: unlockApps.map(app => (typeof app === 'string' ? {text: app, value: app} : app)),
   filterMultiple: true,

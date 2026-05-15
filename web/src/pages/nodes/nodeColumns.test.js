@@ -95,16 +95,39 @@ describe('node columns', () => {
     expect(countryColumn.render('US', {metadata_loading: false})).toBe('US');
     expect(appUnlockColumn.render(null, {metadata_loading: true}).props.active).toBe(true);
     expect(appUnlockColumn.render(undefined, {metadata_loading: false})).toBe('-');
-    expect(appUnlockColumn.render([
+    expect(appUnlockColumn.render([], {metadata_loading: false})).toBe('-');
+
+    const lockedOnlyAppUnlock = appUnlockColumn.render([
       {app_name: 'Netflix', status: 'fail'},
       {app_name: 'OpenAI', status: 'forbidden'},
-    ], {metadata_loading: false})).toBe('已解锁0个');
-    expect(appUnlockColumn.render([
+    ], {metadata_loading: false});
+    const lockedOnlyPopover = lockedOnlyAppUnlock.type(lockedOnlyAppUnlock.props);
+    expect(lockedOnlyPopover.props.trigger).toBe('hover');
+    expect(lockedOnlyPopover.props.children.props.children[1].props.children).toBe(0);
+    expect(lockedOnlyPopover.props.children.props.children[2].props.children).toEqual(['/ ', 2]);
+
+    const loadedAppUnlock = appUnlockColumn.render([
       {app_name: 'Netflix', status: 'unlock'},
       {app_name: 'Netflix', status: 'unlock'},
       {app_name: 'OpenAI', status: 'unlock'},
       {app_name: 'Claude', status: 'fail'},
-    ], {metadata_loading: false})).toBe('已解锁2个');
+    ], {metadata_loading: false});
+    const loadedPopover = loadedAppUnlock.type(loadedAppUnlock.props);
+    expect(loadedPopover.props.trigger).toBe('hover');
+    expect(loadedPopover.props.placement).toBe('topLeft');
+    expect(loadedPopover.props.children.props.children[0].props.children).toBe('已解锁');
+    expect(loadedPopover.props.children.props.children[1].props.children).toBe(2);
+    expect(loadedPopover.props.children.props.children[2].props.children).toEqual(['/ ', 4]);
+
+    const details = loadedPopover.props.content.type(loadedPopover.props.content.props);
+    const detailList = details.props.children[1];
+    expect(details.props.children[0].props.children[0].props.children).toBe('应用解锁详情');
+    expect(details.props.children[0].props.children[1].props.children).toEqual([4, ' 项检测']);
+    const firstAppDetail = detailList.props.children[0];
+    expect(firstAppDetail.props.children[0].props.children).toBe('Netflix');
+    expect(firstAppDetail.props.style.gridTemplateColumns).toBe('minmax(0, 1fr) 58px 44px');
+    expect(firstAppDetail.props.children[1].props.children.props.status).toBe('unlock');
+    expect(firstAppDetail.props.children[2].props.children).toBe('-');
   });
 
   test('renders base cells and action buttons', () => {
