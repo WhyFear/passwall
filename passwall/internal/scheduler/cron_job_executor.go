@@ -7,6 +7,7 @@ import (
 
 	"passwall/config"
 	"passwall/internal/model"
+	"passwall/internal/repository"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
@@ -142,7 +143,7 @@ func (e *cronJobExecutor) executeWebhooks(job config.CronJob) {
 	log.Infoln("Job '%s': All webhooks executed successfully", job.Name)
 }
 
-func buildProxyFilter(statusText string) *proxy.ProxyFilter {
+func buildProxyFilter(statusText string) *repository.NodeFilter {
 	if statusText == "" {
 		return nil
 	}
@@ -159,7 +160,7 @@ func buildProxyFilter(statusText string) *proxy.ProxyFilter {
 	if len(statusList) == 0 {
 		return nil
 	}
-	return &proxy.ProxyFilter{Status: statusList}
+	return &repository.NodeFilter{Status: statusList}
 }
 
 func withDefault(value int, fallback int) int {

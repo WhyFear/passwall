@@ -97,6 +97,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/detect_ip", handler.DetectIPQuality(services.ConfigService, services.IPDetectorService))
 		webGroup.GET("/get_ip_info", handler.GetIPQuality(services.IPDetectorService))
 		webGroup.GET("/get_country_codes", handler.GetCountryCodeList(services.IPDetectorService))
+		webGroup.GET("/get_unlock_apps", handler.GetUnlockAppList())
 
 		// 系统配置API
 		configHandler := handler.NewConfigHandler(services.ConfigService)

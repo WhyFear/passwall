@@ -21,7 +21,7 @@ export const StatusTag = ({status}) => {
   return <Tag color={color}>{text}</Tag>;
 };
 
-export const AppUnlockStatusTag = ({status}) => {
+export const AppUnlockStatusTag = ({status, style}) => {
   let color = 'default';
   let text = '未知';
 
@@ -39,7 +39,7 @@ export const AppUnlockStatusTag = ({status}) => {
     text = '限流';
   }
 
-  return <Tag color={color}>{text}</Tag>;
+  return <Tag color={color} style={style}>{text}</Tag>;
 };
 
 export const InfoItem = ({label, value}) => {

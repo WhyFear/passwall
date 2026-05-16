@@ -90,8 +90,10 @@ describe('api client', () => {
 
   test('keeps node IP info endpoint aligned with backend route', () => {
     nodeApi.getIPInfo({proxy_id: 7});
+    nodeApi.getUnlockApps();
 
     expect(mockApi.get).toHaveBeenCalledWith('/get_ip_info', {params: {proxy_id: 7}});
+    expect(mockApi.get).toHaveBeenCalledWith('/get_unlock_apps');
   });
 
   test('passes subscription pagination as axios params object', () => {

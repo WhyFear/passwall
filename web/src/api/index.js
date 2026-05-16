@@ -105,6 +105,7 @@ export const nodeApi = {
   detectIP: (params) => api.post(`/detect_ip`, params),
   getIPInfo: (params) => api.get(`/get_ip_info`, {params}),
   getCountryCodes: () => api.get('/get_country_codes'),
+  getUnlockApps: () => api.get('/get_unlock_apps'),
 };
 
 // 任务相关API

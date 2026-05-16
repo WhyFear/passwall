@@ -4,3 +4,4 @@ node_modules
 passwall/main
 .agents
 .codex
+coverage

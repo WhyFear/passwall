@@ -13,6 +13,7 @@ type ShareConfig struct {
 	ProxyType   string    `json:"proxy_type" gorm:"type:varchar(255)"`
 	CountryCode string    `json:"country_code" gorm:"type:varchar(255)"`
 	RiskLevel   string    `json:"risk_level" gorm:"type:varchar(255)"`
+	AppUnlock   string    `json:"app_unlock" gorm:"type:varchar(255)"`
 	Sort        string    `json:"sort" gorm:"type:varchar(64)"`
 	SortOrder   string    `json:"sort_order" gorm:"type:varchar(16)"`
 	Limit       int       `json:"limit"`

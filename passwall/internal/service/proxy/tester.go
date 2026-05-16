@@ -17,15 +17,9 @@ import (
 
 // TestRequest 测试代理请求
 type TestRequest struct {
-	ProxyIDs   []int64      // 指定要测试的代理ID列表
-	Filters    *ProxyFilter // 筛选条件
-	Concurrent int          // 并发数
-}
-
-// ProxyFilter 代理筛选条件
-type ProxyFilter struct {
-	Status []model.ProxyStatus // 状态过滤
-	Types  []model.ProxyType   // 类型过滤
+	ProxyIDs   []int64                // 指定要测试的代理ID列表
+	Filters    *repository.NodeFilter // 筛选条件
+	Concurrent int                    // 并发数
 }
 
 // Tester 代理测试服务接口
@@ -121,11 +115,7 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 		}
 	} else if request.Filters != nil {
 		// 如果指定了筛选条件，则根据条件筛选代理
-		filter := &repository.ProxyFilter{
-			Status: request.Filters.Status,
-			Types:  request.Filters.Types,
-		}
-		proxies, err = t.proxyRepo.FindByFilter(filter)
+		proxies, err = t.proxyRepo.FindByFilter(request.Filters)
 		if err != nil {
 			return fmt.Errorf("筛选代理失败: %w", err)
 		}

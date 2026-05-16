@@ -77,8 +77,7 @@ func (r *GormIPInfoRepository) CreateOrUpdate(ipInfo *model.IPInfo) error {
 
 	if existing != nil {
 		// 更新现有记录
-		ipInfo.UpdatedAt = time.Now()
-		return r.db.Model(existing).Updates(ipInfo).Error
+		return r.updateExisting(existing, ipInfo)
 	}
 
 	// 创建新记录
@@ -100,15 +99,14 @@ func (r *GormIPInfoRepository) BatchCreateOrUpdate(ipInfos []*model.IPInfo) erro
 			}
 
 			// 先尝试查找是否已存在
-			existing, err := r.FindByIPAddressIDAndDetector(ipInfo.IPAddressesID, ipInfo.Detector)
+			existing, err := r.findByIPAddressIDAndDetector(tx, ipInfo.IPAddressesID, ipInfo.Detector)
 			if err != nil {
 				return err
 			}
 
 			if existing != nil {
 				// 更新现有记录
-				ipInfo.UpdatedAt = time.Now()
-				if err := tx.Model(existing).Updates(ipInfo).Error; err != nil {
+				if err := r.updateExistingWithDB(tx, existing, ipInfo); err != nil {
 					return err
 				}
 			} else {
@@ -122,4 +120,29 @@ func (r *GormIPInfoRepository) BatchCreateOrUpdate(ipInfos []*model.IPInfo) erro
 		}
 		return nil
 	})
+}
+
+func (r *GormIPInfoRepository) findByIPAddressIDAndDetector(db *gorm.DB, ipAddressID uint, detector string) (*model.IPInfo, error) {
+	var ipInfo model.IPInfo
+	result := db.Where("ip_addresses_id = ? AND detector = ?", ipAddressID, detector).First(&ipInfo)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &ipInfo, nil
+}
+
+func (r *GormIPInfoRepository) updateExisting(existing *model.IPInfo, ipInfo *model.IPInfo) error {
+	return r.updateExistingWithDB(r.db, existing, ipInfo)
+}
+
+func (r *GormIPInfoRepository) updateExistingWithDB(db *gorm.DB, existing *model.IPInfo, ipInfo *model.IPInfo) error {
+	return db.Model(existing).Updates(map[string]interface{}{
+		"risk":       ipInfo.Risk,
+		"geo":        ipInfo.Geo,
+		"raw":        ipInfo.Raw,
+		"updated_at": time.Now(),
+	}).Error
 }

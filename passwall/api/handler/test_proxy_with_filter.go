@@ -3,20 +3,20 @@ package handler
 import (
 	"context"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"passwall/internal/model"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
 )
 
 type TestProxyReq struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
-	Type   string `json:"type"`
+	ID        int64  `json:"id"`
+	Status    string `json:"status"`
+	Type      string `json:"type"`
+	Country   string `json:"country_code"`
+	Risk      string `json:"risk_level"`
+	AppUnlock string `json:"app_unlock"`
 }
 
 func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
@@ -31,32 +31,14 @@ func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
 			return
 		}
 
-		filter := &proxy.ProxyFilter{}
-		if len(req.Status) > 0 {
-			statusList := strings.Split(req.Status, ",")
-			var statuses []model.ProxyStatus
-			for _, status := range statusList {
-				// string转int
-				status, err := strconv.Atoi(status)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"result":      "error",
-						"status_code": http.StatusInternalServerError,
-						"status_msg":  "<UNK>: " + err.Error(),
-					})
-					return
-				}
-				statuses = append(statuses, model.ProxyStatus(status))
-			}
-			filter.Status = statuses
-		}
-		if len(req.Type) > 0 {
-			typeList := strings.Split(req.Type, ",")
-			var types []model.ProxyType
-			for _, t := range typeList {
-				types = append(types, model.ProxyType(t))
-			}
-			filter.Types = types
+		filter, err := parseNodeFilter(req.Status, req.Type, req.Country, req.Risk, req.AppUnlock)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "error",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "无效的筛选参数: " + err.Error(),
+			})
+			return
 		}
 
 		// 创建测试请求
@@ -69,7 +51,7 @@ func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
 		}
 
 		// 测试代理
-		err := proxyTester.TestProxies(ctx, request, true)
+		err = proxyTester.TestProxies(ctx, request, true)
 		if err != nil {
 			if task.IsConflictError(err) {
 				c.JSON(http.StatusOK, gin.H{

@@ -107,17 +107,17 @@ func (s *proxyTesterImpl) TestProxies(request *TestProxyRequest, async bool) err
 		testRequest.Filters = nil
 	} else if request.TestNew {
 		// 测试新代理
-		testRequest.Filters = &proxy.ProxyFilter{
+		testRequest.Filters = &repository.NodeFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusPending},
 		}
 	} else if request.TestFailed {
 		// 测试失败的代理
-		testRequest.Filters = &proxy.ProxyFilter{
+		testRequest.Filters = &repository.NodeFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusFailed},
 		}
 	} else if request.TestSpeed {
 		// 测试正常的代理
-		testRequest.Filters = &proxy.ProxyFilter{
+		testRequest.Filters = &repository.NodeFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusOK},
 		}
 		testRequest.Concurrent = 1 // 速度测试使用单线程

@@ -50,7 +50,7 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	router.GET("/proxies", GetProxyList(proxyService, subscriptionManager))
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/proxies?page=2&pageSize=20&sortField=ping&sortOrder=ascend&status=1&type=trojan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/proxies?page=2&pageSize=20&sortField=ping&sortOrder=ascend&status=1&type=trojan&country_code=US&risk_level=low&app_unlock=Netflix,OpenAI", nil)
 	router.ServeHTTP(resp, req)
 
 	require.Equal(t, http.StatusOK, resp.Code)
@@ -58,8 +58,12 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	assert.Equal(t, 20, proxyService.pageSize)
 	assert.Equal(t, "ping", proxyService.sort)
 	assert.Equal(t, "ascend", proxyService.sortOrder)
-	assert.Equal(t, []string{"1"}, proxyService.filters["status"])
-	assert.Equal(t, []string{"trojan"}, proxyService.filters["type"])
+	require.NotNil(t, proxyService.filters)
+	assert.Equal(t, []model.ProxyStatus{model.ProxyStatusOK}, proxyService.filters.Status)
+	assert.Equal(t, []model.ProxyType{model.ProxyTypeTrojan}, proxyService.filters.Types)
+	assert.Equal(t, []string{"US"}, proxyService.filters.CountryCode)
+	assert.Equal(t, []string{"low"}, proxyService.filters.RiskLevel)
+	assert.Equal(t, []string{"Netflix", "OpenAI"}, proxyService.filters.AppUnlock)
 
 	var body map[string]interface{}
 	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
@@ -72,6 +76,36 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	assert.NotContains(t, item, "download_total")
 	assert.NotContains(t, item, "upload_total")
 	assert.NotContains(t, item, "ip_info")
+}
+
+func TestGetProxyListRejectsInvalidStatusFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/proxies", GetProxyList(&fakeListProxyService{}, &fakeListSubscriptionManager{}))
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/proxies?status=bad", nil)
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
+}
+
+func TestGetUnlockAppListReturnsSupportedApps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/get_unlock_apps", GetUnlockAppList())
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/get_unlock_apps", nil)
+	router.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
+	apps := body["data"].([]interface{})
+	assert.Contains(t, apps, "TikTok")
+	assert.Contains(t, apps, "Netflix")
+	assert.Contains(t, apps, "OpenAI")
 }
 
 func TestGetProxyMetadataReturnsRequestedFields(t *testing.T) {
@@ -166,14 +200,14 @@ type fakeListProxyService struct {
 	proxy.ProxyService
 	proxies   []*model.Proxy
 	total     int64
-	filters   map[string]interface{}
+	filters   *repository.NodeFilter
 	sort      string
 	sortOrder string
 	page      int
 	pageSize  int
 }
 
-func (f *fakeListProxyService) GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
+func (f *fakeListProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
 	f.filters = filters
 	f.sort = sort
 	f.sortOrder = sortOrder

@@ -11,6 +11,7 @@ describe('node query utils', () => {
         type: ['ss', 'trojan'],
         country: ['US', 'JP'],
         risk: ['low', 'high'],
+        app_unlock: ['Netflix', 'OpenAI'],
       },
     )).toEqual({
       page: 2,
@@ -21,6 +22,7 @@ describe('node query utils', () => {
       type: 'ss,trojan',
       country_code: 'US,JP',
       risk_level: 'low,high',
+      app_unlock: 'Netflix,OpenAI',
     });
   });
 

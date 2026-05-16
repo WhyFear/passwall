@@ -21,7 +21,7 @@ func TestProxyServiceGetProxiesByFiltersBuildsRepositoryQuery(t *testing.T) {
 		},
 	}
 	service := NewProxyService(repo, nil, task.NewTaskManager())
-	filters := map[string]interface{}{"type": []string{"ss"}}
+	filters := &repository.NodeFilter{Types: []model.ProxyType{model.ProxyTypeSS}}
 
 	items, total, err := service.GetProxiesByFilters(filters, "download_speed", "ascend", 2, 25)
 

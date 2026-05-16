@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS share_configs
     proxy_type   VARCHAR(255),
     country_code VARCHAR(255),
     risk_level   VARCHAR(255),
+    app_unlock   VARCHAR(255),
     sort         VARCHAR(64),
     sort_order   VARCHAR(16),
     "limit"      INTEGER,

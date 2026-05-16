@@ -325,6 +325,13 @@ func TestIPDetectorDetectSkipsMissingProxy(t *testing.T) {
 
 func TestIPDetectorBatchGetInfoUsesIPv4BaseInfoFirst(t *testing.T) {
 	detectorService := newDetectTestService()
+	detectorService.IPUnlockInfoRepo = &fakeDetectUnlockInfoRepo{
+		byIPAddressID: map[uint][]*model.IPUnlockInfo{
+			10: {{IPAddressesID: 10, AppName: "Netflix", Status: "fail"}},
+			11: {{IPAddressesID: 11, AppName: "Netflix", Status: "unlock", Region: "US"}},
+			20: {{IPAddressesID: 20, AppName: "OpenAI", Status: "forbidden"}},
+		},
+	}
 	detectorService.ProxyIPAddress = &fakeDetectProxyIPRepo{
 		latestRecords: []*model.ProxyIPAddress{
 			{
@@ -350,10 +357,58 @@ func TestIPDetectorBatchGetInfoUsesIPv4BaseInfoFirst(t *testing.T) {
 	assert.Equal(t, "2001:db8::1", result[1].IPv6)
 	assert.Equal(t, "US", result[1].CountryCode)
 	assert.Equal(t, "low", result[1].Risk)
+	require.Len(t, result[1].AppUnlock, 1)
+	assert.Equal(t, "Netflix", result[1].AppUnlock[0].AppName)
+	assert.Equal(t, "unlock", result[1].AppUnlock[0].Status)
 	require.Contains(t, result, uint(2))
 	assert.Equal(t, "2001:db8::2", result[2].IPv6)
 	assert.Equal(t, "SG", result[2].CountryCode)
+	require.Len(t, result[2].AppUnlock, 1)
+	assert.Equal(t, "OpenAI", result[2].AppUnlock[0].AppName)
 	assert.NotContains(t, result, uint(3))
+}
+
+func TestIPDetectorBatchGetInfoAggregatesUnlockAcrossLatestIPs(t *testing.T) {
+	detectorService := newDetectTestService()
+	unlockRepo := &fakeDetectUnlockInfoRepo{
+		byIPAddressID: map[uint][]*model.IPUnlockInfo{
+			10: {
+				{IPAddressesID: 10, AppName: "Netflix", Status: "fail"},
+				{IPAddressesID: 10, AppName: "OpenAI", Status: "unlock"},
+			},
+			11: {
+				{IPAddressesID: 11, AppName: "Netflix", Status: "unlock", Region: "US"},
+				{IPAddressesID: 11, AppName: "Claude", Status: "rateLimit"},
+			},
+		},
+	}
+	detectorService.IPUnlockInfoRepo = unlockRepo
+	detectorService.ProxyIPAddress = &fakeDetectProxyIPRepo{
+		latestRecords: []*model.ProxyIPAddress{
+			{ProxyID: 1, IPAddressesID: 10, IPType: 4, Latest: true, IPAddress: model.IPAddress{ID: 10, IP: "203.0.113.1", IPType: 4}},
+			{ProxyID: 1, IPAddressesID: 11, IPType: 6, Latest: true, IPAddress: model.IPAddress{ID: 11, IP: "2001:db8::1", IPType: 6}},
+		},
+	}
+
+	result, err := detectorService.BatchGetInfo([]uint{1})
+
+	require.NoError(t, err)
+	require.True(t, unlockRepo.batchCalled)
+	assert.ElementsMatch(t, []uint{10, 11}, unlockRepo.batchIPAddressIDs)
+	require.Len(t, result[1].AppUnlock, 3)
+	assert.Equal(t, "Claude", result[1].AppUnlock[0].AppName)
+	assert.Equal(t, "rateLimit", result[1].AppUnlock[0].Status)
+	assert.Equal(t, "Netflix", result[1].AppUnlock[1].AppName)
+	assert.Equal(t, "unlock", result[1].AppUnlock[1].Status)
+	assert.Equal(t, "OpenAI", result[1].AppUnlock[2].AppName)
+	assert.Equal(t, "unlock", result[1].AppUnlock[2].Status)
+}
+
+func TestAppUnlockStatusRankOrdersKnownStatuses(t *testing.T) {
+	assert.Greater(t, appUnlockStatusRank("unlock"), appUnlockStatusRank("forbidden"))
+	assert.Greater(t, appUnlockStatusRank("forbidden"), appUnlockStatusRank("rateLimit"))
+	assert.Greater(t, appUnlockStatusRank("rateLimit"), appUnlockStatusRank("fail"))
+	assert.Greater(t, appUnlockStatusRank("fail"), appUnlockStatusRank("unknown"))
 }
 
 func TestIPDetectorBatchGetInfoEmptyInputDoesNotQuery(t *testing.T) {
@@ -371,12 +426,14 @@ func TestIPDetectorBatchGetInfoEmptyInputDoesNotQuery(t *testing.T) {
 func newDetectTestService() ipDetectorImpl {
 	proxyIPRepo := &fakeDetectProxyIPRepo{}
 	addressRepo := &fakeDetectAddressRepo{byIP: map[string]*model.IPAddress{}}
+	unlockRepo := &fakeDetectUnlockInfoRepo{}
 	return ipDetectorImpl{
-		ProxyRepo:      &fakeDetectProxyRepo{proxy: &model.Proxy{ID: 1, Type: model.ProxyTypeVMess}},
-		ProxyIPAddress: proxyIPRepo,
-		IPAddressRepo:  addressRepo,
-		TaskManager:    task.NewTaskManager(),
-		Persister:      newIPDetectPersister(addressRepo, proxyIPRepo, &fakeDetectBaseInfoRepo{}, &fakeDetectIPInfoRepo{}, &fakeDetectUnlockInfoRepo{}),
+		ProxyRepo:        &fakeDetectProxyRepo{proxy: &model.Proxy{ID: 1, Type: model.ProxyTypeVMess}},
+		ProxyIPAddress:   proxyIPRepo,
+		IPAddressRepo:    addressRepo,
+		IPUnlockInfoRepo: unlockRepo,
+		TaskManager:      task.NewTaskManager(),
+		Persister:        newIPDetectPersister(addressRepo, proxyIPRepo, &fakeDetectBaseInfoRepo{}, &fakeDetectIPInfoRepo{}, unlockRepo),
 	}
 }
 
@@ -450,6 +507,19 @@ type fakeDetectIPInfoRepo struct {
 
 type fakeDetectUnlockInfoRepo struct {
 	repository.IPUnlockInfoRepository
+	byIPAddressID     map[uint][]*model.IPUnlockInfo
+	batchIPAddressIDs []uint
+	batchCalled       bool
+}
+
+func (r *fakeDetectUnlockInfoRepo) FindByIPAddressIDs(ipAddressIDs []uint) ([]*model.IPUnlockInfo, error) {
+	r.batchCalled = true
+	r.batchIPAddressIDs = append([]uint(nil), ipAddressIDs...)
+	result := make([]*model.IPUnlockInfo, 0)
+	for _, ipAddressID := range ipAddressIDs {
+		result = append(result, r.byIPAddressID[ipAddressID]...)
+	}
+	return result, nil
 }
 
 func TestIPDetectorBatchDetectAllowsConcurrentDifferentResourceIDs(t *testing.T) {

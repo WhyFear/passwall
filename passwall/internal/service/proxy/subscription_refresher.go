@@ -268,7 +268,7 @@ func (r *subscriptionRefresher) triggerPendingProxyTest(ctx context.Context) {
 	}
 
 	testReq := &TestRequest{
-		Filters: &ProxyFilter{
+		Filters: &repository.NodeFilter{
 			Status: []model.ProxyStatus{model.ProxyStatusPending},
 		},
 		Concurrent: concurrent,

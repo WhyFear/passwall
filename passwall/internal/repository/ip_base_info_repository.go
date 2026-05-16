@@ -86,8 +86,11 @@ func (r *GormIPBaseInfoRepository) CreateOrUpdate(ipBaseInfo *model.IPBaseInfo) 
 
 	if existing != nil {
 		// 更新现有记录
-		ipBaseInfo.UpdatedAt = time.Now()
-		return r.db.Model(existing).Updates(ipBaseInfo).Error
+		return r.db.Model(existing).Updates(map[string]interface{}{
+			"risk_level":   ipBaseInfo.RiskLevel,
+			"country_code": ipBaseInfo.CountryCode,
+			"updated_at":   time.Now(),
+		}).Error
 	}
 
 	// 创建新记录

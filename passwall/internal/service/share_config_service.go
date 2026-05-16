@@ -26,6 +26,7 @@ type ShareConfigRequest struct {
 	ProxyType   string `json:"proxy_type"`
 	CountryCode string `json:"country_code"`
 	RiskLevel   string `json:"risk_level"`
+	AppUnlock   string `json:"app_unlock"`
 	Sort        string `json:"sort"`
 	SortOrder   string `json:"sort_order"`
 	Limit       int    `json:"limit"`
@@ -79,6 +80,7 @@ func (s *shareConfigService) Update(id uint, req ShareConfigRequest) (*model.Sha
 	config.ProxyType = updated.ProxyType
 	config.CountryCode = updated.CountryCode
 	config.RiskLevel = updated.RiskLevel
+	config.AppUnlock = updated.AppUnlock
 	config.Sort = updated.Sort
 	config.SortOrder = updated.SortOrder
 	config.Limit = updated.Limit
@@ -141,6 +143,7 @@ func buildShareConfig(req ShareConfigRequest) *model.ShareConfig {
 		ProxyType:   strings.TrimSpace(req.ProxyType),
 		CountryCode: strings.TrimSpace(req.CountryCode),
 		RiskLevel:   strings.TrimSpace(req.RiskLevel),
+		AppUnlock:   strings.TrimSpace(req.AppUnlock),
 		Sort:        strings.TrimSpace(req.Sort),
 		SortOrder:   strings.TrimSpace(req.SortOrder),
 		Limit:       req.Limit,

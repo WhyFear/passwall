@@ -12,6 +12,7 @@ import (
 type IPUnlockInfoRepository interface {
 	FindByID(id uint) (*model.IPUnlockInfo, error)
 	FindByIPAddressID(ipAddressID uint) ([]*model.IPUnlockInfo, error)
+	FindByIPAddressIDs(ipAddressIDs []uint) ([]*model.IPUnlockInfo, error)
 	FindByIPAddressIDAndAppName(ipAddressID uint, appName string) (*model.IPUnlockInfo, error)
 	CreateOrUpdate(ipUnlockInfo *model.IPUnlockInfo) error
 	BatchCreateOrUpdate(ipUnlockInfos []*model.IPUnlockInfo) error
@@ -50,6 +51,19 @@ func (r *GormIPUnlockInfoRepository) FindByIPAddressID(ipAddressID uint) ([]*mod
 	return ipUnlockInfos, nil
 }
 
+func (r *GormIPUnlockInfoRepository) FindByIPAddressIDs(ipAddressIDs []uint) ([]*model.IPUnlockInfo, error) {
+	if len(ipAddressIDs) == 0 {
+		return []*model.IPUnlockInfo{}, nil
+	}
+
+	var ipUnlockInfos []*model.IPUnlockInfo
+	err := r.db.Where("ip_addresses_id IN ?", ipAddressIDs).Find(&ipUnlockInfos).Error
+	if err != nil {
+		return nil, err
+	}
+	return ipUnlockInfos, nil
+}
+
 // FindByIPAddressIDAndAppName 根据IP地址ID和应用名称查找解锁信息
 func (r *GormIPUnlockInfoRepository) FindByIPAddressIDAndAppName(ipAddressID uint, appName string) (*model.IPUnlockInfo, error) {
 	var ipUnlockInfo model.IPUnlockInfo
@@ -77,8 +91,7 @@ func (r *GormIPUnlockInfoRepository) CreateOrUpdate(ipUnlockInfo *model.IPUnlock
 
 	if existing != nil {
 		// 更新现有记录
-		ipUnlockInfo.UpdatedAt = time.Now()
-		return r.db.Model(existing).Updates(ipUnlockInfo).Error
+		return r.updateExisting(existing, ipUnlockInfo)
 	}
 
 	// 创建新记录
@@ -100,15 +113,14 @@ func (r *GormIPUnlockInfoRepository) BatchCreateOrUpdate(ipUnlockInfos []*model.
 			}
 
 			// 先尝试查找是否已存在
-			existing, err := r.FindByIPAddressIDAndAppName(ipUnlockInfo.IPAddressesID, ipUnlockInfo.AppName)
+			existing, err := r.findByIPAddressIDAndAppName(tx, ipUnlockInfo.IPAddressesID, ipUnlockInfo.AppName)
 			if err != nil {
 				return err
 			}
 
 			if existing != nil {
 				// 更新现有记录
-				ipUnlockInfo.UpdatedAt = time.Now()
-				if err := tx.Model(existing).Updates(ipUnlockInfo).Error; err != nil {
+				if err := r.updateExistingWithDB(tx, existing, ipUnlockInfo); err != nil {
 					return err
 				}
 			} else {
@@ -122,4 +134,28 @@ func (r *GormIPUnlockInfoRepository) BatchCreateOrUpdate(ipUnlockInfos []*model.
 		}
 		return nil
 	})
+}
+
+func (r *GormIPUnlockInfoRepository) findByIPAddressIDAndAppName(db *gorm.DB, ipAddressID uint, appName string) (*model.IPUnlockInfo, error) {
+	var ipUnlockInfo model.IPUnlockInfo
+	result := db.Where("ip_addresses_id = ? AND app_name = ?", ipAddressID, appName).First(&ipUnlockInfo)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &ipUnlockInfo, nil
+}
+
+func (r *GormIPUnlockInfoRepository) updateExisting(existing *model.IPUnlockInfo, ipUnlockInfo *model.IPUnlockInfo) error {
+	return r.updateExistingWithDB(r.db, existing, ipUnlockInfo)
+}
+
+func (r *GormIPUnlockInfoRepository) updateExistingWithDB(db *gorm.DB, existing *model.IPUnlockInfo, ipUnlockInfo *model.IPUnlockInfo) error {
+	return db.Model(existing).Updates(map[string]interface{}{
+		"status":     ipUnlockInfo.Status,
+		"region":     ipUnlockInfo.Region,
+		"updated_at": time.Now(),
+	}).Error
 }
