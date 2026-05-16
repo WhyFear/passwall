@@ -29,6 +29,13 @@ func TestParseNodeFilterIncludesAllSupportedFilters(t *testing.T) {
 	assert.Equal(t, []string{"Netflix", "OpenAI"}, filters.AppUnlock)
 }
 
+func TestParseNodeFilterReturnsNilForEmptyInput(t *testing.T) {
+	filters, err := parseNodeFilter("", "  ", "", "", "")
+
+	require.NoError(t, err)
+	assert.Nil(t, filters)
+}
+
 func TestParseNodeFilterRejectsInvalidStatus(t *testing.T) {
 	filters, err := parseNodeFilter("bad", "trojan", "", "", "")
 

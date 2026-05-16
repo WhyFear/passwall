@@ -193,7 +193,7 @@ func (r *GormProxyRepository) applyNodeFilter(db *gorm.DB, filter *NodeFilter) (
 		countryCodeArray := normalizeStringFilterValues(filter.CountryCode)
 		riskLevelArray := normalizeStringFilterValues(filter.RiskLevel)
 		if len(countryCodeArray) > 0 || len(riskLevelArray) > 0 {
-			db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id").
+			db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id AND proxy_ip_addresses.latest = ?", true).
 				Joins("INNER JOIN ip_base_infos ON proxy_ip_addresses.ip_addresses_id = ip_base_infos.ip_addresses_id")
 			joinedIPMetadata = true
 			if len(countryCodeArray) > 0 {
@@ -213,6 +213,8 @@ func (r *GormProxyRepository) applyNodeFilter(db *gorm.DB, filter *NodeFilter) (
 	return db, joinedIPMetadata
 }
 
+// normalizeStringFilterValues is defense-in-depth for non-HTTP callers; HTTP filters
+// are already normalized by parseNodeFilter.
 func normalizeStringFilterValues(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	result := make([]string, 0, len(values))

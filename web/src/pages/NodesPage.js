@@ -161,7 +161,6 @@ const NodesPage = () => {
         })));
       }
     } catch (error) {
-      console.error('获取App解锁列表失败');
       setUnlockApps([]);
       console.error(error);
     }

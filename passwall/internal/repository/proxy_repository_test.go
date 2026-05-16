@@ -87,6 +87,37 @@ func TestProxyRepositoryFindPageFiltersByStatusTypeCountryAndRisk(t *testing.T) 
 	assert.Equal(t, "us-high", result.Items[0].Name)
 }
 
+func TestProxyRepositoryFindPageFiltersCountryAndRiskByLatestIPOnly(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+
+	proxies := []*model.Proxy{
+		{Name: "current-jp-high", Domain: "latest.example", Port: 1001, Password: "p1", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "current-us-low", Domain: "match.example", Port: 1002, Password: "p2", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	seedProxyIPInfoWithLatest(t, db, proxies[0].ID, "203.0.113.100", 4, "US", "low", false)
+	seedProxyIPInfoWithLatest(t, db, proxies[0].ID, "203.0.113.101", 4, "JP", "high", true)
+	seedProxyIPInfoWithLatest(t, db, proxies[1].ID, "203.0.113.102", 4, "US", "low", true)
+
+	result, err := repo.FindPage(PageQuery{
+		Page:     1,
+		PageSize: 10,
+		OrderBy:  "id asc",
+		Filters: &NodeFilter{
+			CountryCode: []string{"US"},
+			RiskLevel:   []string{"low"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, int64(1), result.Total)
+	require.Len(t, result.Items, 1)
+	assert.Equal(t, "current-us-low", result.Items[0].Name)
+}
+
 func TestProxyRepositoryFindPageDeduplicatesIPJoinTotal(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)
 	repo := NewProxyRepository(db)
@@ -244,6 +275,30 @@ func TestProxyRepositoryFindByFilterFiltersByCountryAndRisk(t *testing.T) {
 	assert.Equal(t, "us-low-ss", result[0].Name)
 }
 
+func TestProxyRepositoryFindByFilterFiltersCountryAndRiskByLatestIPOnly(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+
+	proxies := []*model.Proxy{
+		{Name: "current-jp-high", Domain: "latest-filter.example", Port: 1001, Password: "p1", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "current-us-low", Domain: "match-filter.example", Port: 1002, Password: "p2", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	seedProxyIPInfoWithLatest(t, db, proxies[0].ID, "203.0.113.110", 4, "US", "low", false)
+	seedProxyIPInfoWithLatest(t, db, proxies[0].ID, "203.0.113.111", 4, "JP", "high", true)
+	seedProxyIPInfoWithLatest(t, db, proxies[1].ID, "203.0.113.112", 4, "US", "low", true)
+
+	result, err := repo.FindByFilter(&NodeFilter{
+		CountryCode: []string{"US"},
+		RiskLevel:   []string{"low"},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, "current-us-low", result[0].Name)
+}
+
 func TestProxyRepositoryFindByFilterNormalizesUnlockedAppFilter(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)
 	repo := NewProxyRepository(db)
@@ -331,14 +386,24 @@ func newProxyRepositoryTestDB(t *testing.T) *gorm.DB {
 func seedProxyIPInfo(t *testing.T, db *gorm.DB, proxyID uint, ip string, ipType uint, countryCode string, riskLevel string) {
 	t.Helper()
 
+	seedProxyIPInfoWithLatest(t, db, proxyID, ip, ipType, countryCode, riskLevel, true)
+}
+
+func seedProxyIPInfoWithLatest(t *testing.T, db *gorm.DB, proxyID uint, ip string, ipType uint, countryCode string, riskLevel string, latest bool) {
+	t.Helper()
+
 	ipAddress := &model.IPAddress{IP: ip, IPType: ipType}
 	require.NoError(t, db.Create(ipAddress).Error)
-	require.NoError(t, db.Create(&model.ProxyIPAddress{
+	proxyIPAddress := &model.ProxyIPAddress{
 		ProxyID:       proxyID,
 		IPAddressesID: ipAddress.ID,
 		IPType:        ipType,
-		Latest:        true,
-	}).Error)
+		Latest:        latest,
+	}
+	require.NoError(t, db.Create(proxyIPAddress).Error)
+	if !latest {
+		require.NoError(t, db.Model(proxyIPAddress).Update("latest", false).Error)
+	}
 	require.NoError(t, db.Create(&model.IPBaseInfo{
 		IPAddressesID: ipAddress.ID,
 		CountryCode:   countryCode,
