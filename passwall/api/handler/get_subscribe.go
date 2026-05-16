@@ -29,6 +29,7 @@ type SubscribeReq struct {
 	ProxyType   string `form:"proxy_type"`
 	CountryCode string `form:"country_code"`
 	RiskLevel   string `form:"risk_level"`
+	AppUnlock   string `form:"app_unlock"`
 	Sort        string `form:"sort"`
 	SortOrder   string `form:"sortOrder"`
 	Limit       int    `form:"limit"`
@@ -135,6 +136,9 @@ func buildSubscribeFilters(req SubscribeReq) map[string]interface{} {
 	}
 	if len(req.RiskLevel) > 0 {
 		filters["risk_level"] = strings.Split(req.RiskLevel, ",")
+	}
+	if len(req.AppUnlock) > 0 {
+		filters["app_unlock"] = strings.Split(req.AppUnlock, ",")
 	}
 
 	return filters

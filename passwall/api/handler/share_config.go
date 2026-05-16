@@ -106,6 +106,7 @@ func GetSharedSubscribe(shareConfigService service.ShareConfigService, proxyServ
 			ProxyType:   config.ProxyType,
 			CountryCode: config.CountryCode,
 			RiskLevel:   config.RiskLevel,
+			AppUnlock:   config.AppUnlock,
 			Sort:        config.Sort,
 			SortOrder:   config.SortOrder,
 			Limit:       config.Limit,
