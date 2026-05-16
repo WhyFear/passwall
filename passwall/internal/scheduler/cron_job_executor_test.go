@@ -6,6 +6,7 @@ import (
 
 	"passwall/config"
 	"passwall/internal/model"
+	"passwall/internal/repository"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
@@ -99,7 +100,7 @@ func (f *fakeCronProxyService) BanProxy(ctx context.Context, req proxy.BanProxyR
 	return nil
 }
 
-func (f *fakeCronProxyService) GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
+func (f *fakeCronProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
 	return f.proxies, int64(len(f.proxies)), nil
 }
 

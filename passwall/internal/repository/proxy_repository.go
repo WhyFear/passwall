@@ -19,7 +19,7 @@ type PageQuery struct {
 	Page     int
 	PageSize int
 	OrderBy  string
-	Filters  map[string]interface{}
+	Filters  *NodeFilter
 }
 
 // PageResult 分页查询结果
@@ -28,11 +28,13 @@ type PageResult struct {
 	Items []*model.Proxy
 }
 
-// ProxyFilter 代理过滤条件
-type ProxyFilter struct {
-	Status    []model.ProxyStatus
-	Types     []model.ProxyType
-	AppUnlock []string
+// NodeFilter 代理节点过滤条件
+type NodeFilter struct {
+	Status      []model.ProxyStatus
+	Types       []model.ProxyType
+	CountryCode []string
+	RiskLevel   []string
+	AppUnlock   []string
 }
 
 // ProxyRepository 代理服务器仓库接口
@@ -40,7 +42,7 @@ type ProxyRepository interface {
 	FindByID(id uint) (*model.Proxy, error)
 	FindAll() ([]*model.Proxy, error)
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
-	FindByFilter(filter *ProxyFilter) ([]*model.Proxy, error)
+	FindByFilter(filter *NodeFilter) ([]*model.Proxy, error)
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
 	FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error)
 	FindPage(query PageQuery) (*PageResult, error)
@@ -105,25 +107,11 @@ func (r *GormProxyRepository) FindAll() ([]*model.Proxy, error) {
 }
 
 // FindByFilter 根据过滤条件查找代理服务器
-func (r *GormProxyRepository) FindByFilter(filter *ProxyFilter) ([]*model.Proxy, error) {
+func (r *GormProxyRepository) FindByFilter(filter *NodeFilter) ([]*model.Proxy, error) {
 	var proxies []*model.Proxy
-	query := r.db
-	if filter != nil {
-		if len(filter.Status) > 0 {
-			query = query.Where("status IN ?", filter.Status)
-		} else {
-			query = query.Where("status != ?", model.ProxyStatusBanned)
-		}
-		if len(filter.Types) > 0 {
-			query = query.Where("type IN ?", filter.Types)
-		}
-		if len(filter.AppUnlock) > 0 {
-			appUnlockArray := normalizeStringFilterValues(filter.AppUnlock)
-			if len(appUnlockArray) > 0 {
-				matchingProxyIDs := r.unlockedAppProxyIDs(appUnlockArray)
-				query = query.Where("proxies.id IN (?)", matchingProxyIDs)
-			}
-		}
+	query, joinedIPMetadata := r.applyNodeFilter(r.db.Model(&model.Proxy{}), filter)
+	if joinedIPMetadata {
+		query = query.Distinct("proxies.*")
 	}
 	err := query.Find(&proxies).Error
 	if err != nil {
@@ -159,79 +147,10 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	var result PageResult
 	var proxies []*model.Proxy
 	var total int64
-	db := r.db.Model(&model.Proxy{})
-
-	// 防止重复join
-	joinIPInfo := false
-
-	if query.Filters != nil {
-		for key, value := range query.Filters {
-			if key == "status" {
-				if statusArray, ok := value.([]string); ok && len(statusArray) > 0 {
-					db = db.Where("status IN ?", statusArray)
-					continue
-				} else {
-					db = db.Where("status != ?", model.ProxyStatusBanned)
-					continue
-				}
-			}
-			if key == "type" {
-				if typeArray, ok := value.([]string); ok && len(typeArray) > 0 {
-					db = db.Where("type IN ?", typeArray)
-					continue
-				}
-			}
-			if key == "country_code" {
-				countryCodeArray, ok := value.([]string)
-				if !ok || len(countryCodeArray) == 0 {
-					continue
-				}
-				if !joinIPInfo {
-					// 预加载关联表
-					db = db.Preload("ProxyIPAddresses.IPAddress.IPBaseInfo")
-					db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id").
-						Joins("INNER JOIN ip_base_infos ON proxy_ip_addresses.ip_addresses_id = ip_base_infos.ip_addresses_id")
-					// 联查ip_base_info表
-					joinIPInfo = true
-				}
-				db = db.Where("ip_base_infos.country_code IN ?", countryCodeArray)
-				continue
-			}
-			if key == "risk_level" {
-				riskLevelArray, ok := value.([]string)
-				if !ok || len(riskLevelArray) == 0 {
-					continue
-				}
-				if !joinIPInfo {
-					// 预加载关联表
-					db = db.Preload("ProxyIPAddresses.IPAddress.IPBaseInfo")
-					db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id").
-						Joins("INNER JOIN ip_base_infos ON proxy_ip_addresses.ip_addresses_id = ip_base_infos.ip_addresses_id")
-					// 联查ip_base_info表
-					joinIPInfo = true
-				}
-				db = db.Where("ip_base_infos.risk_level IN ?", riskLevelArray)
-				continue
-			}
-			if key == "app_unlock" {
-				appUnlockArray, ok := value.([]string)
-				if !ok {
-					continue
-				}
-				appUnlockArray = normalizeStringFilterValues(appUnlockArray)
-				if len(appUnlockArray) == 0 {
-					continue
-				}
-				matchingProxyIDs := r.unlockedAppProxyIDs(appUnlockArray)
-				db = db.Where("proxies.id IN (?)", matchingProxyIDs)
-				continue
-			}
-		}
-	}
-	db = db.Where("status != ?", model.ProxyStatusBanned)
+	db, joinedIPMetadata := r.applyNodeFilter(r.db.Model(&model.Proxy{}), query.Filters)
 
 	countDB := db
-	if joinIPInfo {
+	if joinedIPMetadata {
 		countDB = countDB.Distinct("proxies.id")
 	}
 	if err := countDB.Count(&total).Error; err != nil {
@@ -252,7 +171,7 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	}
 
 	// 如果有join，需要去重
-	if joinIPInfo {
+	if joinedIPMetadata {
 		db = db.Distinct("proxies.*")
 	}
 	if err := db.Offset((query.Page - 1) * query.PageSize).Limit(query.PageSize).Find(&proxies).Error; err != nil {
@@ -260,6 +179,38 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	}
 	result = PageResult{Total: total, Items: proxies}
 	return &result, nil
+}
+
+func (r *GormProxyRepository) applyNodeFilter(db *gorm.DB, filter *NodeFilter) (*gorm.DB, bool) {
+	joinedIPMetadata := false
+	if filter != nil {
+		if len(filter.Status) > 0 {
+			db = db.Where("proxies.status IN ?", filter.Status)
+		}
+		if len(filter.Types) > 0 {
+			db = db.Where("proxies.type IN ?", filter.Types)
+		}
+		countryCodeArray := normalizeStringFilterValues(filter.CountryCode)
+		riskLevelArray := normalizeStringFilterValues(filter.RiskLevel)
+		if len(countryCodeArray) > 0 || len(riskLevelArray) > 0 {
+			db = db.Joins("INNER JOIN proxy_ip_addresses ON proxies.id = proxy_ip_addresses.proxy_id").
+				Joins("INNER JOIN ip_base_infos ON proxy_ip_addresses.ip_addresses_id = ip_base_infos.ip_addresses_id")
+			joinedIPMetadata = true
+			if len(countryCodeArray) > 0 {
+				db = db.Where("ip_base_infos.country_code IN ?", countryCodeArray)
+			}
+			if len(riskLevelArray) > 0 {
+				db = db.Where("ip_base_infos.risk_level IN ?", riskLevelArray)
+			}
+		}
+		appUnlockArray := normalizeStringFilterValues(filter.AppUnlock)
+		if len(appUnlockArray) > 0 {
+			matchingProxyIDs := r.unlockedAppProxyIDs(appUnlockArray)
+			db = db.Where("proxies.id IN (?)", matchingProxyIDs)
+		}
+	}
+	db = db.Where("proxies.status != ?", model.ProxyStatusBanned)
+	return db, joinedIPMetadata
 }
 
 func normalizeStringFilterValues(values []string) []string {

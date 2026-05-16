@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"passwall/internal/model"
@@ -78,9 +79,11 @@ func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService,
 		}
 		proxies = append(proxies, singleProxy)
 	} else {
-		filters := buildSubscribeFilters(req)
+		filters, err := parseNodeFilter(req.StatusStr, req.ProxyType, req.CountryCode, req.RiskLevel, req.AppUnlock)
+		if err != nil {
+			return nil, err
+		}
 
-		var err error
 		proxies, _, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, 1, limit)
 		if err != nil {
 			log.Errorln("查询代理服务器失败: %v", err)
@@ -122,30 +125,16 @@ func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService,
 	return content, nil
 }
 
-func buildSubscribeFilters(req SubscribeReq) map[string]interface{} {
-	filters := make(map[string]interface{})
-
-	if req.StatusStr != "" {
-		filters["status"] = strings.Split(req.StatusStr, ",")
-	}
-	if req.ProxyType != "" {
-		filters["type"] = strings.Split(req.ProxyType, ",")
-	}
-	if len(req.CountryCode) > 0 {
-		filters["country_code"] = strings.Split(req.CountryCode, ",")
-	}
-	if len(req.RiskLevel) > 0 {
-		filters["risk_level"] = strings.Split(req.RiskLevel, ",")
-	}
-	if len(req.AppUnlock) > 0 {
-		filters["app_unlock"] = strings.Split(req.AppUnlock, ",")
-	}
-
-	return filters
-}
-
 func writeSubscribeError(c *gin.Context, err error) {
 	msg := err.Error()
+	if errors.Is(err, errInvalidNodeFilter) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"result":      "fail",
+			"status_code": http.StatusBadRequest,
+			"status_msg":  "Invalid filter parameters: " + msg,
+		})
+		return
+	}
 	if msg == "没有可生成分享链接的代理" {
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "fail",

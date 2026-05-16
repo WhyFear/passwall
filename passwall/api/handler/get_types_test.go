@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"passwall/internal/model"
+	"passwall/internal/repository"
 	"passwall/internal/service/proxy"
 
 	"github.com/gin-gonic/gin"
@@ -53,7 +54,7 @@ func (f *fakeProxyService) GetProxyNumBySubscriptionID(subsId uint, ignoreBanned
 	return 0, nil
 }
 
-func (f *fakeProxyService) GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
+func (f *fakeProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
 	return nil, 0, nil
 }
 

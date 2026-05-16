@@ -24,7 +24,7 @@ type BanProxyReq struct {
 type ProxyService interface {
 	GetProxyByID(id uint) (*model.Proxy, error)
 	GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool, statusOK bool) (int64, error)
-	GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
+	GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
 	GetProxyByName(name string) (*model.Proxy, error)
 	CreateProxy(proxy *model.Proxy) error
 	BatchCreateProxies(proxies []*model.Proxy) error
@@ -63,7 +63,7 @@ func (s *DefaultProxyService) GetProxyNumBySubscriptionID(subsId uint, ignoreBan
 	return s.proxyRepo.CountBySubscriptionID(subsId)
 }
 
-func (s *DefaultProxyService) GetProxiesByFilters(filters map[string]interface{}, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
+func (s *DefaultProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
 	// 构建查询参数
 	pageQuery := repository.PageQuery{
 		Filters: filters,

@@ -98,7 +98,17 @@ func GetProxyList(proxyService proxy.ProxyService, subscriptionManager proxy.Sub
 			req.PageSize = 10
 		}
 
-		proxies, total, err := proxyService.GetProxiesByFilters(buildProxyFilters(req), req.SortField, req.SortOrder, req.Page, req.PageSize)
+		filters, err := parseNodeFilter(req.Status, req.Type, req.CountryCode, req.RiskLevel, req.AppUnlock)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Invalid filter parameters: " + err.Error(),
+			})
+			return
+		}
+
+		proxies, total, err := proxyService.GetProxiesByFilters(filters, req.SortField, req.SortOrder, req.Page, req.PageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "fail",
@@ -263,26 +273,6 @@ func GetProxyDetails(statisticsService *traffic.StatisticsService, ipDetectServi
 
 		c.JSON(http.StatusOK, resp)
 	}
-}
-
-func buildProxyFilters(req ProxyReq) map[string]interface{} {
-	filters := make(map[string]interface{})
-	if len(req.Status) > 0 {
-		filters["status"] = strings.Split(req.Status, ",")
-	}
-	if len(req.Type) > 0 {
-		filters["type"] = strings.Split(req.Type, ",")
-	}
-	if len(req.CountryCode) > 0 {
-		filters["country_code"] = strings.Split(req.CountryCode, ",")
-	}
-	if len(req.RiskLevel) > 0 {
-		filters["risk_level"] = strings.Split(req.RiskLevel, ",")
-	}
-	if len(req.AppUnlock) > 0 {
-		filters["app_unlock"] = strings.Split(req.AppUnlock, ",")
-	}
-	return filters
 }
 
 func parseProxyIDList(value string, maxIDs int) ([]uint, error) {

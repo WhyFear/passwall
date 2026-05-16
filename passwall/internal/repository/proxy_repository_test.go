@@ -27,9 +27,7 @@ func TestProxyRepositoryFindPageFiltersSortsAndPaginates(t *testing.T) {
 		Page:     1,
 		PageSize: 2,
 		OrderBy:  "download_speed desc",
-		Filters: map[string]interface{}{
-			"type": []string{string(model.ProxyTypeSS)},
-		},
+		Filters:  &NodeFilter{Types: []model.ProxyType{model.ProxyTypeSS}},
 	})
 
 	require.NoError(t, err)
@@ -74,11 +72,11 @@ func TestProxyRepositoryFindPageFiltersByStatusTypeCountryAndRisk(t *testing.T) 
 		Page:     1,
 		PageSize: 10,
 		OrderBy:  "id asc",
-		Filters: map[string]interface{}{
-			"status":       []string{"1"},
-			"type":         []string{"ss"},
-			"country_code": []string{"US"},
-			"risk_level":   []string{"high"},
+		Filters: &NodeFilter{
+			Status:      []model.ProxyStatus{model.ProxyStatusOK},
+			Types:       []model.ProxyType{model.ProxyTypeSS},
+			CountryCode: []string{"US"},
+			RiskLevel:   []string{"high"},
 		},
 	})
 
@@ -93,17 +91,15 @@ func TestProxyRepositoryFindPageDeduplicatesIPJoinTotal(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)
 	repo := NewProxyRepository(db)
 
-	proxy := &model.Proxy{Name: "dual-stack", Domain: "dual.example", Port: 443, Password: "p", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK}
+	proxy := &model.Proxy{Name: "dual-stack", Domain: "dual-count.example", Port: 443, Password: "p", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK}
 	require.NoError(t, repo.Create(proxy))
-	seedProxyIPInfo(t, db, proxy.ID, "203.0.113.10", 4, "US", "low")
-	seedProxyIPInfo(t, db, proxy.ID, "2001:db8::10", 6, "US", "low")
+	seedProxyIPInfo(t, db, proxy.ID, "203.0.113.15", 4, "US", "low")
+	seedProxyIPInfo(t, db, proxy.ID, "2001:db8::15", 6, "US", "low")
 
 	result, err := repo.FindPage(PageQuery{
 		Page:     1,
-		PageSize: 10,
-		Filters: map[string]interface{}{
-			"country_code": []string{"US"},
-		},
+		PageSize: 1,
+		Filters:  &NodeFilter{CountryCode: []string{"US"}},
 	})
 
 	require.NoError(t, err)
@@ -147,9 +143,7 @@ func TestProxyRepositoryFindPageFiltersByUnlockedAppsWithAndSemantics(t *testing
 		Page:     1,
 		PageSize: 10,
 		OrderBy:  "id asc",
-		Filters: map[string]interface{}{
-			"app_unlock": []string{"Netflix", "OpenAI"},
-		},
+		Filters:  &NodeFilter{AppUnlock: []string{"Netflix", "OpenAI"}},
 	})
 
 	require.NoError(t, err)
@@ -173,9 +167,7 @@ func TestProxyRepositoryFindPageFiltersByUnlockedAppAndDeduplicatesTotal(t *test
 	result, err := repo.FindPage(PageQuery{
 		Page:     1,
 		PageSize: 10,
-		Filters: map[string]interface{}{
-			"app_unlock": []string{"Netflix", "Netflix", " "},
-		},
+		Filters:  &NodeFilter{AppUnlock: []string{"Netflix", "Netflix", " "}},
 	})
 
 	require.NoError(t, err)
@@ -215,7 +207,7 @@ func TestProxyRepositoryFindByFilterFiltersByUnlockedAppsWithAndSemantics(t *tes
 	seedUnlockInfo(t, db, bannedID, "Netflix", "unlock")
 	seedUnlockInfo(t, db, bannedID, "OpenAI", "unlock")
 
-	result, err := repo.FindByFilter(&ProxyFilter{
+	result, err := repo.FindByFilter(&NodeFilter{
 		Types:     []model.ProxyType{model.ProxyTypeSS},
 		AppUnlock: []string{"Netflix", "OpenAI"},
 	})
@@ -223,6 +215,33 @@ func TestProxyRepositoryFindByFilterFiltersByUnlockedAppsWithAndSemantics(t *tes
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	assert.Equal(t, "netflix-openai", result[0].Name)
+}
+
+func TestProxyRepositoryFindByFilterFiltersByCountryAndRisk(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+
+	proxies := []*model.Proxy{
+		{Name: "us-low-ss", Domain: "a-filter.example", Port: 1001, Password: "p1", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "us-high-ss", Domain: "b-filter.example", Port: 1002, Password: "p2", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "jp-low-ss", Domain: "c-filter.example", Port: 1003, Password: "p3", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+	seedProxyIPInfo(t, db, proxies[0].ID, "203.0.113.50", 4, "US", "low")
+	seedProxyIPInfo(t, db, proxies[0].ID, "2001:db8::50", 6, "US", "low")
+	seedProxyIPInfo(t, db, proxies[1].ID, "203.0.113.51", 4, "US", "high")
+	seedProxyIPInfo(t, db, proxies[2].ID, "203.0.113.52", 4, "JP", "low")
+
+	result, err := repo.FindByFilter(&NodeFilter{
+		Status:      []model.ProxyStatus{model.ProxyStatusOK},
+		Types:       []model.ProxyType{model.ProxyTypeSS},
+		CountryCode: []string{"US"},
+		RiskLevel:   []string{"low"},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, "us-low-ss", result[0].Name)
 }
 
 func TestProxyRepositoryFindByFilterNormalizesUnlockedAppFilter(t *testing.T) {
@@ -236,7 +255,7 @@ func TestProxyRepositoryFindByFilterNormalizesUnlockedAppFilter(t *testing.T) {
 	ipv6ID := seedProxyIPUnlock(t, db, proxy.ID, "2001:db8::40", 6, true)
 	seedUnlockInfo(t, db, ipv6ID, "Netflix", "unlock")
 
-	result, err := repo.FindByFilter(&ProxyFilter{
+	result, err := repo.FindByFilter(&NodeFilter{
 		AppUnlock: []string{"Netflix", "Netflix", " "},
 	})
 
@@ -292,16 +311,7 @@ func TestProxyRepositoryFindPageIgnoresInvalidFiltersSafely(t *testing.T) {
 		{Name: "banned", Domain: "banned.example", Port: 1003, Password: "p3", Type: model.ProxyTypeSS, Status: model.ProxyStatusBanned},
 	}))
 
-	result, err := repo.FindPage(PageQuery{
-		Page:     1,
-		PageSize: 10,
-		Filters: map[string]interface{}{
-			"status":       "1",
-			"type":         7,
-			"country_code": "US",
-			"risk_level":   nil,
-		},
-	})
+	result, err := repo.FindPage(PageQuery{Page: 1, PageSize: 10, Filters: &NodeFilter{CountryCode: []string{" "}}})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)

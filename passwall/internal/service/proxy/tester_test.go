@@ -135,10 +135,12 @@ func TestTesterPassesAppUnlockFilterToRepository(t *testing.T) {
 	)
 
 	err := tester.TestProxies(context.Background(), &TestRequest{
-		Filters: &ProxyFilter{
-			Status:    []model.ProxyStatus{model.ProxyStatusOK},
-			Types:     []model.ProxyType{model.ProxyTypeSS},
-			AppUnlock: []string{"Netflix", "OpenAI"},
+		Filters: &repository.NodeFilter{
+			Status:      []model.ProxyStatus{model.ProxyStatusOK},
+			Types:       []model.ProxyType{model.ProxyTypeSS},
+			CountryCode: []string{"US"},
+			RiskLevel:   []string{"low"},
+			AppUnlock:   []string{"Netflix", "OpenAI"},
 		},
 		Concurrent: 1,
 	}, false)
@@ -147,6 +149,8 @@ func TestTesterPassesAppUnlockFilterToRepository(t *testing.T) {
 	require.NotNil(t, proxyRepo.filter)
 	assert.Equal(t, []model.ProxyStatus{model.ProxyStatusOK}, proxyRepo.filter.Status)
 	assert.Equal(t, []model.ProxyType{model.ProxyTypeSS}, proxyRepo.filter.Types)
+	assert.Equal(t, []string{"US"}, proxyRepo.filter.CountryCode)
+	assert.Equal(t, []string{"low"}, proxyRepo.filter.RiskLevel)
 	assert.Equal(t, []string{"Netflix", "OpenAI"}, proxyRepo.filter.AppUnlock)
 }
 
@@ -155,7 +159,7 @@ type fakeTesterProxyRepo struct {
 	mu      sync.Mutex
 	proxies []*model.Proxy
 	updated []*model.Proxy
-	filter  *repository.ProxyFilter
+	filter  *repository.NodeFilter
 }
 
 func (r *fakeTesterProxyRepo) FindByID(id uint) (*model.Proxy, error) {
@@ -171,7 +175,7 @@ func (r *fakeTesterProxyRepo) FindAll() ([]*model.Proxy, error) {
 	return r.proxies, nil
 }
 
-func (r *fakeTesterProxyRepo) FindByFilter(filter *repository.ProxyFilter) ([]*model.Proxy, error) {
+func (r *fakeTesterProxyRepo) FindByFilter(filter *repository.NodeFilter) ([]*model.Proxy, error) {
 	r.filter = filter
 	return r.proxies, nil
 }

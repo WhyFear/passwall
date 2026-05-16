@@ -29,7 +29,7 @@ func TestProxyPassesAppUnlockFilterToTester(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/test_proxy_server",
-		bytes.NewBufferString(`{"status":"1","type":"ss","app_unlock":"Netflix,OpenAI"}`),
+		bytes.NewBufferString(`{"status":"1","type":"ss","country_code":"US","risk_level":"low","app_unlock":"Netflix,OpenAI"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(resp, req)
@@ -40,6 +40,8 @@ func TestProxyPassesAppUnlockFilterToTester(t *testing.T) {
 	assert.Equal(t, 3, tester.request.Concurrent)
 	assert.Equal(t, []model.ProxyStatus{model.ProxyStatusOK}, tester.request.Filters.Status)
 	assert.Equal(t, []model.ProxyType{model.ProxyTypeSS}, tester.request.Filters.Types)
+	assert.Equal(t, []string{"US"}, tester.request.Filters.CountryCode)
+	assert.Equal(t, []string{"low"}, tester.request.Filters.RiskLevel)
 	assert.Equal(t, []string{"Netflix", "OpenAI"}, tester.request.Filters.AppUnlock)
 }
 
@@ -81,7 +83,7 @@ func TestProxyRejectsInvalidStatusFilter(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(resp, req)
 
-	assert.Equal(t, http.StatusInternalServerError, resp.Code)
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
 func TestProxyReportsTaskConflict(t *testing.T) {
