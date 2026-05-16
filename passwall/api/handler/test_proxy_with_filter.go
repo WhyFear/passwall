@@ -14,9 +14,10 @@ import (
 )
 
 type TestProxyReq struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
-	Type   string `json:"type"`
+	ID        int64  `json:"id"`
+	Status    string `json:"status"`
+	Type      string `json:"type"`
+	AppUnlock string `json:"app_unlock"`
 }
 
 func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
@@ -57,6 +58,9 @@ func TestProxy(ctx context.Context, proxyTester proxy.Tester) gin.HandlerFunc {
 				types = append(types, model.ProxyType(t))
 			}
 			filter.Types = types
+		}
+		if len(req.AppUnlock) > 0 {
+			filter.AppUnlock = strings.Split(req.AppUnlock, ",")
 		}
 
 		// 创建测试请求

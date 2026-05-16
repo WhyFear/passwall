@@ -30,8 +30,9 @@ type PageResult struct {
 
 // ProxyFilter 代理过滤条件
 type ProxyFilter struct {
-	Status []model.ProxyStatus
-	Types  []model.ProxyType
+	Status    []model.ProxyStatus
+	Types     []model.ProxyType
+	AppUnlock []string
 }
 
 // ProxyRepository 代理服务器仓库接口
@@ -115,6 +116,13 @@ func (r *GormProxyRepository) FindByFilter(filter *ProxyFilter) ([]*model.Proxy,
 		}
 		if len(filter.Types) > 0 {
 			query = query.Where("type IN ?", filter.Types)
+		}
+		if len(filter.AppUnlock) > 0 {
+			appUnlockArray := normalizeStringFilterValues(filter.AppUnlock)
+			if len(appUnlockArray) > 0 {
+				matchingProxyIDs := r.unlockedAppProxyIDs(appUnlockArray)
+				query = query.Where("proxies.id IN (?)", matchingProxyIDs)
+			}
 		}
 	}
 	err := query.Find(&proxies).Error
@@ -214,14 +222,7 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 				if len(appUnlockArray) == 0 {
 					continue
 				}
-				matchingProxyIDs := r.db.Model(&model.ProxyIPAddress{}).
-					Select("proxy_ip_addresses.proxy_id").
-					Joins("INNER JOIN ip_unlock_infos ON proxy_ip_addresses.ip_addresses_id = ip_unlock_infos.ip_addresses_id").
-					Where("proxy_ip_addresses.latest = ?", true).
-					Where("ip_unlock_infos.status = ?", "unlock").
-					Where("ip_unlock_infos.app_name IN ?", appUnlockArray).
-					Group("proxy_ip_addresses.proxy_id").
-					Having("COUNT(DISTINCT ip_unlock_infos.app_name) = ?", len(appUnlockArray))
+				matchingProxyIDs := r.unlockedAppProxyIDs(appUnlockArray)
 				db = db.Where("proxies.id IN (?)", matchingProxyIDs)
 				continue
 			}
@@ -273,6 +274,17 @@ func normalizeStringFilterValues(values []string) []string {
 		result = append(result, value)
 	}
 	return result
+}
+
+func (r *GormProxyRepository) unlockedAppProxyIDs(appUnlockArray []string) *gorm.DB {
+	return r.db.Model(&model.ProxyIPAddress{}).
+		Select("proxy_ip_addresses.proxy_id").
+		Joins("INNER JOIN ip_unlock_infos ON proxy_ip_addresses.ip_addresses_id = ip_unlock_infos.ip_addresses_id").
+		Where("proxy_ip_addresses.latest = ?", true).
+		Where("ip_unlock_infos.status = ?", "unlock").
+		Where("ip_unlock_infos.app_name IN ?", appUnlockArray).
+		Group("proxy_ip_addresses.proxy_id").
+		Having("COUNT(DISTINCT ip_unlock_infos.app_name) = ?", len(appUnlockArray))
 }
 
 // FindByName 根据名称查询代理服务器

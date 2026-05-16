@@ -185,6 +185,66 @@ func TestProxyRepositoryFindPageFiltersByUnlockedAppAndDeduplicatesTotal(t *test
 	assert.Equal(t, "dual-stack", result.Items[0].Name)
 }
 
+func TestProxyRepositoryFindByFilterFiltersByUnlockedAppsWithAndSemantics(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+
+	proxies := []*model.Proxy{
+		{Name: "netflix-openai", Domain: "a.example", Port: 1001, Password: "p1", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "netflix-only", Domain: "b.example", Port: 1002, Password: "p2", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "openai-with-forbidden-netflix", Domain: "c.example", Port: 1003, Password: "p3", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "banned", Domain: "d.example", Port: 1004, Password: "p4", Type: model.ProxyTypeSS, Status: model.ProxyStatusBanned},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	ipv4ID := seedProxyIPUnlock(t, db, proxies[0].ID, "203.0.113.30", 4, true)
+	seedUnlockInfo(t, db, ipv4ID, "Netflix", "unlock")
+	ipv6ID := seedProxyIPUnlock(t, db, proxies[0].ID, "2001:db8::30", 6, true)
+	seedUnlockInfo(t, db, ipv6ID, "OpenAI", "unlock")
+
+	netflixOnlyID := seedProxyIPUnlock(t, db, proxies[1].ID, "203.0.113.31", 4, true)
+	seedUnlockInfo(t, db, netflixOnlyID, "Netflix", "unlock")
+	oldOpenAIID := seedProxyIPUnlock(t, db, proxies[1].ID, "203.0.113.32", 4, false)
+	seedUnlockInfo(t, db, oldOpenAIID, "OpenAI", "unlock")
+
+	forbiddenID := seedProxyIPUnlock(t, db, proxies[2].ID, "203.0.113.33", 4, true)
+	seedUnlockInfo(t, db, forbiddenID, "Netflix", "forbidden")
+	seedUnlockInfo(t, db, forbiddenID, "OpenAI", "unlock")
+
+	bannedID := seedProxyIPUnlock(t, db, proxies[3].ID, "203.0.113.34", 4, true)
+	seedUnlockInfo(t, db, bannedID, "Netflix", "unlock")
+	seedUnlockInfo(t, db, bannedID, "OpenAI", "unlock")
+
+	result, err := repo.FindByFilter(&ProxyFilter{
+		Types:     []model.ProxyType{model.ProxyTypeSS},
+		AppUnlock: []string{"Netflix", "OpenAI"},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, "netflix-openai", result[0].Name)
+}
+
+func TestProxyRepositoryFindByFilterNormalizesUnlockedAppFilter(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+
+	proxy := &model.Proxy{Name: "dual-stack", Domain: "dual.example", Port: 443, Password: "p", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK}
+	require.NoError(t, repo.Create(proxy))
+	ipv4ID := seedProxyIPUnlock(t, db, proxy.ID, "203.0.113.40", 4, true)
+	seedUnlockInfo(t, db, ipv4ID, "Netflix", "unlock")
+	ipv6ID := seedProxyIPUnlock(t, db, proxy.ID, "2001:db8::40", 6, true)
+	seedUnlockInfo(t, db, ipv6ID, "Netflix", "unlock")
+
+	result, err := repo.FindByFilter(&ProxyFilter{
+		AppUnlock: []string{"Netflix", "Netflix", " "},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, "dual-stack", result[0].Name)
+}
+
 func TestIPUnlockInfoRepositoryFindByIPAddressIDs(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)
 	repo := NewIPUnlockInfoRepository(db)

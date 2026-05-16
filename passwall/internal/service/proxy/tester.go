@@ -24,8 +24,9 @@ type TestRequest struct {
 
 // ProxyFilter 代理筛选条件
 type ProxyFilter struct {
-	Status []model.ProxyStatus // 状态过滤
-	Types  []model.ProxyType   // 类型过滤
+	Status    []model.ProxyStatus // 状态过滤
+	Types     []model.ProxyType   // 类型过滤
+	AppUnlock []string            // 应用解锁过滤
 }
 
 // Tester 代理测试服务接口
@@ -122,8 +123,9 @@ func (t *testerImpl) TestProxies(ctx context.Context, request *TestRequest, asyn
 	} else if request.Filters != nil {
 		// 如果指定了筛选条件，则根据条件筛选代理
 		filter := &repository.ProxyFilter{
-			Status: request.Filters.Status,
-			Types:  request.Filters.Types,
+			Status:    request.Filters.Status,
+			Types:     request.Filters.Types,
+			AppUnlock: request.Filters.AppUnlock,
 		}
 		proxies, err = t.proxyRepo.FindByFilter(filter)
 		if err != nil {

@@ -124,11 +124,38 @@ func TestTesterRejectsWhenProxyWriteTaskIsActive(t *testing.T) {
 	assert.True(t, errors.Is(err, task.ErrTaskConflict), "expected ErrTaskConflict, got: %v", err)
 }
 
+func TestTesterPassesAppUnlockFilterToRepository(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	proxyRepo := &fakeTesterProxyRepo{}
+	tester := NewTester(
+		proxyRepo,
+		&fakeTesterHistoryRepo{},
+		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{}},
+		taskManager,
+	)
+
+	err := tester.TestProxies(context.Background(), &TestRequest{
+		Filters: &ProxyFilter{
+			Status:    []model.ProxyStatus{model.ProxyStatusOK},
+			Types:     []model.ProxyType{model.ProxyTypeSS},
+			AppUnlock: []string{"Netflix", "OpenAI"},
+		},
+		Concurrent: 1,
+	}, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, proxyRepo.filter)
+	assert.Equal(t, []model.ProxyStatus{model.ProxyStatusOK}, proxyRepo.filter.Status)
+	assert.Equal(t, []model.ProxyType{model.ProxyTypeSS}, proxyRepo.filter.Types)
+	assert.Equal(t, []string{"Netflix", "OpenAI"}, proxyRepo.filter.AppUnlock)
+}
+
 type fakeTesterProxyRepo struct {
 	repository.ProxyRepository
 	mu      sync.Mutex
 	proxies []*model.Proxy
 	updated []*model.Proxy
+	filter  *repository.ProxyFilter
 }
 
 func (r *fakeTesterProxyRepo) FindByID(id uint) (*model.Proxy, error) {
@@ -141,6 +168,11 @@ func (r *fakeTesterProxyRepo) FindByID(id uint) (*model.Proxy, error) {
 }
 
 func (r *fakeTesterProxyRepo) FindAll() ([]*model.Proxy, error) {
+	return r.proxies, nil
+}
+
+func (r *fakeTesterProxyRepo) FindByFilter(filter *repository.ProxyFilter) ([]*model.Proxy, error) {
+	r.filter = filter
 	return r.proxies, nil
 }
 
