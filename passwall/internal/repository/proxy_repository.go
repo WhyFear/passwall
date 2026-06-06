@@ -43,6 +43,7 @@ type ProxyRepository interface {
 	FindAll() ([]*model.Proxy, error)
 	FindByStatus(status model.ProxyStatus) ([]*model.Proxy, error)
 	FindByFilter(filter *NodeFilter) ([]*model.Proxy, error)
+	FindByStatusAndTypesIncludingBanned(statuses []model.ProxyStatus, types []model.ProxyType) ([]*model.Proxy, error)
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
 	FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error)
 	FindPage(query PageQuery) (*PageResult, error)
@@ -112,6 +113,23 @@ func (r *GormProxyRepository) FindByFilter(filter *NodeFilter) ([]*model.Proxy, 
 	query, joinedIPMetadata := r.applyNodeFilter(r.db.Model(&model.Proxy{}), filter)
 	if joinedIPMetadata {
 		query = query.Distinct("proxies.*")
+	}
+	err := query.Find(&proxies).Error
+	if err != nil {
+		return nil, err
+	}
+	return proxies, nil
+}
+
+// FindByStatusAndTypesIncludingBanned 根据状态和类型查找代理服务器，允许返回已封禁节点。
+func (r *GormProxyRepository) FindByStatusAndTypesIncludingBanned(statuses []model.ProxyStatus, types []model.ProxyType) ([]*model.Proxy, error) {
+	var proxies []*model.Proxy
+	query := r.db.Model(&model.Proxy{})
+	if len(statuses) > 0 {
+		query = query.Where("status IN ?", statuses)
+	}
+	if len(types) > 0 {
+		query = query.Where("type IN ?", types)
 	}
 	err := query.Find(&proxies).Error
 	if err != nil {

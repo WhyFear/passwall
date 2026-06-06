@@ -11,6 +11,9 @@ type SpeedTester interface {
 	// Test 测试代理速度
 	Test(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
 
+	// TestLatency 测试代理延迟
+	TestLatency(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error)
+
 	// SupportedTypes 返回支持的代理类型列表
 	SupportedTypes() []model.ProxyType
 }

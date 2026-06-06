@@ -40,34 +40,9 @@ func NewClashCoreSpeedTester() SpeedTester {
 
 // Test	测试代理速度
 func (t *ClashCoreSpeedTester) Test(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
-	if proxy == nil {
-		return nil, errors.New("proxy cannot be nil")
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	// 检查是否支持此代理类型
-	supported := t.checkTesterSupport(proxy)
-	if !supported {
-		return nil, errors.New("unsupported proxy type: " + string(proxy.Type))
-	}
-
-	// 解析配置
-	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(proxy.Config), &config); err != nil {
-		return nil, errors.New("failed to parse proxy config: " + err.Error())
-	}
-
-	// 创建代理
-	clashProxy, err := adapter.ParseProxy(config)
+	clashProxy, serverURL, err := t.buildProxy(proxy)
 	if err != nil {
-		return nil, fmt.Errorf("proxy %w", err)
-	}
-
-	serverURL := t.serverURL
-	if serverURL == "" {
-		serverURL = defaultSpeedTestServerURL
+		return nil, err
 	}
 
 	latency, packetLoss, err := testLatency(ctx, clashProxy, serverURL, defaultSpeedTestMaxLatency)
@@ -97,7 +72,60 @@ func (t *ClashCoreSpeedTester) Test(ctx context.Context, proxy *model.Proxy) (*m
 	return result, nil
 }
 
+// TestLatency 测试代理延迟
+func (t *ClashCoreSpeedTester) TestLatency(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
+	clashProxy, serverURL, err := t.buildProxy(proxy)
+	if err != nil {
+		return nil, err
+	}
+
+	latency, packetLoss, err := testLatency(ctx, clashProxy, serverURL, defaultSpeedTestMaxLatency)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &model.SpeedTestResult{Ping: int(latency.Milliseconds())}
+	if packetLoss == 100 || latency > defaultSpeedTestMaxLatency {
+		result.Error = fmt.Errorf("latency probe failed")
+	}
+	return result, nil
+}
+
+func (t *ClashCoreSpeedTester) buildProxy(proxy *model.Proxy) (constant.Proxy, string, error) {
+	if proxy == nil {
+		return nil, "", errors.New("proxy cannot be nil")
+	}
+
+	// 检查是否支持此代理类型
+	supported := t.checkTesterSupport(proxy)
+	if !supported {
+		return nil, "", errors.New("unsupported proxy type: " + string(proxy.Type))
+	}
+
+	// 解析配置
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(proxy.Config), &config); err != nil {
+		return nil, "", errors.New("failed to parse proxy config: " + err.Error())
+	}
+
+	// 创建代理
+	clashProxy, err := adapter.ParseProxy(config)
+	if err != nil {
+		return nil, "", fmt.Errorf("proxy %w", err)
+	}
+
+	serverURL := t.serverURL
+	if serverURL == "" {
+		serverURL = defaultSpeedTestServerURL
+	}
+
+	return clashProxy, serverURL, nil
+}
+
 func testLatency(ctx context.Context, proxy constant.Proxy, serverURL string, timeout time.Duration) (time.Duration, float64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	client := createSpeedTestClient(proxy, timeout)
 	latencies := make([]time.Duration, 0, 6)
 	failedPings := 0

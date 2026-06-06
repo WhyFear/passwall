@@ -100,6 +100,7 @@ export const nodeApi = {
   getProxyDetails: (id) => api.get(`/proxies/${id}/details`),
   getTypes: () => api.get('/get_types'),
   testProxy: (params) => api.post('/test_proxy_server', params),
+  quickWakeProxies: (params) => api.post('/quick_wake_proxies', params),
   pinProxy: (id, pinned) => api.post('/pin_proxy', {id: id, pinned: pinned}),
   banProxy: (params) => api.post(`/ban_proxy`, params),
   detectIP: (params) => api.post(`/detect_ip`, params),

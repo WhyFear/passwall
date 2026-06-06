@@ -21,6 +21,7 @@ type Services struct {
 	SpeedTestHistoryService SpeedTestHistoryService
 	ProxyTester             ProxyTester
 	NewTester               proxy.Tester
+	QuickWakeService        proxy.QuickWakeService
 	TaskManager             task.TaskManager
 	ParserFactory           parser.ParserFactory
 	GeneratorFactory        generator.GeneratorFactory
@@ -59,6 +60,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 
 	// 创建测试服务
 	newTester := proxy.NewTester(repos.Proxy, repos.SpeedTestHistory, speedTesterFactory, taskManager)
+	quickWakeService := proxy.NewQuickWakeService(repos.Proxy, speedTesterFactory, taskManager)
 
 	// 创建服务
 	subscriptionManager := proxy.NewSubscriptionManager(repos.Subscription, repos.SubscriptionConfig, repos.Proxy, parserFactory, taskManager, configService, newTester)
@@ -78,6 +80,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 		SpeedTestHistoryService: speedTestHistoryService,
 		ProxyTester:             proxyTester,
 		NewTester:               newTester,
+		QuickWakeService:        quickWakeService,
 		SpeedTesterFactory:      speedTesterFactory,
 		TaskManager:             taskManager,
 		ParserFactory:           parserFactory,

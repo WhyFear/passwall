@@ -87,6 +87,8 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/pin_proxy", handler.PinProxy(services.ProxyService))
 		// 禁用代理
 		webGroup.POST("/ban_proxy", handler.BanProxy(ctx, services.ProxyService))
+		// 快速唤醒已封禁代理
+		webGroup.POST("/quick_wake_proxies", handler.QuickWakeProxy(ctx, services.QuickWakeService))
 
 		// 获取指定任务状态
 		webGroup.GET("/get_task_status", handler.GetTaskStatus(services.TaskManager))
