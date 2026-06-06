@@ -27,6 +27,7 @@ const (
 	TaskTypeReloadSubs TaskType = "reload_subs" // 重新加载订阅
 	TaskTypeBanProxy   TaskType = "ban_proxy"   // 批量禁用代理
 	TaskTypeCheckIp    TaskType = "check_ip"    // 检查IP
+	TaskTypeQuickWake  TaskType = "quick_wake"  // 快速唤醒
 )
 
 type AccessMode string
@@ -129,9 +130,9 @@ type taskInfo struct {
 
 // defaultTaskManager 默认任务管理器实现
 type defaultTaskManager struct {
-	mu                 sync.RWMutex
-	tasks              map[string]*taskInfo // key: taskType or taskType:resourceID
-	cancelWaitTimeout  time.Duration
+	mu                sync.RWMutex
+	tasks             map[string]*taskInfo // key: taskType or taskType:resourceID
+	cancelWaitTimeout time.Duration
 }
 
 const defaultCancelWaitTimeout = 20 * time.Second

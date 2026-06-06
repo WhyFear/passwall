@@ -4,6 +4,7 @@ import {
   LinkOutlined
 } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Card,
   Form,
@@ -31,6 +32,7 @@ import {DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER, useNodesQuery} from './nod
 
 const NodesPage = () => {
   const [shareForm] = Form.useForm();
+  const [quickWakeForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('2');
   const [modalVisible, setModalVisible] = useState(false);
   const [currentNode, setCurrentNode] = useState(null);
@@ -47,6 +49,9 @@ const NodesPage = () => {
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [shareConfigs, setShareConfigs] = useState([]);
   const [shareLoading, setShareLoading] = useState(false);
+  const [quickWakeModalVisible, setQuickWakeModalVisible] = useState(false);
+  const [quickWakeLoading, setQuickWakeLoading] = useState(false);
+  const [quickWakeTaskStatus, setQuickWakeTaskStatus] = useState(null);
   const [editingShareConfig, setEditingShareConfig] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState({});
   const nodeMetadataIncludes = visibleColumns.risk || visibleColumns.country_code || visibleColumns.app_unlock
@@ -169,16 +174,23 @@ const NodesPage = () => {
   const fetchTaskStatusHandler = useCallback(async () => {
     await fetchTaskStatus("speed_test", setTaskStatus);
   }, []);
+  const fetchQuickWakeTaskStatusHandler = useCallback(async () => {
+    await fetchTaskStatus("quick_wake", setQuickWakeTaskStatus);
+  }, []);
 
   // 停止任务
   const handleStopTask = async () => {
     await stopTask("speed_test", setTaskStatus);
+  };
+  const handleStopQuickWake = async () => {
+    await stopTask("quick_wake", setQuickWakeTaskStatus);
   };
 
   // 启动定时器
   useEffect(() => {
     // 初始获取一次任务状态
     fetchTaskStatusHandler();
+    fetchQuickWakeTaskStatusHandler();
     fetchNodes(DEFAULT_NODE_PAGINATION.current, DEFAULT_NODE_PAGINATION.pageSize, DEFAULT_NODE_SORTER, {});
     fetchNodeTypes();
     fetchCountryCodes();
@@ -187,6 +199,7 @@ const NodesPage = () => {
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
       fetchTaskStatusHandler();
+      fetchQuickWakeTaskStatusHandler();
     }, 3000);
 
     const handleResize = () => {
@@ -201,7 +214,7 @@ const NodesPage = () => {
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchUnlockApps, fetchTaskStatusHandler]);
+  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchUnlockApps, fetchTaskStatusHandler, fetchQuickWakeTaskStatusHandler]);
 
 
   // 初始化列显示状态
@@ -412,6 +425,40 @@ const NodesPage = () => {
     } catch (error) {
       message.error('打开分享管理失败');
       console.error(error);
+    }
+  };
+
+  const openQuickWakeModal = () => {
+    quickWakeForm.setFieldsValue({
+      concurrent: 50,
+      type: [],
+    });
+    setQuickWakeModalVisible(true);
+  };
+
+  const handleQuickWake = async () => {
+    try {
+      const values = await quickWakeForm.validateFields();
+      setQuickWakeLoading(true);
+      const data = await nodeApi.quickWakeProxies({
+        concurrent: values.concurrent || 50,
+        type: values.type || [],
+      });
+      if (data.status_code === 200 && data.result === 'success') {
+        message.success('快速唤醒任务已启动');
+        setQuickWakeModalVisible(false);
+        setTimeout(() => {
+          fetchQuickWakeTaskStatusHandler();
+        }, 500);
+      } else {
+        message.error('快速唤醒失败：' + data.status_msg);
+      }
+    } catch (error) {
+      if (error?.errorFields) return;
+      message.error('快速唤醒失败：' + error.message);
+      console.error(error);
+    } finally {
+      setQuickWakeLoading(false);
     }
   };
 
@@ -634,10 +681,13 @@ const NodesPage = () => {
       onChange={setActiveTab}
       tabBarExtraContent={<NodeBatchActions
         taskStatus={taskStatus}
+        quickWakeTaskStatus={quickWakeTaskStatus}
         onStopTask={handleStopTask}
+        onStopQuickWake={handleStopQuickWake}
         onBanProxy={handleBanProxy}
         onTestProxy={handleTestProxy}
         onExportSubscriptionUrl={handleExportSubscriptionUrl}
+        onQuickWake={openQuickWakeModal}
         columnSettingMenu={columnSettingMenu}
       />}
     >
@@ -762,6 +812,40 @@ const NodesPage = () => {
         pagination={{pageSize: 5}}
         scroll={{x: 900}}
       />
+    </Modal>
+
+    <Modal
+      title="快速唤醒"
+      open={quickWakeModalVisible}
+      onCancel={() => setQuickWakeModalVisible(false)}
+      onOk={handleQuickWake}
+      confirmLoading={quickWakeLoading}
+      okText="开始唤醒"
+      cancelText="取消"
+      width={560}
+    >
+      <Alert
+        type="info"
+        showIcon
+        message="快速唤醒只检测已封禁节点。延迟探测成功后，节点状态会从已封禁改为待测试。"
+        style={{marginBottom: 16}}
+      />
+      <Form form={quickWakeForm} layout="vertical">
+        <Form.Item
+          name="concurrent"
+          label="线程数"
+          rules={[{required: true, message: '请输入线程数'}]}
+        >
+          <InputNumber min={1} precision={0} style={{width: '100%'}}/>
+        </Form.Item>
+        <Form.Item name="type" label="节点类型" help="不选择任何类型时，默认处理全部类型。">
+          <Select
+            mode="multiple"
+            allowClear
+            options={nodeTypes.map(item => ({label: item.text, value: item.value}))}
+          />
+        </Form.Item>
+      </Form>
     </Modal>
 
     <NodeDetailModal

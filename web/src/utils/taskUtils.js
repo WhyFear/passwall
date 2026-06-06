@@ -8,6 +8,11 @@ export const TASK_STATE_CANCELING = 2;
 export const isTaskActive = (taskStatus) => taskStatus
   && (taskStatus.state === TASK_STATE_RUNNING || taskStatus.state === TASK_STATE_CANCELING);
 
+const taskDisplayNames = {
+  speed_test: '测速',
+  quick_wake: '快速唤醒',
+};
+
 // 获取任务状态的通用方法
 export const fetchTaskStatus = async (taskType, setTaskStatus) => {
   try {
@@ -32,7 +37,7 @@ export const stopTask = async (taskType, setTaskStatus) => {
       await fetchTaskStatus(taskType, setTaskStatus);
       return;
     }
-    message.success(`已停止${taskType === 'speed_test' ? '测速' : ''}任务`);
+    message.success(`已停止${taskDisplayNames[taskType] || ''}任务`);
     await fetchTaskStatus(taskType, setTaskStatus);
   } catch (error) {
     message.error(`停止任务失败: ${error.message}`);
