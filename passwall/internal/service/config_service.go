@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"passwall/config"
 	"passwall/internal/repository"
 	"sync"
@@ -81,45 +82,53 @@ func (s *configService) getConfigInternal() (*config.Config, error) {
 		return nil, err
 	}
 
-	// 2. 显式清空动态字段
-	baseConfig.Concurrent = 0
-	baseConfig.Proxy = config.Proxy{}
-	baseConfig.IPCheck = config.IPCheckConfig{}
-	baseConfig.ClashAPI = config.ClashAPIConfig{}
-	baseConfig.CronJobs = nil
-	baseConfig.DefaultSub = config.DefaultSubscriptionUpdateConfig{}
-
-	// 3. 加载数据库所有配置
+	// 2. 加载数据库所有配置
 	dbConfigs, err := s.repo.GetAll()
 	if err != nil {
-		log.Errorln("Failed to get system configs from DB: %v", err)
-		return baseConfig, nil
+		return nil, fmt.Errorf("get system configs from DB: %w", err)
 	}
 
-	// 4. 合并配置
-	if val, ok := dbConfigs["concurrent"]; ok {
-		_ = json.Unmarshal([]byte(val), &baseConfig.Concurrent)
-	}
-	if val, ok := dbConfigs["proxy"]; ok {
-		_ = json.Unmarshal([]byte(val), &baseConfig.Proxy)
-	}
-	if val, ok := dbConfigs["ip_check"]; ok {
-		envScamalytics := baseConfig.IPCheck.IPInfo.Scamalytics
-		if err := json.Unmarshal([]byte(val), &baseConfig.IPCheck); err == nil {
-			baseConfig.IPCheck.IPInfo.Scamalytics = envScamalytics
-		}
-	}
-	if val, ok := dbConfigs["clash_api"]; ok {
-		_ = json.Unmarshal([]byte(val), &baseConfig.ClashAPI)
-	}
-	if val, ok := dbConfigs["cron_jobs"]; ok {
-		_ = json.Unmarshal([]byte(val), &baseConfig.CronJobs)
-	}
-	if val, ok := dbConfigs["default_sub"]; ok {
-		_ = json.Unmarshal([]byte(val), &baseConfig.DefaultSub)
+	// 3. 数据库只覆盖存在的动态配置，缺失项继续使用文件配置
+	if err := applyDBConfig(baseConfig, dbConfigs); err != nil {
+		return nil, err
 	}
 
 	return baseConfig, nil
+}
+
+func applyDBConfig(baseConfig *config.Config, dbConfigs map[string]string) error {
+	if err := unmarshalDBConfig(dbConfigs, "concurrent", &baseConfig.Concurrent); err != nil {
+		return err
+	}
+	if err := unmarshalDBConfig(dbConfigs, "proxy", &baseConfig.Proxy); err != nil {
+		return err
+	}
+	envScamalytics := baseConfig.IPCheck.IPInfo.Scamalytics
+	if err := unmarshalDBConfig(dbConfigs, "ip_check", &baseConfig.IPCheck); err != nil {
+		return err
+	}
+	baseConfig.IPCheck.IPInfo.Scamalytics = envScamalytics
+	if err := unmarshalDBConfig(dbConfigs, "clash_api", &baseConfig.ClashAPI); err != nil {
+		return err
+	}
+	if err := unmarshalDBConfig(dbConfigs, "cron_jobs", &baseConfig.CronJobs); err != nil {
+		return err
+	}
+	if err := unmarshalDBConfig(dbConfigs, "default_sub", &baseConfig.DefaultSub); err != nil {
+		return err
+	}
+	return nil
+}
+
+func unmarshalDBConfig(values map[string]string, key string, target interface{}) error {
+	value, ok := values[key]
+	if !ok {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(value), target); err != nil {
+		return fmt.Errorf("decode system config %q: %w", key, err)
+	}
+	return nil
 }
 
 func (s *configService) UpdateConfig(updates map[string]interface{}) error {
@@ -131,15 +140,22 @@ func (s *configService) UpdateConfig(updates map[string]interface{}) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		// 1. 保存到数据库
+		// 1. 先完成序列化，避免格式错误时产生部分写入
+		serialized := make(map[string]string)
 		for key, value := range updates {
 			if allowedConfigKeys[key] {
 				jsonBytes, err := json.Marshal(value)
 				if err != nil {
-					continue
+					return fmt.Errorf("encode system config %q: %w", key, err)
 				}
-				_ = s.repo.Set(key, string(jsonBytes))
+				serialized[key] = string(jsonBytes)
 			}
+		}
+		if err := applyDBConfig(&config.Config{}, serialized); err != nil {
+			return err
+		}
+		if err := s.repo.SetMany(serialized); err != nil {
+			return fmt.Errorf("save system configs: %w", err)
 		}
 
 		// 2. 获取更新后的完整配置
@@ -154,15 +170,20 @@ func (s *configService) UpdateConfig(updates map[string]interface{}) error {
 	// 在锁之外执行热重载，避免长时间持有锁导致死锁或性能问题
 	// 3. 热重载调度器
 	if s.scheduler != nil {
-		_ = s.scheduler.Init(*fullConfig)
+		if err := s.scheduler.Init(*fullConfig); err != nil {
+			return fmt.Errorf("reload scheduler: %w", err)
+		}
 	}
 
 	// 4. 热重载流量统计服务
 	if s.statService != nil {
 		s.statService.Stop()
 		if fullConfig.ClashAPI.Enable {
-			// 这里已经是在 goroutine 之外了，但为了安全起见也可以继续使用 go
-			go s.statService.Start()
+			go func() {
+				if err := s.statService.Start(); err != nil {
+					log.Errorln("Failed to start traffic statistics service: %v", err)
+				}
+			}()
 		}
 	}
 

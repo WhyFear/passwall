@@ -63,30 +63,39 @@ func (p *subProcessor) run(url, reqType string, content []byte) (*model.Subscrip
 	// 4. 解析代理节点
 	proxies, err := psr.Parse(content)
 	if err != nil {
-		sub.Status = model.SubscriptionStatusInvalid
-		_ = p.subscriptionManager.UpdateSubscriptionStatus(sub)
-		return sub, 0, fmt.Errorf("解析节点失败: %w", err)
+		return p.failSubscription(sub, fmt.Errorf("解析节点失败: %w", err))
+	}
+	if len(proxies) == 0 {
+		return p.failSubscription(sub, fmt.Errorf("未解析出有效节点"))
 	}
 
 	// 5. 节点批量入库
-	if len(proxies) > 0 {
-		for _, node := range proxies {
-			node.SubscriptionID = &sub.ID
-			node.Status = model.ProxyStatusPending
-		}
-		if err := p.proxyService.BatchCreateProxies(proxies); err != nil {
-			log.Errorln("[%s] 节点入库异常: %v", url, err)
-		}
+	for _, node := range proxies {
+		node.SubscriptionID = &sub.ID
+		node.Status = model.ProxyStatusPending
+	}
+	if err := p.proxyService.BatchCreateProxies(proxies); err != nil {
+		return p.failSubscription(sub, fmt.Errorf("节点入库失败: %w", err))
 	}
 
 	// 6. 更新订阅状态为完成
 	sub.Status = model.SubscriptionStatusOK
-	_ = p.subscriptionManager.UpdateSubscriptionStatus(sub)
+	if err := p.subscriptionManager.UpdateSubscriptionStatus(sub); err != nil {
+		return sub, 0, fmt.Errorf("更新订阅状态失败: %w", err)
+	}
 
 	// 7. 触发自动化后续任务（测试、IP检测）
 	p.dispatchTasks(sub.ID, proxies)
 
 	return sub, len(proxies), nil
+}
+
+func (p *subProcessor) failSubscription(sub *model.Subscription, cause error) (*model.Subscription, int, error) {
+	sub.Status = model.SubscriptionStatusInvalid
+	if err := p.subscriptionManager.UpdateSubscriptionStatus(sub); err != nil {
+		return sub, 0, fmt.Errorf("%w；更新订阅状态失败: %v", cause, err)
+	}
+	return sub, 0, cause
 }
 
 // dispatchTasks 统一分发节点测试和 IP 归属地检测任务
@@ -192,9 +201,9 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				return
 			}
 			sub, count, err := proc.run(req.URL, req.Type, content)
-			if err != nil && sub == nil {
+			if err != nil {
 				log.Errorln("订阅 [%s] 处理失败: %v", req.URL, err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": "订阅处理失败: " + err.Error()})
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败: " + err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
@@ -206,9 +215,9 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			content, _ := io.ReadAll(io.LimitReader(file, 10*1024*1024))
 			pseudoURL := util.MD5(string(content))[:20]
 			sub, count, err := proc.run(pseudoURL, req.Type, content)
-			if err != nil && sub == nil {
+			if err != nil {
 				log.Errorln("订阅 [%s] 处理失败: %v", pseudoURL, err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusOK, "status_msg": "订阅处理失败: " + err.Error()})
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败: " + err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})

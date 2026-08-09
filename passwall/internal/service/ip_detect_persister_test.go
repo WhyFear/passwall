@@ -62,6 +62,30 @@ func TestIPDetectPersisterStoresAddressInfoAndUnlockResults(t *testing.T) {
 	assert.Equal(t, "US", ipUnlockInfoRepo.saved[0].Region)
 }
 
+func TestIPDetectPersisterStoresUnlockResultsWithoutIPInfo(t *testing.T) {
+	ipAddressRepo := &fakeIPAddressRepo{}
+	ipUnlockInfoRepo := &fakeIPUnlockInfoRepo{}
+	persister := newIPDetectPersister(
+		ipAddressRepo,
+		&fakeProxyIPAddressRepo{},
+		&fakeIPBaseInfoRepo{},
+		&fakeIPInfoRepo{},
+		ipUnlockInfoRepo,
+	)
+
+	err := persister.Persist(42, &detector.DetectionResult{
+		BaseInfo: &ipbaseinfo.IPBaseInfo{IPV4: "203.0.113.20"},
+		UnlockResult: []*unlockchecker.CheckResult{
+			{APPName: unlockchecker.Netflix, Status: unlockchecker.CheckStatusUnlock, Region: "jp"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, ipUnlockInfoRepo.saved, 1)
+	assert.Equal(t, "Netflix", ipUnlockInfoRepo.saved[0].AppName)
+	assert.Equal(t, "JP", ipUnlockInfoRepo.saved[0].Region)
+}
+
 type fakeIPAddressRepo struct {
 	repository.IPAddressRepository
 	nextID uint

@@ -102,23 +102,26 @@ func (s *StatisticsService) Start() error {
 	s.pendingTraffic = make(map[string]*NodeTraffic)
 	s.mu.Unlock()
 
-	s.done = make(chan struct{})
-	s.stopChan = make(chan struct{})
-	s.ticker = time.NewTicker(1 * time.Minute)
-	go s.startPeriodicProcessing()
-	return s.connectAllClients(clients)
+	done := make(chan struct{})
+	stopChan := make(chan struct{})
+	ticker := time.NewTicker(1 * time.Minute)
+	s.done = done
+	s.stopChan = stopChan
+	s.ticker = ticker
+	go s.startPeriodicProcessing(ticker.C, stopChan, done)
+	return s.connectAllClients(clients, stopChan)
 }
 
-func (s *StatisticsService) connectAllClients(clients []config.ClashAPIClient) error {
+func (s *StatisticsService) connectAllClients(clients []config.ClashAPIClient, stop <-chan struct{}) error {
 	for i, client := range clients {
-		if err := s.connectClient(i, client); err != nil {
+		if err := s.connectClient(i, client, stop); err != nil {
 			log.Errorln("Failed to connect to client %d: %v", i, err)
 		}
 	}
 	return nil
 }
 
-func (s *StatisticsService) connectClient(clientIndex int, client config.ClashAPIClient) error {
+func (s *StatisticsService) connectClient(clientIndex int, client config.ClashAPIClient, stop <-chan struct{}) error {
 	wsURL := client.URL + "/connections"
 	if client.Secret != "" {
 		if u, err := url.Parse(wsURL); err == nil {
@@ -132,11 +135,22 @@ func (s *StatisticsService) connectClient(clientIndex int, client config.ClashAP
 	}
 
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err == nil {
+			select {
+			case <-stop:
+				_ = conn.Close()
+				return nil
+			default:
+			}
 			log.Infoln("WebSocket connection established for client %d", clientIndex)
 			s.connections.Store(clientIndex, conn)
-			go s.readMessages(clientIndex, conn)
+			go s.readMessages(clientIndex, conn, stop)
 			return nil
 		}
 
@@ -152,7 +166,11 @@ func (s *StatisticsService) connectClient(clientIndex int, client config.ClashAP
 
 		log.Errorln("WebSocket connection failed for client %d, retrying in %v (attempt %d/%d)",
 			clientIndex, interval, attempt, s.maxRetries)
-		time.Sleep(interval)
+		select {
+		case <-time.After(interval):
+		case <-stop:
+			return nil
+		}
 	}
 	return nil
 }
@@ -193,7 +211,7 @@ func (s *StatisticsService) Stop() {
 	s.stopOnce = sync.Once{}
 }
 
-func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) {
+func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn, stop <-chan struct{}) {
 	defer func() {
 		s.connections.Delete(clientIndex)
 		conn.Close()
@@ -202,7 +220,7 @@ func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) 
 
 	for {
 		select {
-		case <-s.stopChan:
+		case <-stop:
 			return
 		default:
 		}
@@ -211,19 +229,18 @@ func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn) 
 		if err != nil {
 			log.Errorln("WebSocket read error for client %d: %v", clientIndex, err)
 			select {
-			case <-s.stopChan:
+			case <-stop:
 				return
 			default:
 				go func() {
-					time.Sleep(s.baseRetryInterval)
 					select {
-					case <-s.stopChan:
+					case <-time.After(s.baseRetryInterval):
+					case <-stop:
 						return
-					default:
-						clients, _ := s.configProvider.GetClashClients()
-						if clientIndex < len(clients) {
-							_ = s.connectClient(clientIndex, clients[clientIndex])
-						}
+					}
+					clients, _ := s.configProvider.GetClashClients()
+					if clientIndex < len(clients) {
+						_ = s.connectClient(clientIndex, clients[clientIndex], stop)
 					}
 				}()
 			}
@@ -351,13 +368,13 @@ func (s *StatisticsService) cleanNodeName(nodeName string) string {
 	return nodeName
 }
 
-func (s *StatisticsService) startPeriodicProcessing() {
-	defer close(s.done)
+func (s *StatisticsService) startPeriodicProcessing(ticks <-chan time.Time, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
 	for {
 		select {
-		case <-s.ticker.C:
+		case <-ticks:
 			s.flushTrafficToDB()
-		case <-s.done:
+		case <-stop:
 			return
 		}
 	}

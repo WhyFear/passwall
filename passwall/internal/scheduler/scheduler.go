@@ -39,11 +39,18 @@ type Scheduler struct {
 // NewScheduler 创建调度器
 func NewScheduler() *Scheduler {
 	return &Scheduler{
-		cron:          cron.New(cron.WithSeconds(), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger))),
+		cron:          newCron(),
 		isRunning:     false,
 		jobIDs:        make(map[string]cron.EntryID),
 		customConfigs: make(map[uint]*model.SubscriptionConfig),
 	}
+}
+
+func newCron() *cron.Cron {
+	return cron.New(cron.WithSeconds(), cron.WithChain(
+		cron.SkipIfStillRunning(cron.DefaultLogger),
+		cron.Recover(cron.DefaultLogger),
+	))
 }
 
 // SetServices 设置服务
@@ -117,7 +124,7 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 	}
 
 	// 重新创建cron
-	s.cron = cron.New(cron.WithSeconds(), cron.WithChain(cron.Recover(cron.DefaultLogger)))
+	s.cron = newCron()
 	s.jobIDs = make(map[string]cron.EntryID)
 
 	// 添加任务

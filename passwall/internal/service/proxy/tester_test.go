@@ -124,6 +124,51 @@ func TestTesterRejectsWhenProxyWriteTaskIsActive(t *testing.T) {
 	assert.True(t, errors.Is(err, task.ErrTaskConflict), "expected ErrTaskConflict, got: %v", err)
 }
 
+func TestTesterRecordsFailedAttempt(t *testing.T) {
+	proxyToTest := &model.Proxy{ID: 1, Type: model.ProxyTypeVMess, Ping: 50, DownloadSpeed: 1024, UploadSpeed: 512}
+	proxyRepo := &fakeTesterProxyRepo{proxies: []*model.Proxy{proxyToTest}}
+	historyRepo := &fakeTesterHistoryRepo{}
+	tester := NewTester(
+		proxyRepo,
+		historyRepo,
+		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
+			testFunc: func(context.Context, *model.Proxy) (*model.SpeedTestResult, error) {
+				return nil, errors.New("connection failed")
+			},
+		}},
+		task.NewTaskManager(),
+	)
+
+	require.NoError(t, tester.TestProxies(context.Background(), &TestRequest{Concurrent: 1}, false))
+	require.Len(t, historyRepo.created, 1)
+	assert.Zero(t, historyRepo.created[0].DownloadSpeed)
+	assert.Zero(t, historyRepo.created[0].UploadSpeed)
+	require.Len(t, proxyRepo.updated, 1)
+	assert.Equal(t, model.ProxyStatusFailed, proxyRepo.updated[0].Status)
+	assert.NotNil(t, proxyRepo.updated[0].LatestTestTime)
+}
+
+func TestTesterRecordsPanickingAttempt(t *testing.T) {
+	proxyRepo := &fakeTesterProxyRepo{proxies: []*model.Proxy{{ID: 1, Type: model.ProxyTypeVMess}}}
+	historyRepo := &fakeTesterHistoryRepo{}
+	tester := NewTester(
+		proxyRepo,
+		historyRepo,
+		&fakeTesterSpeedFactory{tester: &fakeTesterSpeedTester{
+			testFunc: func(context.Context, *model.Proxy) (*model.SpeedTestResult, error) {
+				panic("speed tester panic")
+			},
+		}},
+		task.NewTaskManager(),
+	)
+
+	require.NoError(t, tester.TestProxies(context.Background(), &TestRequest{Concurrent: 1}, false))
+	require.Len(t, historyRepo.created, 1)
+	assert.Zero(t, historyRepo.created[0].DownloadSpeed)
+	require.Len(t, proxyRepo.updated, 1)
+	assert.Equal(t, model.ProxyStatusFailed, proxyRepo.updated[0].Status)
+}
+
 func TestTesterPassesAppUnlockFilterToRepository(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	proxyRepo := &fakeTesterProxyRepo{}

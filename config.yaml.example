@@ -22,15 +22,21 @@ ip_check:
     enable: true
 
 clash_api: # 支持Clash API，可获取节点消耗流量
-  enabled: false
-  url: "ws://127.0.0.1:9090"
-  secret: ""
+  enable: false
+  clients:
+    - url: "ws://127.0.0.1:9090"
+      secret: ""
+
+# 未单独配置更新策略的订阅按此计划刷新
+default_sub:
+  auto_update: true
+  interval: "0 0 6,18 * * *"
+  use_proxy: false
 
 # 多个定时任务同时运行的只能有一个，单个定时任务内子任务串行执行
 cron_jobs:
-  - name: "每12小时更新所有订阅"
-    schedule: "0 0 6,18 * * *"
-    reload_subscribe_config: true
+  - name: "每12小时测速并自动封禁"
+    schedule: "0 30 6,18 * * *"
     test_proxy:
       enable: true
       # -1: 未测速，1: 正常，2: 失败，3: 未知错误。使用英文逗号分隔

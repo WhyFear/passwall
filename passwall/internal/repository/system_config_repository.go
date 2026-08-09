@@ -8,7 +8,7 @@ import (
 
 type SystemConfigRepository interface {
 	Get(key string) (*model.SystemConfig, error)
-	Set(key string, value string) error
+	SetMany(values map[string]string) error
 	GetAll() (map[string]string, error)
 }
 
@@ -28,13 +28,16 @@ func (r *systemConfigRepository) Get(key string) (*model.SystemConfig, error) {
 	return &config, nil
 }
 
-func (r *systemConfigRepository) Set(key string, value string) error {
-	config := model.SystemConfig{
-		Key:   key,
-		Value: value,
-	}
-	// Upsert: On conflict update value
-	return r.db.Save(&config).Error
+func (r *systemConfigRepository) SetMany(values map[string]string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for key, value := range values {
+			config := model.SystemConfig{Key: key, Value: value}
+			if err := tx.Save(&config).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *systemConfigRepository) GetAll() (map[string]string, error) {
