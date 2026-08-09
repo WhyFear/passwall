@@ -110,3 +110,18 @@ func TestClashParser_CantParse(t *testing.T) {
 	assert.False(t, p.CanParse([]byte(content2)))
 	assert.False(t, p.CanParse([]byte(content3)))
 }
+
+func TestClashParserSkipsMalformedNodesWithoutPanicking(t *testing.T) {
+	content := []byte(`proxies:
+  - {name: valid, server: 127.0.0.1, port: 443, type: trojan, password: secret}
+  - {server: 127.0.0.2, port: 443, type: trojan, password: secret}
+  - {name: wrong-server, server: 123, port: 443, type: trojan, password: secret}
+  - {name: wrong-h2, server: 127.0.0.3, port: 443, type: trojan, password: secret, h2-opts: invalid}
+`)
+
+	proxies, err := NewClashParser().Parse(content)
+
+	require.NoError(t, err)
+	require.Len(t, proxies, 1)
+	assert.Equal(t, "valid", proxies[0].Name)
+}

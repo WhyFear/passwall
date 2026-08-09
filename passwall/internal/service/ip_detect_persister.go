@@ -51,11 +51,6 @@ func (p *ipDetectPersister) Persist(proxyID uint, resp *detector.DetectionResult
 		return nil
 	}
 
-	if resp.IPInfoResultMap == nil {
-		log.Infoln("ip info result map is empty, proxy id: %v", proxyID)
-		return nil
-	}
-
 	for ip, ipInfoResultList := range resp.IPInfoResultMap {
 		ipAddressID := ipAddressIDByIP[ip]
 		if ipAddressID == 0 {
@@ -65,6 +60,8 @@ func (p *ipDetectPersister) Persist(proxyID uint, resp *detector.DetectionResult
 		if err := p.persistIPInfo(proxyID, ipAddressID, ipInfoResultList); err != nil {
 			return err
 		}
+	}
+	for _, ipAddressID := range ipAddressIDByIP {
 		if err := p.persistUnlockInfo(proxyID, ipAddressID, resp); err != nil {
 			return err
 		}

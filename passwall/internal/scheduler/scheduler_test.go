@@ -1,7 +1,9 @@
 package scheduler
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"passwall/config"
 	"passwall/internal/model"
@@ -53,6 +55,56 @@ func TestSchedulerInitRequiresServices(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "scheduler services are not set")
+}
+
+func TestSchedulerCronSkipsOverlappingRuns(t *testing.T) {
+	cronScheduler := newCron()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	var calls atomic.Int32
+
+	entryID, err := cronScheduler.AddFunc("0 0 0 1 1 *", func() {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+	})
+	require.NoError(t, err)
+	job := cronScheduler.Entry(entryID).WrappedJob
+	go job.Run()
+	<-started
+
+	secondDone := make(chan struct{})
+	go func() {
+		job.Run()
+		close(secondDone)
+	}()
+
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("overlapping cron run was not skipped")
+	}
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+func TestSchedulerCronContinuesAfterRecoveredPanic(t *testing.T) {
+	cronScheduler := newCron()
+	var calls atomic.Int32
+
+	entryID, err := cronScheduler.AddFunc("0 0 0 1 1 *", func() {
+		if calls.Add(1) == 1 {
+			panic("boom")
+		}
+	})
+	require.NoError(t, err)
+	job := cronScheduler.Entry(entryID).WrappedJob
+
+	job.Run()
+	job.Run()
+
+	assert.Equal(t, int32(2), calls.Load())
 }
 
 type fakeSubscriptionManager struct {

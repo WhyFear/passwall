@@ -41,6 +41,26 @@ func TestLoadConfigAppliesDefaultsAndEnvironmentSecrets(t *testing.T) {
 	assert.Equal(t, "key", cfg.IPCheck.IPInfo.Scamalytics.APIKey)
 }
 
+func TestExampleConfigUsesCurrentSchema(t *testing.T) {
+	configPath, err := filepath.Abs(filepath.Join("..", "..", "config.yaml.example"))
+	require.NoError(t, err)
+	t.Setenv("CONFIG_PATH", configPath)
+	t.Setenv("PASSWALL_TOKEN", "secret-token")
+	t.Setenv("SCAMALYTICS_HOST", "")
+	t.Setenv("SCAMALYTICS_USER", "")
+	t.Setenv("SCAMALYTICS_API_KEY", "")
+
+	cfg, err := LoadConfig()
+
+	require.NoError(t, err)
+	require.Len(t, cfg.ClashAPI.Clients, 1)
+	assert.Equal(t, "ws://127.0.0.1:9090", cfg.ClashAPI.Clients[0].URL)
+	assert.True(t, cfg.DefaultSub.AutoUpdate)
+	assert.Equal(t, "0 0 6,18 * * *", cfg.DefaultSub.Interval)
+	require.NotEmpty(t, cfg.CronJobs)
+	assert.Equal(t, "每12小时测速并自动封禁", cfg.CronJobs[0].Name)
+}
+
 func writeTestConfig(t *testing.T) string {
 	t.Helper()
 

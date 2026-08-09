@@ -77,9 +77,21 @@ func (f *DefaultParserFactory) AutoDetectParser(content []byte) (Parser, error) 
 
 func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 	singleProxy := model.Proxy{}
-	singleProxy.Name = proxy["name"].(string)
-	singleProxy.Type = model.StringToProxyType(proxy["type"].(string))
-	singleProxy.Domain = proxy["server"].(string)
+	name, err := requiredString(proxy, "name")
+	if err != nil {
+		return nil, err
+	}
+	proxyType, err := requiredString(proxy, "type")
+	if err != nil {
+		return nil, err
+	}
+	server, err := requiredString(proxy, "server")
+	if err != nil {
+		return nil, err
+	}
+	singleProxy.Name = name
+	singleProxy.Type = model.StringToProxyType(proxyType)
+	singleProxy.Domain = server
 	// 根据不同类型处理端口值
 	switch portValue := proxy["port"].(type) {
 	case int:
@@ -105,7 +117,10 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 
 	// fixme 特化处理一下:[ proxy 'h2-opts.path' expected type 'string', got unconvertible type '[]interface {}'" ]
 	if proxy["h2-opts"] != nil {
-		h2opts := proxy["h2-opts"].(map[string]any)
+		h2opts, ok := proxy["h2-opts"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("h2-opts 类型错误: %T", proxy["h2-opts"])
+		}
 		// 处理path字段，支持[]string和string两种类型
 		if h2opts["path"] != nil {
 			switch pathValue := h2opts["path"].(type) {
@@ -139,6 +154,14 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 
 	singleProxy.Config = string(jsonData)
 	return &singleProxy, nil
+}
+
+func requiredString(values map[string]any, key string) (string, error) {
+	value, ok := values[key].(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("%s 必须是非空字符串", key)
+	}
+	return value, nil
 }
 
 func normalizeHysteriaSpeedField(proxy map[string]any, field string, defaultZero bool) {

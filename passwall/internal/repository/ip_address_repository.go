@@ -3,9 +3,9 @@ package repository
 import (
 	"errors"
 	"passwall/internal/model"
-	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // IPAddressRepository IP地址仓库接口
@@ -57,20 +57,24 @@ func (r *GormIPAddressRepository) CreateOrIgnore(ipAddress *model.IPAddress) err
 		return errors.New("ip address cannot be nil")
 	}
 
-	// 先尝试查找是否已存在
+	result := r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "ip"}},
+		DoNothing: true,
+	}).Create(ipAddress)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
 	existing, err := r.FindByIP(ipAddress.IP)
 	if err != nil {
 		return err
 	}
-
-	if existing != nil {
-		// 更新现有记录
-		ipAddress.ID = existing.ID
-		return nil
+	if existing == nil {
+		return errors.New("IP address conflict occurred but existing record was not found")
 	}
-
-	// 创建新记录
-	ipAddress.CreatedAt = time.Now()
-	ipAddress.UpdatedAt = time.Now()
-	return r.db.Create(ipAddress).Error
+	*ipAddress = *existing
+	return nil
 }
