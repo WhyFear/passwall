@@ -11,6 +11,7 @@ export const isTaskActive = (taskStatus) => taskStatus
 const taskDisplayNames = {
   speed_test: '测速',
   quick_wake: '快速唤醒',
+  check_ip: 'IP检测',
 };
 
 // 获取任务状态的通用方法

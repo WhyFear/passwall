@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"passwall/config"
 	"passwall/internal/detector"
 	"passwall/internal/detector/ipbaseinfo"
 	"passwall/internal/model"
@@ -126,6 +127,31 @@ func TestIPDetectorBatchDetectUsesDefaultConcurrency(t *testing.T) {
 	assert.Equal(t, 20, req.Concurrent)
 }
 
+func TestIPDetectorBatchDetectContinuesAfterNodeFailure(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	var calls atomic.Int32
+	detectorService := ipDetectorImpl{
+		TaskManager: taskManager,
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+			calls.Add(1)
+			return errors.New("detect failed")
+		},
+	}
+
+	err := detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+		ProxyIDList: []uint{1, 2, 3},
+		Enabled:     true,
+		Concurrent:  1,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, int32(3), calls.Load())
+	status := taskManager.GetStatus(task.TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, 3, status.Completed)
+	assert.Contains(t, status.Error, "3 failure(s)")
+}
+
 func TestIPDetectorBatchDetectSkipsWhenProxyWriteTaskIsActive(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	_, started := taskManager.StartTaskWithSpec(context.Background(), task.TaskSpec{
@@ -151,9 +177,141 @@ func TestIPDetectorBatchDetectSkipsWhenProxyWriteTaskIsActive(t *testing.T) {
 		Enabled:     true,
 	})
 
-	require.NoError(t, err)
+	require.ErrorIs(t, err, task.ErrTaskConflict)
 	assert.False(t, called)
 	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
+}
+
+func TestIPDetectorDetectMissingSelectsOnlyEnabledMissingData(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	proxyRepo := &fakeDetectProxyRepo{proxies: []*model.Proxy{
+		{ID: 1, Type: model.ProxyTypeSS},
+		{ID: 2, Type: model.ProxyTypeSS},
+		{ID: 3, Type: model.ProxyTypeSS},
+		{ID: 4, Type: model.ProxyTypeSS},
+	}}
+	proxyIPRepo := &fakeDetectProxyIPRepo{latestRecords: []*model.ProxyIPAddress{
+		latestProxyIP(1, 11, "203.0.113.1", "low", "US"),
+		latestProxyIP(2, 12, "203.0.113.2", "", "US"),
+		latestProxyIP(3, 13, "203.0.113.3", "low", "US"),
+		latestProxyIP(4, 14, "203.0.113.4", "low", ""),
+	}}
+	unlockRepo := &fakeDetectUnlockInfoRepo{byIPAddressID: map[uint][]*model.IPUnlockInfo{
+		11: {{IPAddressesID: 11, AppName: "Netflix", Status: "unlock"}},
+		12: {{IPAddressesID: 12, AppName: "Netflix", Status: "fail"}},
+	}}
+	requests := make(map[uint]*IPDetectorReq)
+	var mu sync.Mutex
+	detectorService := ipDetectorImpl{
+		ConfigService: &fakeDetectConfigService{cfg: &config.Config{IPCheck: config.IPCheckConfig{
+			Enable:     true,
+			Concurrent: 2,
+			IPInfo:     config.IPInfoConfig{Enable: true},
+			AppUnlock:  config.AppUnlockConfig{Enable: true},
+		}}},
+		ProxyRepo:        proxyRepo,
+		ProxyIPAddress:   proxyIPRepo,
+		IPUnlockInfoRepo: unlockRepo,
+		TaskManager:      taskManager,
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+			mu.Lock()
+			requests[req.ProxyID] = req
+			mu.Unlock()
+			return nil
+		},
+	}
+
+	total, err := detectorService.DetectMissing(context.Background(), []model.ProxyType{model.ProxyTypeSS}, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, total)
+	require.NotNil(t, proxyRepo.filter)
+	assert.Equal(t, []model.ProxyStatus{model.ProxyStatusOK}, proxyRepo.filter.Status)
+	assert.Equal(t, []model.ProxyType{model.ProxyTypeSS}, proxyRepo.filter.Types)
+	require.Len(t, requests, 3)
+	assert.True(t, requests[2].IPInfoEnable)
+	assert.False(t, requests[2].APPUnlockEnable)
+	assert.False(t, requests[3].IPInfoEnable)
+	assert.True(t, requests[3].APPUnlockEnable)
+	assert.True(t, requests[4].IPInfoEnable)
+	assert.True(t, requests[4].APPUnlockEnable)
+	assert.Equal(t, "203.0.113.2", requests[2].IPProxy.IPV4)
+	for _, req := range requests {
+		assert.True(t, req.OnlyMissing)
+		assert.False(t, req.Refresh)
+	}
+	status := taskManager.GetStatus(task.TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, 3, status.Total)
+	assert.Equal(t, 3, status.Completed)
+}
+
+func TestIPDetectorDetectMissingIgnoresDisabledIPInfo(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	detectorService := ipDetectorImpl{
+		ConfigService: &fakeDetectConfigService{cfg: &config.Config{IPCheck: config.IPCheckConfig{
+			Enable:    true,
+			IPInfo:    config.IPInfoConfig{Enable: false},
+			AppUnlock: config.AppUnlockConfig{Enable: true},
+		}}},
+		ProxyRepo: &fakeDetectProxyRepo{proxies: []*model.Proxy{{ID: 1, Type: model.ProxyTypeSS}}},
+		ProxyIPAddress: &fakeDetectProxyIPRepo{latestRecords: []*model.ProxyIPAddress{
+			latestProxyIP(1, 11, "203.0.113.1", "", ""),
+		}},
+		IPUnlockInfoRepo: &fakeDetectUnlockInfoRepo{byIPAddressID: map[uint][]*model.IPUnlockInfo{
+			11: {{IPAddressesID: 11, AppName: "Netflix", Status: "fail"}},
+		}},
+		TaskManager: taskManager,
+	}
+
+	total, err := detectorService.DetectMissing(context.Background(), nil, false)
+
+	require.NoError(t, err)
+	assert.Zero(t, total)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
+}
+
+func TestIPDetectorBatchDetectHonorsConcurrency(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	var active atomic.Int32
+	var maximum atomic.Int32
+	detectorService := ipDetectorImpl{
+		TaskManager: taskManager,
+		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
+			current := active.Add(1)
+			for {
+				previous := maximum.Load()
+				if current <= previous || maximum.CompareAndSwap(previous, current) {
+					break
+				}
+			}
+			started <- struct{}{}
+			<-release
+			active.Add(-1)
+			return nil
+		},
+	}
+
+	go func() {
+		done <- detectorService.BatchDetect(context.Background(), &BatchIPDetectorReq{
+			ProxyIDList: []uint{1, 2, 3},
+			Enabled:     true,
+			Concurrent:  2,
+		})
+	}()
+	<-started
+	<-started
+	select {
+	case <-started:
+		t.Fatal("started more detectors than configured")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-done)
+	assert.Equal(t, int32(2), maximum.Load())
 }
 
 func TestIPDetectorDetectRefreshFalseSkipsWhenProxyAlreadyHasIPRecord(t *testing.T) {
@@ -439,12 +597,49 @@ func newDetectTestService() ipDetectorImpl {
 
 type fakeDetectProxyRepo struct {
 	repository.ProxyRepository
-	proxy *model.Proxy
-	err   error
+	proxy   *model.Proxy
+	proxies []*model.Proxy
+	filter  *repository.NodeFilter
+	err     error
 }
 
 func (r *fakeDetectProxyRepo) FindByID(id uint) (*model.Proxy, error) {
 	return r.proxy, r.err
+}
+
+func (r *fakeDetectProxyRepo) FindByFilter(filter *repository.NodeFilter) ([]*model.Proxy, error) {
+	r.filter = filter
+	return r.proxies, r.err
+}
+
+type fakeDetectConfigService struct {
+	ConfigService
+	cfg *config.Config
+	err error
+}
+
+func (s *fakeDetectConfigService) GetConfig() (*config.Config, error) {
+	return s.cfg, s.err
+}
+
+func latestProxyIP(proxyID, ipAddressID uint, ip, risk, country string) *model.ProxyIPAddress {
+	return &model.ProxyIPAddress{
+		ProxyID:       proxyID,
+		IPAddressesID: ipAddressID,
+		IPType:        4,
+		Latest:        true,
+		IPAddress: model.IPAddress{
+			ID:     ipAddressID,
+			IP:     ip,
+			IPType: 4,
+			IPBaseInfo: model.IPBaseInfo{
+				ID:            ipAddressID,
+				IPAddressesID: ipAddressID,
+				RiskLevel:     risk,
+				CountryCode:   country,
+			},
+		},
+	}
 }
 
 type fakeDetectProxyIPRepo struct {

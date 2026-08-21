@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync/atomic"
 
 	"passwall/internal/detector"
@@ -22,6 +23,7 @@ type IPDetectorReq struct {
 	APPUnlockEnable bool
 	Refresh         bool
 	IPProxy         *model.IPProxy
+	OnlyMissing     bool
 }
 
 type BatchIPDetectorReq struct {
@@ -44,11 +46,22 @@ type IPDetectResp struct {
 
 type IPDetectorService interface {
 	BatchDetect(ctx context.Context, req *BatchIPDetectorReq) error
+	DetectMissing(ctx context.Context, types []model.ProxyType, async bool) (int, error)
 	Detect(ctx context.Context, req *IPDetectorReq) error
 	GetInfo(req *IPDetectorReq) (*IPDetectResp, error)
 	BatchGetInfo(proxyIDList []uint) (map[uint]*IPDetectResp, error)
 	GetProxyIDsNotInIPAddress() ([]uint, error)
 	GetDistinctCountryCode() ([]string, error)
+}
+
+type ipDetectTarget struct {
+	ProxyID         uint
+	IPInfoEnable    bool
+	APPUnlockEnable bool
+	Refresh         bool
+	OnlyMissing     bool
+	IPv4            string
+	IPv6            string
 }
 
 type ipDetectorImpl struct {
@@ -111,27 +124,107 @@ func (i ipDetectorImpl) BatchDetect(ctx context.Context, req *BatchIPDetectorReq
 	if req == nil || !req.Enabled {
 		return nil
 	}
+	if req.Concurrent <= 0 {
+		req.Concurrent = 20
+	}
+	targets := make([]ipDetectTarget, 0, len(req.ProxyIDList))
+	for _, proxyID := range req.ProxyIDList {
+		targets = append(targets, ipDetectTarget{
+			ProxyID:         proxyID,
+			IPInfoEnable:    req.IPInfoEnable,
+			APPUnlockEnable: req.APPUnlockEnable,
+			Refresh:         req.Refresh,
+		})
+	}
+	return i.startBatchDetect(ctx, targets, req.Concurrent, req.TaskResourceID, false)
+}
+
+func (i ipDetectorImpl) DetectMissing(ctx context.Context, types []model.ProxyType, async bool) (int, error) {
+	cfg, err := i.ConfigService.GetConfig()
+	if err != nil {
+		return 0, err
+	}
+	ipCheck := cfg.IPCheck
+	if !ipCheck.Enable || (!ipCheck.IPInfo.Enable && !ipCheck.AppUnlock.Enable) {
+		return 0, nil
+	}
+
+	proxies, err := i.ProxyRepo.FindByFilter(&repository.NodeFilter{
+		Status: []model.ProxyStatus{model.ProxyStatusOK},
+		Types:  types,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("find proxies for missing ip detection: %w", err)
+	}
+	proxyIDs := make([]uint, 0, len(proxies))
+	for _, proxy := range proxies {
+		proxyIDs = append(proxyIDs, proxy.ID)
+	}
+	infoByProxyID, err := i.BatchGetInfo(proxyIDs)
+	if err != nil {
+		return 0, err
+	}
+
+	targets := make([]ipDetectTarget, 0, len(proxies))
+	for _, proxy := range proxies {
+		info := infoByProxyID[proxy.ID]
+		missingIPInfo := ipCheck.IPInfo.Enable && (info == nil || strings.TrimSpace(info.Risk) == "" || strings.TrimSpace(info.CountryCode) == "")
+		missingAppUnlock := ipCheck.AppUnlock.Enable && (info == nil || len(info.AppUnlock) == 0)
+		if !missingIPInfo && !missingAppUnlock {
+			continue
+		}
+		target := ipDetectTarget{
+			ProxyID:         proxy.ID,
+			IPInfoEnable:    missingIPInfo,
+			APPUnlockEnable: missingAppUnlock,
+			Refresh:         false,
+			OnlyMissing:     true,
+		}
+		if info != nil {
+			target.IPv4 = info.IPv4
+			target.IPv6 = info.IPv6
+		}
+		targets = append(targets, target)
+	}
+	if len(targets) == 0 {
+		return 0, nil
+	}
+	if err := i.startBatchDetect(ctx, targets, ipCheck.Concurrent, 0, async); err != nil {
+		return 0, err
+	}
+	return len(targets), nil
+}
+
+func (i ipDetectorImpl) startBatchDetect(ctx context.Context, targets []ipDetectTarget, concurrent int, taskResourceID uint, async bool) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if req.Concurrent == 0 {
-		req.Concurrent = 20
+	if concurrent <= 0 {
+		concurrent = 20
 	}
 
 	taskRun, success := task.StartRunWithSpec(ctx, i.TaskManager, task.TaskSpec{
 		Type:       task.TaskTypeCheckIp,
-		ResourceID: req.TaskResourceID,
-		Total:      len(req.ProxyIDList),
+		ResourceID: taskResourceID,
+		Total:      len(targets),
 		Accesses: []task.TaskAccess{
 			{Resource: task.ResourceProxies, Mode: task.AccessModeRead},
-			{Resource: task.ResourceIPDetection, Mode: task.AccessModeWrite, ResourceID: req.TaskResourceID},
+			{Resource: task.ResourceIPDetection, Mode: task.AccessModeWrite, ResourceID: taskResourceID},
 		},
 	})
 	if !success {
 		log.Errorln("start task failed, task type: %v", task.TaskTypeCheckIp)
+		return task.ErrTaskConflict
+	}
+	if async {
+		go i.runBatchDetect(taskRun, targets, concurrent)
 		return nil
 	}
+	i.runBatchDetect(taskRun, targets, concurrent)
+	return nil
+}
 
+func (i ipDetectorImpl) runBatchDetect(taskRun *task.TaskRun, targets []ipDetectTarget, concurrent int) {
 	finishMessage := "batch detect proxy ip finished"
 	defer func() {
 		if recoverValue := recover(); recoverValue != nil {
@@ -145,40 +238,46 @@ func (i ipDetectorImpl) BatchDetect(ctx context.Context, req *BatchIPDetectorReq
 	}()
 
 	eg, ctx := errgroup.WithContext(taskRun.Context())
-	eg.SetLimit(req.Concurrent)
+	eg.SetLimit(concurrent)
 	var failureCount atomic.Int32
 
 detectLoop:
-	for _, proxyID := range req.ProxyIDList {
+	for _, target := range targets {
 		select {
 		case <-ctx.Done():
 			break detectLoop
 		default:
 		}
 
-		pid := proxyID
+		target := target
 		eg.Go(func() error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			defer func() {
 				if err := recover(); err != nil {
-					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", pid, err)
+					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", target.ProxyID, err)
 					failureCount.Add(1)
 				}
 				taskRun.IncrementProgress("")
 			}()
 			err := i.detect(ctx, &IPDetectorReq{
-				ProxyID:         pid,
+				ProxyID:         target.ProxyID,
 				Enabled:         true,
-				IPInfoEnable:    req.IPInfoEnable,
-				APPUnlockEnable: req.APPUnlockEnable,
-				Refresh:         req.Refresh,
+				IPInfoEnable:    target.IPInfoEnable,
+				APPUnlockEnable: target.APPUnlockEnable,
+				Refresh:         target.Refresh,
+				OnlyMissing:     target.OnlyMissing,
+				IPProxy: &model.IPProxy{
+					IPV4: target.IPv4,
+					IPV6: target.IPv6,
+				},
 			})
 			if err != nil {
 				failureCount.Add(1)
+				log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", target.ProxyID, err)
 			}
-			return err
+			return nil
 		})
 	}
 	_ = eg.Wait()
@@ -188,7 +287,6 @@ detectLoop:
 		finishMessage = "batch detect proxy ip finished"
 	}
 	log.Infoln("batch detect proxy ip finished")
-	return nil
 }
 
 func (i ipDetectorImpl) detect(ctx context.Context, req *IPDetectorReq) error {
@@ -220,9 +318,14 @@ func (i ipDetectorImpl) Detect(ctx context.Context, req *IPDetectorReq) error {
 		log.Errorln("proxy is nil, proxy id: %v, skip...", req.ProxyID)
 		return nil
 	}
+	knownIPv4, knownIPv6 := "", ""
+	if req.IPProxy != nil {
+		knownIPv4, knownIPv6 = req.IPProxy.IPV4, req.IPProxy.IPV6
+	}
 	req.IPProxy = model.NewIPProxy(proxy)
+	req.IPProxy.IPV4, req.IPProxy.IPV6 = knownIPv4, knownIPv6
 
-	if !req.Refresh {
+	if !req.Refresh && !req.OnlyMissing {
 		proxyIPAddress, err := i.ProxyIPAddress.FindByProxyID(req.ProxyID)
 		if err != nil {
 			log.Errorln("find proxy ip address by proxy id failed, proxy id: %v, err: %v", req.ProxyID, err)
@@ -287,6 +390,9 @@ func (i ipDetectorImpl) Detect(ctx context.Context, req *IPDetectorReq) error {
 	if err != nil {
 		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
+	}
+	if req.OnlyMissing {
+		return i.Persister.PersistMissing(req.ProxyID, resp)
 	}
 	return i.Persister.Persist(req.ProxyID, resp)
 }
