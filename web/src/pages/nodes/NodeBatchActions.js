@@ -1,5 +1,5 @@
 import {SettingOutlined, StopOutlined} from '@ant-design/icons';
-import {Button, Dropdown, Progress} from 'antd';
+import {Button, Dropdown, Progress, Tooltip} from 'antd';
 import {isTaskActive, TASK_STATE_CANCELING} from '../../utils/taskUtils';
 
 const TaskProgress = ({taskStatus, runningText, cancelingText, stopText, onStop}) => {
@@ -32,10 +32,15 @@ const TaskProgress = ({taskStatus, runningText, cancelingText, stopText, onStop}
 const NodeBatchActions = ({
   taskStatus,
   quickWakeTaskStatus,
+  ipDetectTaskStatus,
   onStopTask,
   onStopQuickWake,
+  onStopIPDetect,
   onBanProxy,
   onTestProxy,
+  onDetectMissingIP,
+  showDetectMissingIP,
+  filteredNodeTypes = [],
   onExportSubscriptionUrl,
   onQuickWake,
   columnSettingMenu,
@@ -59,6 +64,15 @@ const NodeBatchActions = ({
         onStop={onStopQuickWake}
       />
     )}
+    {isTaskActive(ipDetectTaskStatus) && (
+      <TaskProgress
+        taskStatus={ipDetectTaskStatus}
+        runningText="IP检测进行中"
+        cancelingText="IP检测取消中"
+        stopText="停止检测"
+        onStop={onStopIPDetect}
+      />
+    )}
     <Button
       type="primary"
       danger
@@ -74,6 +88,22 @@ const NodeBatchActions = ({
     >
       按当前参数进行测速
     </Button>
+    {showDetectMissingIP && (
+      <Tooltip title={<div>
+        <div>检测节点状态：正常</div>
+        {filteredNodeTypes.length > 0 && <div>当前筛选节点类型：{filteredNodeTypes.join('、')}</div>}
+        <div>仅补全当前配置已启用且无值的检测项</div>
+      </div>}>
+        <Button
+          type="primary"
+          onClick={onDetectMissingIP}
+          disabled={isTaskActive(ipDetectTaskStatus)}
+          style={{margin: 0}}
+        >
+          补全检测信息
+        </Button>
+      </Tooltip>
+    )}
     <Button
       type="primary"
       onClick={onExportSubscriptionUrl}

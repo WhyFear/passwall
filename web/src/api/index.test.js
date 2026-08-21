@@ -91,9 +91,11 @@ describe('api client', () => {
   test('keeps node IP info endpoint aligned with backend route', () => {
     nodeApi.getIPInfo({proxy_id: 7});
     nodeApi.getUnlockApps();
+    nodeApi.detectMissingIP({type: ['ss']});
 
     expect(mockApi.get).toHaveBeenCalledWith('/get_ip_info', {params: {proxy_id: 7}});
     expect(mockApi.get).toHaveBeenCalledWith('/get_unlock_apps');
+    expect(mockApi.post).toHaveBeenCalledWith('/detect_missing_ip', {type: ['ss']});
   });
 
   test('passes subscription pagination as axios params object', () => {

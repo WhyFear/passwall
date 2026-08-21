@@ -20,8 +20,8 @@ import {
   Tag
 } from 'antd';
 import {useCallback, useEffect, useRef, useState} from 'react';
-import {nodeApi, shareConfigApi, subscriptionApi} from '../api';
-import {fetchTaskStatus, stopTask} from '../utils/taskUtils';
+import {configApi, nodeApi, shareConfigApi, subscriptionApi} from '../api';
+import {fetchTaskStatus, isTaskActive, stopTask, TASK_STATE_RUNNING} from '../utils/taskUtils';
 import {formatDate} from '../utils/timeUtils';
 import {DEFAULT_VISIBLE_COLUMNS, formatRisk} from './nodes/nodeFormatters';
 import NodeBatchActions from './nodes/NodeBatchActions';
@@ -52,6 +52,8 @@ const NodesPage = () => {
   const [quickWakeModalVisible, setQuickWakeModalVisible] = useState(false);
   const [quickWakeLoading, setQuickWakeLoading] = useState(false);
   const [quickWakeTaskStatus, setQuickWakeTaskStatus] = useState(null);
+  const [ipDetectTaskStatus, setIPDetectTaskStatus] = useState(null);
+  const [ipCheckConfig, setIPCheckConfig] = useState(null);
   const [editingShareConfig, setEditingShareConfig] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState({});
   const nodeMetadataIncludes = visibleColumns.risk || visibleColumns.country_code || visibleColumns.app_unlock
@@ -68,6 +70,7 @@ const NodesPage = () => {
   } = useNodesQuery(subscriptionApi, {metadataIncludes: nodeMetadataIncludes});
 
   const timerRef = useRef(null);
+  const ipDetectWasActiveRef = useRef(false);
 
   // 获取节点历史
   const fetchNodeHistory = async (nodeId, page = historyPagination.current, pageSize = historyPagination.pageSize) => {
@@ -170,12 +173,24 @@ const NodesPage = () => {
       console.error(error);
     }
   }, []);
+  const fetchIPCheckConfig = useCallback(async () => {
+    try {
+      const data = await configApi.getConfig();
+      setIPCheckConfig(data?.ip_check || null);
+    } catch (error) {
+      setIPCheckConfig(null);
+      console.error('获取IP检测配置失败', error);
+    }
+  }, []);
   // 获取任务状态
   const fetchTaskStatusHandler = useCallback(async () => {
     await fetchTaskStatus("speed_test", setTaskStatus);
   }, []);
   const fetchQuickWakeTaskStatusHandler = useCallback(async () => {
     await fetchTaskStatus("quick_wake", setQuickWakeTaskStatus);
+  }, []);
+  const fetchIPDetectTaskStatusHandler = useCallback(async () => {
+    await fetchTaskStatus("check_ip", setIPDetectTaskStatus);
   }, []);
 
   // 停止任务
@@ -185,21 +200,27 @@ const NodesPage = () => {
   const handleStopQuickWake = async () => {
     await stopTask("quick_wake", setQuickWakeTaskStatus);
   };
+  const handleStopIPDetect = async () => {
+    await stopTask("check_ip", setIPDetectTaskStatus);
+  };
 
   // 启动定时器
   useEffect(() => {
     // 初始获取一次任务状态
     fetchTaskStatusHandler();
     fetchQuickWakeTaskStatusHandler();
+    fetchIPDetectTaskStatusHandler();
     fetchNodes(DEFAULT_NODE_PAGINATION.current, DEFAULT_NODE_PAGINATION.pageSize, DEFAULT_NODE_SORTER, {});
     fetchNodeTypes();
     fetchCountryCodes();
     fetchUnlockApps();
+    fetchIPCheckConfig();
 
     // 设置定时器，每3秒获取一次任务状态
     timerRef.current = setInterval(() => {
       fetchTaskStatusHandler();
       fetchQuickWakeTaskStatusHandler();
+      fetchIPDetectTaskStatusHandler();
     }, 3000);
 
     const handleResize = () => {
@@ -214,7 +235,16 @@ const NodesPage = () => {
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchUnlockApps, fetchTaskStatusHandler, fetchQuickWakeTaskStatusHandler]);
+  }, [fetchNodes, fetchNodeTypes, fetchCountryCodes, fetchUnlockApps, fetchIPCheckConfig, fetchTaskStatusHandler, fetchQuickWakeTaskStatusHandler, fetchIPDetectTaskStatusHandler]);
+
+  useEffect(() => {
+    const active = isTaskActive(ipDetectTaskStatus);
+    if (ipDetectWasActiveRef.current && !active) {
+      fetchNodes(pagination.current, pagination.pageSize, sorter, filters);
+      fetchCountryCodes();
+    }
+    ipDetectWasActiveRef.current = active;
+  }, [ipDetectTaskStatus, fetchNodes, fetchCountryCodes, pagination, sorter, filters]);
 
 
   // 初始化列显示状态
@@ -518,6 +548,28 @@ const NodesPage = () => {
     }
   };
 
+  const handleDetectMissingIP = async () => {
+    try {
+      const data = await nodeApi.detectMissingIP({
+        type: Array.isArray(filters.type) ? filters.type : [],
+      });
+      if (data.status_code === 200 && data.result === 'success') {
+        if (data.total > 0) {
+          message.success(`检测任务已启动，共 ${data.total} 个节点`);
+          setIPDetectTaskStatus({state: TASK_STATE_RUNNING, total: data.total, completed: 0});
+          setTimeout(fetchIPDetectTaskStatusHandler, 500);
+        } else {
+          message.info(data.status_msg || '没有需要补全的节点');
+        }
+      } else {
+        message.error('启动检测失败：' + data.status_msg);
+      }
+    } catch (error) {
+      message.error('启动检测失败：' + error.message);
+      console.error(error);
+    }
+  };
+
   // 处理节点置顶
   const handlePinProxy = async (nodeId, currentPinned) => {
     try {
@@ -682,10 +734,15 @@ const NodesPage = () => {
       tabBarExtraContent={<NodeBatchActions
         taskStatus={taskStatus}
         quickWakeTaskStatus={quickWakeTaskStatus}
+        ipDetectTaskStatus={ipDetectTaskStatus}
         onStopTask={handleStopTask}
         onStopQuickWake={handleStopQuickWake}
+        onStopIPDetect={handleStopIPDetect}
         onBanProxy={handleBanProxy}
         onTestProxy={handleTestProxy}
+        onDetectMissingIP={handleDetectMissingIP}
+        showDetectMissingIP={Boolean(ipCheckConfig?.enable && (ipCheckConfig?.ip_info?.enable || ipCheckConfig?.app_unlock?.enable))}
+        filteredNodeTypes={Array.isArray(filters.type) ? filters.type : []}
         onExportSubscriptionUrl={handleExportSubscriptionUrl}
         onQuickWake={openQuickWakeModal}
         columnSettingMenu={columnSettingMenu}

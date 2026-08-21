@@ -86,6 +86,37 @@ func TestIPDetectPersisterStoresUnlockResultsWithoutIPInfo(t *testing.T) {
 	assert.Equal(t, "JP", ipUnlockInfoRepo.saved[0].Region)
 }
 
+func TestIPDetectPersisterMissingModePreservesExistingFields(t *testing.T) {
+	ipAddressRepo := &fakeIPAddressRepo{}
+	ipBaseInfoRepo := &fakeIPBaseInfoRepo{existing: &model.IPBaseInfo{
+		IPAddressesID: 1,
+		RiskLevel:     "low",
+	}}
+	persister := newIPDetectPersister(
+		ipAddressRepo,
+		&fakeProxyIPAddressRepo{},
+		ipBaseInfoRepo,
+		&fakeIPInfoRepo{},
+		&fakeIPUnlockInfoRepo{},
+	)
+
+	err := persister.PersistMissing(42, &detector.DetectionResult{
+		BaseInfo: &ipbaseinfo.IPBaseInfo{IPV4: "203.0.113.30"},
+		IPInfoResultMap: map[string][]*ipinfo.IPInfoResult{
+			"203.0.113.30": {{
+				Detector: ipinfo.DetectorIPAPI,
+				Risk:     ipinfo.RiskResult{IPRiskType: ipinfo.IPRiskTypeHigh},
+				Geo:      ipinfo.IPGeoInfo{CountryCode: "US"},
+			}},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, ipBaseInfoRepo.saved)
+	assert.Equal(t, "low", ipBaseInfoRepo.saved.RiskLevel)
+	assert.Equal(t, "US", ipBaseInfoRepo.saved.CountryCode)
+}
+
 type fakeIPAddressRepo struct {
 	repository.IPAddressRepository
 	nextID uint
@@ -121,7 +152,12 @@ func (r *fakeIPInfoRepo) BatchCreateOrUpdate(ipInfos []*model.IPInfo) error {
 
 type fakeIPBaseInfoRepo struct {
 	repository.IPBaseInfoRepository
-	saved *model.IPBaseInfo
+	existing *model.IPBaseInfo
+	saved    *model.IPBaseInfo
+}
+
+func (r *fakeIPBaseInfoRepo) FindByIPAddressID(ipAddressID uint) (*model.IPBaseInfo, error) {
+	return r.existing, nil
 }
 
 func (r *fakeIPBaseInfoRepo) CreateOrUpdate(ipBaseInfo *model.IPBaseInfo) error {

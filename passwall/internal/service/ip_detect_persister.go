@@ -37,6 +37,14 @@ func newIPDetectPersister(
 }
 
 func (p *ipDetectPersister) Persist(proxyID uint, resp *detector.DetectionResult) error {
+	return p.persist(proxyID, resp, false)
+}
+
+func (p *ipDetectPersister) PersistMissing(proxyID uint, resp *detector.DetectionResult) error {
+	return p.persist(proxyID, resp, true)
+}
+
+func (p *ipDetectPersister) persist(proxyID uint, resp *detector.DetectionResult, onlyMissing bool) error {
 	if resp.BaseInfo == nil {
 		log.Warnln("ip base info is empty, proxy id: %v", proxyID)
 		return nil
@@ -57,7 +65,7 @@ func (p *ipDetectPersister) Persist(proxyID uint, resp *detector.DetectionResult
 			log.Errorln("ip address id is empty, proxy id: %v, ip: %v", proxyID, ip)
 			continue
 		}
-		if err := p.persistIPInfo(proxyID, ipAddressID, ipInfoResultList); err != nil {
+		if err := p.persistIPInfo(proxyID, ipAddressID, ipInfoResultList, onlyMissing); err != nil {
 			return err
 		}
 	}
@@ -108,7 +116,7 @@ func (p *ipDetectPersister) persistAddress(proxyID uint, ip string, ipType uint)
 	return ipAddress.ID, nil
 }
 
-func (p *ipDetectPersister) persistIPInfo(proxyID uint, ipAddressID uint, ipInfoResultList []*ipinfo.IPInfoResult) error {
+func (p *ipDetectPersister) persistIPInfo(proxyID uint, ipAddressID uint, ipInfoResultList []*ipinfo.IPInfoResult, onlyMissing bool) error {
 	if len(ipInfoResultList) == 0 {
 		return nil
 	}
@@ -138,10 +146,10 @@ func (p *ipDetectPersister) persistIPInfo(proxyID uint, ipAddressID uint, ipInfo
 		log.Errorln("create or update ip info failed, proxy id: %v, err: %v", proxyID, err)
 		return err
 	}
-	return p.persistBaseInfo(proxyID, ipAddressID, riskLevelMap, countryCodeMap)
+	return p.persistBaseInfo(proxyID, ipAddressID, riskLevelMap, countryCodeMap, onlyMissing)
 }
 
-func (p *ipDetectPersister) persistBaseInfo(proxyID uint, ipAddressID uint, riskLevelMap map[ipinfo.IPRiskType]int, countryCodeMap map[string]int) error {
+func (p *ipDetectPersister) persistBaseInfo(proxyID uint, ipAddressID uint, riskLevelMap map[ipinfo.IPRiskType]int, countryCodeMap map[string]int, onlyMissing bool) error {
 	if len(riskLevelMap) == 0 && len(countryCodeMap) == 0 {
 		log.Infoln("ip base info is empty, skip..., proxy id: %v", proxyID)
 		return nil
@@ -161,6 +169,20 @@ func (p *ipDetectPersister) persistBaseInfo(proxyID uint, ipAddressID uint, risk
 		if count > countryCodeCount {
 			countryCode = code
 			countryCodeCount = count
+		}
+	}
+	if onlyMissing {
+		existing, err := p.ipBaseInfoRepo.FindByIPAddressID(ipAddressID)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if strings.TrimSpace(existing.RiskLevel) != "" {
+				riskLevel = ipinfo.IPRiskType(existing.RiskLevel)
+			}
+			if strings.TrimSpace(existing.CountryCode) != "" {
+				countryCode = existing.CountryCode
+			}
 		}
 	}
 	if err := p.ipBaseInfoRepo.CreateOrUpdate(&model.IPBaseInfo{
