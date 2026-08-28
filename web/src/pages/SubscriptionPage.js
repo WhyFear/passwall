@@ -292,7 +292,7 @@ const SubscriptionPage = () => {
       if (error.errorFields) {
         message.error('请填写必填字段');
       } else {
-        message.error(`添加订阅失败: ${error.message || '未知错误'}`);
+        message.error(`添加订阅失败: ${error.response?.data?.status_msg || error.message || '未知错误'}`);
         console.error(error);
       }
     } finally {

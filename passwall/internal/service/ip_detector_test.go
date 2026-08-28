@@ -44,12 +44,34 @@ func TestIPDetectorBatchDetectTracksProgress(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []uint{1, 2, 3}, detected)
-	status := taskManager.GetStatus(task.TaskTypeCheckIp)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskStateFinished, status.State)
-	assert.Equal(t, 3, status.Completed)
-	assert.Equal(t, 100, status.Progress)
-	assert.Equal(t, "batch detect proxy ip finished", status.Error)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
+}
+
+func TestIPDetectorBatchDetectAsyncAcquiresLeaseBeforeReturning(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	release := make(chan struct{})
+	detectorService := ipDetectorImpl{
+		TaskManager: taskManager,
+		detectOne: func(context.Context, *IPDetectorReq) error {
+			<-release
+			return nil
+		},
+	}
+	req := &BatchIPDetectorReq{
+		ProxyIDList:    []uint{1},
+		Enabled:        true,
+		Concurrent:     1,
+		TaskResourceID: 1,
+		Async:          true,
+	}
+
+	require.NoError(t, detectorService.BatchDetect(context.Background(), req))
+	assert.True(t, taskManager.IsResourceRunning(task.TaskTypeCheckIp, 1))
+	assert.ErrorIs(t, detectorService.BatchDetect(context.Background(), req), task.ErrTaskConflict)
+	close(release)
+	require.Eventually(t, func() bool {
+		return !taskManager.IsResourceRunning(task.TaskTypeCheckIp, 1)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestIPDetectorBatchDetectCancellationStopsPendingDetects(t *testing.T) {
@@ -101,10 +123,7 @@ func TestIPDetectorBatchDetectCancellationStopsPendingDetects(t *testing.T) {
 		t.Fatal("batch detect did not finish after cancellation")
 	}
 
-	status := taskManager.GetStatus(task.TaskTypeCheckIp)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskStateFinished, status.State)
-	assert.Equal(t, task.TaskCanceledMessage, status.Error)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
 	assert.Equal(t, int32(1), calls.Load())
 }
 
@@ -146,10 +165,7 @@ func TestIPDetectorBatchDetectContinuesAfterNodeFailure(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, int32(3), calls.Load())
-	status := taskManager.GetStatus(task.TaskTypeCheckIp)
-	require.NotNil(t, status)
-	assert.Equal(t, 3, status.Completed)
-	assert.Contains(t, status.Error, "3 failure(s)")
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
 }
 
 func TestIPDetectorBatchDetectSkipsWhenProxyWriteTaskIsActive(t *testing.T) {
@@ -240,10 +256,7 @@ func TestIPDetectorDetectMissingSelectsOnlyEnabledMissingData(t *testing.T) {
 		assert.True(t, req.OnlyMissing)
 		assert.False(t, req.Refresh)
 	}
-	status := taskManager.GetStatus(task.TaskTypeCheckIp)
-	require.NotNil(t, status)
-	assert.Equal(t, 3, status.Total)
-	assert.Equal(t, 3, status.Completed)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
 }
 
 func TestIPDetectorDetectMissingIgnoresDisabledIPInfo(t *testing.T) {

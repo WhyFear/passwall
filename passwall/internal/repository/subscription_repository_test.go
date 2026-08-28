@@ -42,3 +42,21 @@ func TestSubscriptionRepositoryDeleteRemovesConfigAndPreventsStatusRevival(t *te
 	assert.Equal(t, model.SubscriptionStatusDeleted, stored.Status)
 	assert.Equal(t, "old", stored.Content)
 }
+
+func TestSubscriptionRepositoryFindAfterIDUsesKeysetAndSkipsDeleted(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Subscription{}))
+	subscriptions := []*model.Subscription{
+		{URL: "one", Type: model.SubscriptionTypeClash, Status: model.SubscriptionStatusOK},
+		{URL: "two", Type: model.SubscriptionTypeClash, Status: model.SubscriptionStatusDeleted},
+		{URL: "three", Type: model.SubscriptionTypeClash, Status: model.SubscriptionStatusOK},
+	}
+	require.NoError(t, db.Create(&subscriptions).Error)
+
+	items, err := NewSubscriptionRepository(db).FindAfterID(subscriptions[0].ID, 1)
+
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, subscriptions[2].ID, items[0].ID)
+}

@@ -26,6 +26,7 @@ type Scheduler struct {
 	reloadMutex     sync.Mutex
 	jobMutex        sync.Mutex
 	isRunning       bool
+	stopContext     context.Context
 	taskManager     task.TaskManager
 	proxyTester     proxy.Tester
 	subsManager     proxy.SubscriptionManager
@@ -45,11 +46,16 @@ type schedulerCandidate struct {
 	customConfigs map[uint]*model.SubscriptionConfig
 }
 
+const schedulerBatchSize = 500
+
 // NewScheduler 创建调度器
 func NewScheduler() *Scheduler {
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
 	return &Scheduler{
 		cron:          newCron(),
 		isRunning:     false,
+		stopContext:   stopped,
 		jobIDs:        make(map[string]cron.EntryID),
 		customConfigs: make(map[uint]*model.SubscriptionConfig),
 	}
@@ -81,6 +87,12 @@ func (s *Scheduler) SetServices(taskManager task.TaskManager,
 func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	s.reloadMutex.Lock()
 	defer s.reloadMutex.Unlock()
+	s.jobMutex.Lock()
+	running := s.isRunning
+	s.jobMutex.Unlock()
+	if !running {
+		return errors.New("scheduler is stopped")
+	}
 
 	subscription, err := s.subsManager.GetSubscriptionByID(subID)
 	if err != nil {
@@ -173,6 +185,7 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 	s.configMutex.Unlock()
 	s.cron.Start()
 	s.isRunning = true
+	s.stopContext = nil
 	s.jobMutex.Unlock()
 	return nil
 }
@@ -270,22 +283,26 @@ func (s *Scheduler) buildCandidate(sysConfig config.Config) (*schedulerCandidate
 				}
 			}
 
-			// 找出所有需要按默认配置更新的订阅
-			allSubs, _, err := s.subsManager.GetSubscriptionsPage(proxy.SubsPage{Page: 1, PageSize: 100000})
-			if err != nil {
-				log.Errorln("Failed to get all subscriptions for default update: %v", err)
-				return
-			}
-			s.configMutex.RLock()
-			defer s.configMutex.RUnlock()
-
-			for _, sub := range allSubs {
-				// 如果该订阅没有自定义配置，则由全局任务负责
-				if _, hasCustom := s.customConfigs[sub.ID]; !hasCustom {
-					if err := s.subsManager.RefreshSubscriptionAsync(ctx, sub.ID, opts); err != nil {
-						log.Errorln("Default subscription update failed for sub %d: %v", sub.ID, err)
+			for afterID := uint(0); ; {
+				subscriptions, err := s.subsManager.GetSubscriptionsAfterID(afterID, schedulerBatchSize)
+				if err != nil {
+					log.Errorln("Failed to get subscriptions for default update: %v", err)
+					return
+				}
+				for _, sub := range subscriptions {
+					s.configMutex.RLock()
+					_, hasCustom := s.customConfigs[sub.ID]
+					s.configMutex.RUnlock()
+					if !hasCustom {
+						if err := s.subsManager.RefreshSubscriptionAsync(ctx, sub.ID, opts); err != nil {
+							log.Errorln("Default subscription update failed for sub %d: %v", sub.ID, err)
+						}
 					}
 				}
+				if len(subscriptions) < schedulerBatchSize {
+					return
+				}
+				afterID = subscriptions[len(subscriptions)-1].ID
 			}
 		})
 
@@ -316,20 +333,24 @@ func addCustomSubJob(target *cron.Cron, subsManager proxy.SubscriptionManager, s
 	})
 }
 
-// Stop 停止调度器
-func (s *Scheduler) Stop() {
+// BeginStop 停止接受新的 cron 任务并返回正在执行任务的完成 context。
+func (s *Scheduler) BeginStop() context.Context {
 	s.reloadMutex.Lock()
 	defer s.reloadMutex.Unlock()
 
 	s.jobMutex.Lock()
+	defer s.jobMutex.Unlock()
 	if !s.isRunning {
-		s.jobMutex.Unlock()
-		return
+		return s.stopContext
 	}
-	cronToStop := s.cron
 	s.isRunning = false
-	s.jobMutex.Unlock()
-	<-cronToStop.Stop().Done()
+	s.stopContext = s.cron.Stop()
+	return s.stopContext
+}
+
+// Stop 停止调度器并等待正在执行的任务完成。
+func (s *Scheduler) Stop() {
+	<-s.BeginStop().Done()
 	log.Infoln("Scheduler stopped")
 }
 

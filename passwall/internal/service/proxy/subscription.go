@@ -29,6 +29,7 @@ type SubscriptionManager interface {
 	// 基本CRUD操作
 	GetSubscriptionByID(id uint) (*model.Subscription, error)
 	GetSubscriptionsPage(page SubsPage) ([]*model.Subscription, int64, error)
+	GetSubscriptionsAfterID(afterID uint, limit int) ([]*model.Subscription, error)
 	GetSubscriptionByURL(url string) (*model.Subscription, error)
 	CreateSubscription(subscription *model.Subscription) error
 	UpdateSubscriptionStatus(subscription *model.Subscription) error
@@ -127,6 +128,10 @@ func (s *subscriptionManagerImpl) GetSubscriptionsPage(page SubsPage) ([]*model.
 		PageSize: page.PageSize,
 	}
 	return s.subscriptionRepo.FindPage(req)
+}
+
+func (s *subscriptionManagerImpl) GetSubscriptionsAfterID(afterID uint, limit int) ([]*model.Subscription, error) {
+	return s.subscriptionRepo.FindAfterID(afterID, limit)
 }
 
 // GetSubscriptionByURL 根据URL获取订阅

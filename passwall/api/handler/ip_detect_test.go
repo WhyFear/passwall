@@ -10,6 +10,7 @@ import (
 
 	"passwall/internal/model"
 	"passwall/internal/service"
+	"passwall/internal/service/task"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +36,40 @@ func TestDetectMissingIPQualityStartsTaskWithUniqueTypes(t *testing.T) {
 	assert.Equal(t, float64(3), response["total"])
 }
 
+func TestDetectIPQualityReturnsConflictStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/detect_ip", DetectIPQuality(fakeCreateConfigService{}, &fakeConflictIPDetector{}))
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/detect_ip", bytes.NewBufferString(`{"proxy_id":7}`)))
+
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+}
+
+func TestBatchDetectIPQualityReturnsConflictStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/batch_detect_ip", BatchDetectIPQuality(fakeCreateConfigService{}, &fakeConflictIPDetector{}))
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/batch_detect_ip", bytes.NewBufferString(`{"proxy_id_list":[7,9]}`)))
+
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+}
+
+func TestDetectMissingIPQualityReturnsConflictStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	detector := &fakeMissingIPDetector{err: task.ErrTaskConflict}
+	router := gin.New()
+	router.POST("/detect_missing_ip", DetectMissingIPQuality(context.Background(), detector))
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/detect_missing_ip", bytes.NewBufferString(`{"type":["ss"]}`)))
+
+	assert.Equal(t, http.StatusConflict, recorder.Code)
+}
+
 type fakeMissingIPDetector struct {
 	service.IPDetectorService
 	types []model.ProxyType
@@ -47,4 +82,12 @@ func (f *fakeMissingIPDetector) DetectMissing(_ context.Context, types []model.P
 	f.types = types
 	f.async = async
 	return f.total, f.err
+}
+
+type fakeConflictIPDetector struct {
+	service.IPDetectorService
+}
+
+func (*fakeConflictIPDetector) BatchDetect(context.Context, *service.BatchIPDetectorReq) error {
+	return task.ErrTaskConflict
 }

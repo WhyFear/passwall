@@ -69,6 +69,8 @@ var allowedConfigKeys = map[string]bool{
 	"default_sub": true,
 }
 
+var ErrInvalidConfig = errors.New("invalid configuration")
+
 func (s *configService) GetConfig() (*config.Config, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -188,10 +190,13 @@ func (s *configService) UpdateConfig(updates map[string]interface{}) error {
 		}
 	}
 	if err := applyDBConfig(&candidate, serializedUpdates); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	if _, err := migrateLegacyAutoBanUnits(candidate.CronJobs); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
+	if candidate.Concurrent <= 0 {
+		return fmt.Errorf("%w: concurrent must be greater than zero", ErrInvalidConfig)
 	}
 	clientIndexes, hasClientIndexes := clashClientIndexes(serializedUpdates["clash_api"])
 	jobIndexes, hasJobIndexes := cronJobIndexes(serializedUpdates["cron_jobs"])
@@ -202,7 +207,7 @@ func (s *configService) UpdateConfig(updates map[string]interface{}) error {
 	}
 	if s.scheduler != nil {
 		if err := s.scheduler.Validate(candidate); err != nil {
-			return fmt.Errorf("validate scheduler: %w", err)
+			return fmt.Errorf("%w: validate scheduler: %v", ErrInvalidConfig, err)
 		}
 	}
 

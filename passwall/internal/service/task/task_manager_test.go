@@ -29,10 +29,7 @@ func TestTaskManagerLifecycle(t *testing.T) {
 
 	manager.FinishTask(TaskTypeSpeedTest, "done")
 	status = manager.GetStatus(TaskTypeSpeedTest)
-	require.NotNil(t, status)
-	assert.Equal(t, TaskStateFinished, status.State)
-	assert.Equal(t, 100, status.Progress)
-	assert.Equal(t, "done", status.Error)
+	assert.Nil(t, status)
 	assert.False(t, manager.IsRunning(TaskTypeSpeedTest))
 	assert.False(t, manager.IsAnyRunning())
 }
@@ -264,23 +261,14 @@ func TestTaskRunAccumulatesProgressAndFinishesOnce(t *testing.T) {
 	run.Finish("second")
 
 	status = manager.GetStatus(TaskTypeCheckIp)
-	require.NotNil(t, status)
-	assert.Equal(t, TaskStateFinished, status.State)
-	assert.Equal(t, "first", status.Error)
+	assert.Nil(t, status)
 }
 
-func TestTaskRunFinishWithContextMessageUsesCancellationMessage(t *testing.T) {
-	manager := NewTaskManager()
+func TestMessageForContextUsesCancellationMessage(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	run, started := StartRun(ctx, manager, TaskTypeCheckIp, 1)
-	require.True(t, started)
-
 	cancel()
-	run.FinishWithContextMessage("")
 
-	status := manager.GetStatus(TaskTypeCheckIp)
-	require.NotNil(t, status)
-	assert.Equal(t, TaskCanceledMessage, status.Error)
+	assert.Equal(t, TaskCanceledMessage, MessageForContext(ctx))
 }
 
 func TestTaskRunWithResourceIDUpdatesResourceProgressAndFinish(t *testing.T) {
@@ -304,17 +292,7 @@ func TestTaskRunWithResourceIDUpdatesResourceProgressAndFinish(t *testing.T) {
 	run.Finish("should not overwrite")
 
 	assert.False(t, manager.IsResourceRunning(TaskTypeCheckIp, 42))
-	allStatus := manager.GetAllStatus()
-	var finishedStatus *TaskStatus
-	for _, s := range allStatus {
-		if s.Type == TaskTypeCheckIp && s.ResourceID == 42 {
-			finishedStatus = s
-			break
-		}
-	}
-	require.NotNil(t, finishedStatus)
-	assert.Equal(t, TaskStateFinished, finishedStatus.State)
-	assert.Equal(t, "resource done", finishedStatus.Error)
+	assert.Empty(t, manager.GetAllStatus())
 }
 
 func TestTaskRunDifferentResourceIDsCompleteIndependently(t *testing.T) {
@@ -339,4 +317,72 @@ func TestTaskRunDifferentResourceIDsCompleteIndependently(t *testing.T) {
 
 	run2.Finish("done 2")
 	assert.False(t, manager.IsResourceRunning(TaskTypeCheckIp, 2))
+}
+
+func TestTaskRunFromOldGenerationCannotMutateReplacement(t *testing.T) {
+	manager := NewTaskManager()
+	oldRun, started := StartRun(context.Background(), manager, TaskTypeCheckIp, 1)
+	require.True(t, started)
+
+	// Simulate an external owner prematurely releasing the key while its worker
+	// still holds oldRun.
+	manager.FinishTask(TaskTypeCheckIp, "premature")
+	newRun, started := StartRun(context.Background(), manager, TaskTypeCheckIp, 1)
+	require.True(t, started)
+
+	oldRun.IncrementProgress("old generation")
+	oldRun.Finish("old generation")
+
+	status := manager.GetStatus(TaskTypeCheckIp)
+	require.NotNil(t, status)
+	assert.Equal(t, 0, status.Completed)
+	assert.Equal(t, TaskStateRunning, status.State)
+	newRun.Finish("")
+}
+
+func TestTaskManagerRemovesFinishedTasksFromActiveStatus(t *testing.T) {
+	manager := NewTaskManager()
+	run, started := StartRunWithSpec(context.Background(), manager, TaskSpec{
+		Type:       TaskTypeReloadSubs,
+		ResourceID: 99,
+		Total:      1,
+	})
+	require.True(t, started)
+
+	run.Finish("")
+
+	assert.Nil(t, manager.GetStatus(TaskTypeReloadSubs))
+	assert.Empty(t, manager.GetAllStatus())
+}
+
+func TestTaskManagerShutdownCancelsWaitsAndRejectsNewTasks(t *testing.T) {
+	manager := NewTaskManager()
+	run, started := StartRun(context.Background(), manager, TaskTypeSpeedTest, 1)
+	require.True(t, started)
+	workerStopped := make(chan struct{})
+	go func() {
+		<-run.Context().Done()
+		close(workerStopped)
+		run.FinishWithContextMessage("")
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, manager.Shutdown(ctx))
+	<-workerStopped
+	assert.Empty(t, manager.GetAllStatus())
+	_, started = StartRun(context.Background(), manager, TaskTypeSpeedTest, 1)
+	assert.False(t, started)
+}
+
+func TestTaskManagerShutdownHonorsContextDeadline(t *testing.T) {
+	manager := NewTaskManager()
+	run, started := StartRun(context.Background(), manager, TaskTypeSpeedTest, 1)
+	require.True(t, started)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	assert.ErrorIs(t, manager.Shutdown(ctx), context.DeadlineExceeded)
+	assert.ErrorIs(t, run.Context().Err(), context.Canceled)
+	run.FinishWithContextMessage("")
 }

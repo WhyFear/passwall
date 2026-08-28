@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -28,6 +28,10 @@ func main() {
 	db, err := repository.InitDB(cfg.Database)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Failed to get database connection pool: %v", err)
 	}
 
 	// 3. 初始化服务
@@ -64,27 +68,43 @@ func main() {
 	router := api.SetupRouter(mergedConfig, services, newScheduler)
 
 	// 创建HTTP服务器
-	server := &http.Server{
-		Addr:    cfg.Server.Address,
-		Handler: router,
-	}
+	server := newHTTPServer(cfg.Server.Address, router)
+	runCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
 
 	// 在goroutine中启动服务器，这样就不会阻塞
+	serverErr := make(chan error, 1)
 	go func() {
 		log.Printf("Starting server on %s", cfg.Server.Address)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
-			log.Fatalf("Failed to start server: %v", err)
+		err := server.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
 		}
+		serverErr <- err
 	}()
 
 	// 等待中断信号以优雅地关闭服务器
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	var listenErr error
+	select {
+	case <-runCtx.Done():
+	case listenErr = <-serverErr:
+	}
 	log.Println("Shutting down server...")
+	cronStopCtx := newScheduler.BeginStop()
 
-	// 停止调度器
-	newScheduler.Stop()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Failed to shut down HTTP server: %v", err)
+	}
+	cancelShutdown()
+
+	taskCtx, cancelTasks := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := services.TaskManager.Shutdown(taskCtx); err != nil {
+		log.Printf("Failed to stop background tasks: %v", err)
+	}
+	cancelTasks()
+
+	<-cronStopCtx.Done()
 	const trafficStopAttempts = 5
 	for attempt := 1; attempt <= trafficStopAttempts; attempt++ {
 		if err := services.StatisticsService.Stop(); err != nil {
@@ -98,6 +118,23 @@ func main() {
 		}
 		break
 	}
+	if err := sqlDB.Close(); err != nil {
+		log.Printf("Failed to close database connection pool: %v", err)
+	}
 
 	log.Println("Server exiting")
+	if listenErr != nil {
+		log.Fatalf("HTTP server stopped unexpectedly: %v", listenErr)
+	}
+}
+
+func newHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 }

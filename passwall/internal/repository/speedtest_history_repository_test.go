@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestSpeedTestHistoryRepositoryReturnsCountError(t *testing.T) {
+	db := newSpeedTestHistoryRepositoryTestDB(t)
+	wantErr := errors.New("count failed")
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("fail_count", func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Dest.(*int64); ok {
+			tx.AddError(wantErr)
+		}
+	}))
+
+	_, err := NewSpeedTestHistoryRepository(db).FindByProxyID(1, PageQuery{})
+
+	require.ErrorIs(t, err, wantErr)
+}
 
 func TestSpeedTestHistoryRepositoryBatchFindLatestSummariesUsesLimitAndOrder(t *testing.T) {
 	db := newSpeedTestHistoryRepositoryTestDB(t)

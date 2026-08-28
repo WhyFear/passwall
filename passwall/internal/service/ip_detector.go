@@ -34,6 +34,7 @@ type BatchIPDetectorReq struct {
 	Refresh         bool
 	Concurrent      int
 	TaskResourceID  uint // 0 = global batch task; non-zero = resource-level task keyed by this ID
+	Async           bool
 }
 
 type IPDetectResp struct {
@@ -136,7 +137,7 @@ func (i ipDetectorImpl) BatchDetect(ctx context.Context, req *BatchIPDetectorReq
 			Refresh:         req.Refresh,
 		})
 	}
-	return i.startBatchDetect(ctx, targets, req.Concurrent, req.TaskResourceID, false)
+	return i.startBatchDetect(ctx, targets, req.Concurrent, req.TaskResourceID, req.Async)
 }
 
 func (i ipDetectorImpl) DetectMissing(ctx context.Context, types []model.ProxyType, async bool) (int, error) {

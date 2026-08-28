@@ -2,10 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"passwall/config"
@@ -17,6 +20,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/metacubex/mihomo/log"
+	"gorm.io/gorm"
+)
+
+const (
+	maxCreateProxyRequestBytes = 12 * 1024 * 1024
+	maxSubscriptionFileBytes   = 10 * 1024 * 1024
+)
+
+var (
+	errSubscriptionExists        = errors.New("subscription already exists")
+	errInvalidSubscriptionSource = errors.New("invalid subscription source")
+	errInvalidSubscription       = errors.New("invalid subscription")
+	errSubscriptionFileTooLarge  = errors.New("subscription file is too large")
 )
 
 // CreateProxyRequest 创建代理请求
@@ -41,12 +57,16 @@ func (p *subProcessor) run(url, reqType string, content []byte) (*model.Subscrip
 	// 1. 获取解析器
 	psr, err := p.parserFactory.GetParser(reqType, content)
 	if err != nil {
-		return nil, 0, fmt.Errorf("不支持的解析类型: %w", err)
+		return nil, 0, fmt.Errorf("%w: 不支持的解析类型: %v", errInvalidSubscription, err)
 	}
 
 	// 2. 查重处理
-	if existing, err := p.subscriptionManager.GetSubscriptionByURL(url); err == nil && existing != nil {
-		return existing, 0, fmt.Errorf("订阅已存在(ID:%d)", existing.ID)
+	existing, err := p.subscriptionManager.GetSubscriptionByURL(url)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, 0, fmt.Errorf("查询订阅失败: %w", err)
+	}
+	if existing != nil {
+		return existing, 0, fmt.Errorf("%w (ID:%d)", errSubscriptionExists, existing.ID)
 	}
 
 	// 3. 订阅源初始化入库
@@ -63,10 +83,10 @@ func (p *subProcessor) run(url, reqType string, content []byte) (*model.Subscrip
 	// 4. 解析代理节点
 	proxies, err := psr.Parse(content)
 	if err != nil {
-		return p.failSubscription(sub, fmt.Errorf("解析节点失败: %w", err))
+		return p.failSubscription(sub, fmt.Errorf("%w: 解析节点失败: %v", errInvalidSubscription, err))
 	}
 	if len(proxies) == 0 {
-		return p.failSubscription(sub, fmt.Errorf("未解析出有效节点"))
+		return p.failSubscription(sub, fmt.Errorf("%w: 未解析出有效节点", errInvalidSubscription))
 	}
 
 	// 5. 节点批量入库
@@ -93,7 +113,7 @@ func (p *subProcessor) run(url, reqType string, content []byte) (*model.Subscrip
 func (p *subProcessor) failSubscription(sub *model.Subscription, cause error) (*model.Subscription, int, error) {
 	sub.Status = model.SubscriptionStatusInvalid
 	if err := p.subscriptionManager.UpdateSubscriptionStatus(sub); err != nil {
-		return sub, 0, fmt.Errorf("%w；更新订阅状态失败: %v", cause, err)
+		return sub, 0, fmt.Errorf("更新订阅状态失败: %w", err)
 	}
 	return sub, 0, cause
 }
@@ -138,8 +158,15 @@ func (p *subProcessor) dispatchTasks(subID uint, proxies []*model.Proxy) {
 
 // download 处理网络资源下载
 func (p *subProcessor) download(u string) ([]byte, error) {
-	if strings.Contains(u, "://") && !strings.HasPrefix(u, "http") {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Scheme == "" {
+		return nil, errInvalidSubscriptionSource
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return []byte(u), nil
+	}
+	if parsed.Hostname() == "" || parsed.User != nil {
+		return nil, errInvalidSubscriptionSource
 	}
 	opts := &util.DownloadOptions{
 		Timeout:     util.DefaultDownloadOptions.Timeout,
@@ -154,8 +181,16 @@ func (p *subProcessor) download(u string) ([]byte, error) {
 // CreateProxy 创建代理处理器
 func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager, parserFactory parser.ParserFactory, proxyTester service.ProxyTester, ipDetectorService service.IPDetectorService, configService service.ConfigService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxCreateProxyRequestBytes)
+		}
+
 		// 每次请求都重新获取配置并创建独立的处理器，避免并发竞态
-		cfg, _ := configService.GetConfig()
+		cfg, err := configService.GetConfig()
+		if err != nil {
+			writeCreateProxyFailure(c, http.StatusInternalServerError, "读取配置失败")
+			return
+		}
 		proc := &subProcessor{
 			proxyService:        proxyService,
 			subscriptionManager: subscriptionManager,
@@ -166,15 +201,23 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		}
 
 		var req CreateProxyRequest
-		if err := c.ShouldBind(&req); err != nil {
-			c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "请求参数无效"})
+		bindErr := c.ShouldBind(&req)
+		if c.Request.MultipartForm != nil {
+			defer c.Request.MultipartForm.RemoveAll()
+		}
+		if bindErr != nil {
+			status := http.StatusBadRequest
+			if isRequestTooLarge(bindErr) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			writeCreateProxyFailure(c, status, "请求参数无效")
 			return
 		}
 
 		// 分支 1: URLList 批量导入 (后台异步)
 		if len(req.URLList) > 0 {
 			if len(req.URLList) > 50 {
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "单次最多支持 50 个订阅链接"})
+				writeCreateProxyFailure(c, http.StatusBadRequest, "单次最多支持 50 个订阅链接")
 				return
 			}
 			go func() {
@@ -191,19 +234,19 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 					}
 				}
 			}()
-			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "status_msg": "批量任务已提交后台处理"})
+			c.JSON(http.StatusAccepted, gin.H{"result": "success", "status_code": http.StatusAccepted, "status_msg": "批量任务已提交后台处理"})
 			return
 		} else if req.URL != "" { // 分支 2: 单个 URL 导入 (同步)
 			content, err := proc.download(req.URL)
 			if err != nil {
 				log.Errorln("订阅下载失败，error type: %T", err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅下载失败"})
+				writeCreateProxyFailure(c, createProxyDownloadStatus(err), "订阅下载失败")
 				return
 			}
 			sub, count, err := proc.run(req.URL, req.Type, content)
 			if err != nil {
 				log.Errorln("订阅处理失败，error type: %T", err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败"})
+				writeCreateProxyFailure(c, createProxyProcessingStatus(err), "订阅处理失败")
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
@@ -212,18 +255,83 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			defer func(file multipart.File) {
 				_ = file.Close()
 			}(file)
-			content, _ := io.ReadAll(io.LimitReader(file, 10*1024*1024))
+			content, err := readSubscriptionFile(file)
+			if err != nil {
+				if errors.Is(err, errSubscriptionFileTooLarge) {
+					writeCreateProxyFailure(c, http.StatusRequestEntityTooLarge, "订阅文件超过 10 MiB")
+				} else {
+					writeCreateProxyFailure(c, http.StatusInternalServerError, "读取订阅文件失败")
+				}
+				return
+			}
 			pseudoURL := util.MD5(string(content))[:20]
 			sub, count, err := proc.run(pseudoURL, req.Type, content)
 			if err != nil {
 				log.Errorln("本地订阅处理失败，error type: %T", err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败"})
+				writeCreateProxyFailure(c, createProxyProcessingStatus(err), "订阅处理失败")
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
 			return
+		} else if !errors.Is(err, http.ErrMissingFile) {
+			status := http.StatusBadRequest
+			if isRequestTooLarge(err) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			writeCreateProxyFailure(c, status, "读取上传文件失败")
+			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "未识别到有效的订阅来源"})
+		writeCreateProxyFailure(c, http.StatusBadRequest, "未识别到有效的订阅来源")
 	}
+}
+
+func readSubscriptionFile(file io.Reader) ([]byte, error) {
+	content, err := io.ReadAll(io.LimitReader(file, maxSubscriptionFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxSubscriptionFileBytes {
+		return nil, errSubscriptionFileTooLarge
+	}
+	return content, nil
+}
+
+func createProxyProcessingStatus(err error) int {
+	switch {
+	case errors.Is(err, errSubscriptionExists):
+		return http.StatusConflict
+	case errors.Is(err, errInvalidSubscription):
+		return http.StatusUnprocessableEntity
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func createProxyDownloadStatus(err error) int {
+	switch {
+	case errors.Is(err, errInvalidSubscriptionSource):
+		return http.StatusBadRequest
+	case isTimeoutError(err):
+		return http.StatusGatewayTimeout
+	default:
+		return http.StatusBadGateway
+	}
+}
+
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func isRequestTooLarge(err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return errors.As(err, &maxBytesErr)
+}
+
+func writeCreateProxyFailure(c *gin.Context, status int, message string) {
+	c.JSON(status, gin.H{"result": "fail", "status_code": status, "status_msg": message})
 }

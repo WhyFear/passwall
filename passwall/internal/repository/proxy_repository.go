@@ -47,6 +47,7 @@ type ProxyRepository interface {
 	//FindBySubscriptionID(subscriptionID uint) ([]*model.Proxy, error)  // 暂时用不上
 	FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error)
 	FindPage(query PageQuery) (*PageResult, error)
+	FindIDsAfter(afterID uint, limit int) ([]uint, error)
 	FindByName(name string) (*model.Proxy, error)
 	FindNotInIDs(ids []uint) ([]uint, error)
 	Create(proxy *model.Proxy) error
@@ -197,6 +198,17 @@ func (r *GormProxyRepository) FindPage(query PageQuery) (*PageResult, error) {
 	}
 	result = PageResult{Total: total, Items: proxies}
 	return &result, nil
+}
+
+func (r *GormProxyRepository) FindIDsAfter(afterID uint, limit int) ([]uint, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	var ids []uint
+	err := r.db.Model(&model.Proxy{}).
+		Where("id > ? AND status != ?", afterID, model.ProxyStatusBanned).
+		Order("id").Limit(limit).Pluck("id", &ids).Error
+	return ids, err
 }
 
 func (r *GormProxyRepository) applyNodeFilter(db *gorm.DB, filter *NodeFilter) (*gorm.DB, bool) {

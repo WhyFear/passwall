@@ -5,6 +5,7 @@ import (
 	"passwall/api/handler"
 	"passwall/api/middleware"
 	"passwall/config"
+	"passwall/internal/repository"
 	"passwall/internal/scheduler"
 	"passwall/internal/service"
 
@@ -22,7 +23,9 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	router.Use(middleware.AccessLogger())
 	router.Use(middleware.Cors())
 	router.Use(middleware.Recovery())
+	router.Use(middleware.RequestBodyLimit())
 	// no token required
+	router.GET("/healthz", handler.Health(repository.DB))
 	router.GET("/s/:slug", handler.GetSharedSubscribe(services.ShareConfigService, services.ProxyService, services.GeneratorFactory))
 
 	openApiGroup := router.Group("/api")

@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	SubscribeTypeClash = "clash"
+	SubscribeTypeClash  = "clash"
+	maxSubscribeProxies = 1000
 
 	ErrNoProxiesFound = "没有找到符合条件的代理服务器"
 	ErrConfigUpdate   = "更新代理配置失败"
@@ -50,6 +51,14 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 			})
 			return
 		}
+		if req.Limit < 0 || req.Limit > maxSubscribeProxies {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "limit must be between 0 and 1000",
+			})
+			return
+		}
 
 		content, err := GenerateSubscribeContent(req, proxyService, generatorFactory)
 		if err != nil {
@@ -65,6 +74,9 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService, generatorFactory generator.GeneratorFactory) ([]byte, error) {
 	subType := req.Type
 	limit := req.Limit
+	if limit <= 0 || limit > maxSubscribeProxies {
+		limit = maxSubscribeProxies
+	}
 	id := req.ID
 
 	var proxies []*model.Proxy

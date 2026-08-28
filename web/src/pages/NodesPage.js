@@ -29,6 +29,7 @@ import NodeDetailModal from './nodes/NodeDetailModal';
 import {createColumnSettingMenu, createNodeColumns} from './nodes/nodeColumns';
 import {buildShareDefaults, buildSharePayload, normalizeShareMultiValue} from './nodes/shareConfigUtils';
 import {DEFAULT_NODE_PAGINATION, DEFAULT_NODE_SORTER, useNodesQuery} from './nodes/useNodesQuery';
+import {createRequestGeneration} from './nodes/requestGeneration';
 
 const NodesPage = () => {
   const [shareForm] = Form.useForm();
@@ -71,29 +72,36 @@ const NodesPage = () => {
 
   const timerRef = useRef(null);
   const ipDetectWasActiveRef = useRef(false);
+  const detailRequests = useRef(createRequestGeneration()).current;
+  const historyRequests = useRef(createRequestGeneration()).current;
 
   // 获取节点历史
-  const fetchNodeHistory = async (nodeId, page = historyPagination.current, pageSize = historyPagination.pageSize) => {
+  const fetchNodeHistory = async (nodeId, page = historyPagination.current, pageSize = historyPagination.pageSize, detailGeneration = detailRequests.value()) => {
+    const historyGeneration = historyRequests.begin();
     try {
       setHistoryLoading(true);
       const data = await nodeApi.getProxyHistory(nodeId, page, pageSize);
+      if (!detailRequests.isCurrent(detailGeneration) || !historyRequests.isCurrent(historyGeneration)) return;
       setNodeHistory(Array.isArray(data?.items) ? data.items : []);
       setHistoryPagination(prev => ({
         ...prev, current: page, pageSize: pageSize, total: data?.total || 0,
       }));
     } catch (error) {
+      if (!detailRequests.isCurrent(detailGeneration) || !historyRequests.isCurrent(historyGeneration)) return;
       message.error('获取节点历史失败');
       console.error(error);
     } finally {
-      setHistoryLoading(false);
+      if (detailRequests.isCurrent(detailGeneration) && historyRequests.isCurrent(historyGeneration)) {
+        setHistoryLoading(false);
+      }
     }
   };
 
   // 获取节点分享链接
-  const fetchNodeShareUrl = async (nodeId) => {
+  const fetchNodeShareUrl = async (nodeId, detailGeneration = detailRequests.value()) => {
     try {
-      setHistoryLoading(true);
       let data = await nodeApi.getProxyShareUrl(nodeId);
+      if (!detailRequests.isCurrent(detailGeneration)) return;
       // 先判断data是否有status_code字段，如果有，说明是错误信息
       if (data.status_code) {
         message.error('获取节点分享链接失败：' + data.status_msg);
@@ -103,16 +111,16 @@ const NodesPage = () => {
         ...prev, share_url: atob(data),
       }));
     } catch (error) {
+      if (!detailRequests.isCurrent(detailGeneration)) return;
       message.error('获取节点分享链接失败：' + error.message);
       console.error(error);
-    } finally {
-      setHistoryLoading(false);
     }
   };
 
-  const fetchNodeDetails = async (nodeId) => {
+  const fetchNodeDetails = async (nodeId, detailGeneration = detailRequests.value()) => {
     try {
       const data = await nodeApi.getProxyDetails(nodeId);
+      if (!detailRequests.isCurrent(detailGeneration)) return;
       setCurrentNode(prev => {
         if (!prev || prev.id !== nodeId) return prev;
         return {
@@ -123,10 +131,16 @@ const NodesPage = () => {
         };
       });
     } catch (error) {
+      if (!detailRequests.isCurrent(detailGeneration)) return;
       message.error('获取节点详情失败');
       console.error(error);
     }
   };
+
+  useEffect(() => () => {
+    detailRequests.invalidate();
+    historyRequests.invalidate();
+  }, [detailRequests, historyRequests]);
 
   // 获取节点类型
   const fetchNodeTypes = useCallback(async () => {
@@ -591,15 +605,27 @@ const NodesPage = () => {
 
   // 查看节点详情
   const handleViewNode = (node) => {
-    setCurrentNode(node);
+    const detailGeneration = detailRequests.begin();
+    historyRequests.invalidate();
+    setCurrentNode({...node, share_url: undefined});
+    setNodeHistory([]);
     // 重置历史分页到第一页
     setHistoryPagination(prev => ({
-      ...prev, current: 1, pageSize: 5,
+      ...prev, current: 1, pageSize: 5, total: 0,
     }));
-    fetchNodeHistory(node.id, 1, 5);
-    fetchNodeShareUrl(node.id);
-    fetchNodeDetails(node.id);
+    fetchNodeHistory(node.id, 1, 5, detailGeneration);
+    fetchNodeShareUrl(node.id, detailGeneration);
+    fetchNodeDetails(node.id, detailGeneration);
     setModalVisible(true);
+  };
+
+  const handleCloseNodeDetail = () => {
+    detailRequests.invalidate();
+    historyRequests.invalidate();
+    setModalVisible(false);
+    setCurrentNode(null);
+    setNodeHistory([]);
+    setHistoryLoading(false);
   };
 
   const handleBanProxy = async (id = null) => {
@@ -799,8 +825,8 @@ const NodesPage = () => {
                 {label: 'Clash', value: 'clash'},
               ]}/>
             </Form.Item>
-            <Form.Item name="limit" label="返回数量" help="0 表示不限制">
-              <InputNumber min={0} style={{width: '100%'}}/>
+            <Form.Item name="limit" label="返回数量" help="0 表示最多 1000">
+              <InputNumber min={0} max={1000} style={{width: '100%'}}/>
             </Form.Item>
             <Form.Item name="sort" label="排序字段">
               <Select allowClear options={[
@@ -911,7 +937,7 @@ const NodesPage = () => {
       nodeHistory={nodeHistory}
       historyLoading={historyLoading}
       historyPagination={historyPagination}
-      onClose={() => setModalVisible(false)}
+      onClose={handleCloseNodeDetail}
       onHistoryTableChange={handleHistoryTableChange}
     />
   </div>);

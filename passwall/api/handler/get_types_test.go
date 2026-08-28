@@ -58,6 +58,10 @@ func (f *fakeProxyService) GetProxiesByFilters(filters *repository.NodeFilter, s
 	return nil, 0, nil
 }
 
+func (f *fakeProxyService) GetProxyIDsAfter(uint, int) ([]uint, error) {
+	return nil, nil
+}
+
 func (f *fakeProxyService) GetProxyByName(name string) (*model.Proxy, error) {
 	return nil, nil
 }

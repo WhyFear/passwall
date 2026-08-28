@@ -19,6 +19,7 @@ type SubscriptionRepository interface {
 	FindByStatus(status model.SubscriptionStatus) ([]*model.Subscription, error)
 	FindByURL(url string) (*model.Subscription, error)
 	FindPage(page SubsPage) ([]*model.Subscription, int64, error)
+	FindAfterID(afterID uint, limit int) ([]*model.Subscription, error)
 	Create(subscription *model.Subscription) error
 	Update(subscription *model.Subscription) error
 	UpdateStatus(subscription *model.Subscription) error
@@ -98,6 +99,16 @@ func (r *GormSubscriptionRepository) FindPage(page SubsPage) ([]*model.Subscript
 	}
 
 	return subscriptions, total, err
+}
+
+func (r *GormSubscriptionRepository) FindAfterID(afterID uint, limit int) ([]*model.Subscription, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	var subscriptions []*model.Subscription
+	err := r.db.Where("id > ? AND status != ?", afterID, model.SubscriptionStatusDeleted).
+		Order("id").Limit(limit).Find(&subscriptions).Error
+	return subscriptions, err
 }
 
 // sanitizeContent 处理内容，移除或替换空字节

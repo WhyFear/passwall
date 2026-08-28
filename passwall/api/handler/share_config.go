@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/base64"
 	"net/http"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
@@ -9,6 +10,7 @@ import (
 	"passwall/internal/adapter/generator"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/time/rate"
 )
 
 type ShareConfigHandler struct {
@@ -93,8 +95,28 @@ func (h *ShareConfigHandler) Delete(c *gin.Context) {
 }
 
 func GetSharedSubscribe(shareConfigService service.ShareConfigService, proxyService proxy.ProxyService, generatorFactory generator.GeneratorFactory) gin.HandlerFunc {
+	// ponytail: global limits avoid unbounded per-IP state; add trusted-proxy-aware buckets if legitimate traffic is throttled.
+	limiter := rate.NewLimiter(1, 4)
+	concurrent := make(chan struct{}, 4)
 	return func(c *gin.Context) {
-		config, err := shareConfigService.GetEnabledBySlug(c.Param("slug"))
+		if !limiter.Allow() {
+			c.Status(http.StatusTooManyRequests)
+			return
+		}
+		select {
+		case concurrent <- struct{}{}:
+			defer func() { <-concurrent }()
+		default:
+			c.Status(http.StatusTooManyRequests)
+			return
+		}
+
+		slug := c.Param("slug")
+		if !validShareSlug(slug) {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		config, err := shareConfigService.GetEnabledBySlug(slug)
 		if err != nil {
 			c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte(""))
 			return
@@ -121,4 +143,9 @@ func GetSharedSubscribe(shareConfigService service.ShareConfigService, proxyServ
 
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", content)
 	}
+}
+
+func validShareSlug(slug string) bool {
+	decoded, err := base64.RawURLEncoding.DecodeString(slug)
+	return err == nil && len(decoded) == 12 && base64.RawURLEncoding.EncodeToString(decoded) == slug
 }

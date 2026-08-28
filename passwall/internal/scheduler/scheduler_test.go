@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"passwall/config"
 	"passwall/internal/model"
 	proxyservice "passwall/internal/service/proxy"
+	"passwall/internal/util"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,6 +82,21 @@ func TestSchedulerInitRequiresServices(t *testing.T) {
 	assert.Contains(t, err.Error(), "scheduler services are not set")
 }
 
+func TestSchedulerBeginStopClosesAdmission(t *testing.T) {
+	scheduler := NewScheduler()
+	scheduler.SetServices(nil, nil, &fakeSubscriptionManager{}, nil, nil)
+	require.NoError(t, scheduler.Init(config.Config{}))
+
+	stopContext := scheduler.BeginStop()
+
+	select {
+	case <-stopContext.Done():
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not stop")
+	}
+	assert.ErrorContains(t, scheduler.UpdateSubscriptionJob(1), "stopped")
+}
+
 func TestUpdateSubscriptionJobKeepsOldJobWhenReplacementIsInvalid(t *testing.T) {
 	manager := &fakeSubscriptionManager{sub: &model.Subscription{ID: 7, Status: model.SubscriptionStatusOK}}
 	scheduler := NewScheduler()
@@ -146,10 +163,39 @@ func TestSchedulerCronContinuesAfterRecoveredPanic(t *testing.T) {
 	assert.Equal(t, int32(2), calls.Load())
 }
 
+func TestDefaultSubscriptionJobUsesKeysetBatches(t *testing.T) {
+	subscriptions := make([]*model.Subscription, schedulerBatchSize+1)
+	for index := range subscriptions {
+		subscriptions[index] = &model.Subscription{ID: uint(index + 1)}
+	}
+	manager := &fakeSubscriptionManager{subscriptions: subscriptions}
+	scheduler := NewScheduler()
+	scheduler.SetServices(nil, nil, manager, nil, nil)
+	require.NoError(t, scheduler.Init(config.Config{DefaultSub: config.DefaultSubscriptionUpdateConfig{
+		AutoUpdate: true,
+		Interval:   "0 0 0 1 1 *",
+	}}))
+	defer scheduler.Stop()
+
+	scheduler.cron.Entry(scheduler.jobIDs["default_sub_update"]).WrappedJob.Run()
+
+	assert.Equal(t, []subscriptionCursorCall{{0, schedulerBatchSize}, {schedulerBatchSize, schedulerBatchSize}}, manager.cursorCalls)
+	require.Len(t, manager.refreshedIDs, schedulerBatchSize+1)
+	assert.Equal(t, uint(schedulerBatchSize+1), manager.refreshedIDs[schedulerBatchSize])
+}
+
+type subscriptionCursorCall struct {
+	afterID uint
+	limit   int
+}
+
 type fakeSubscriptionManager struct {
 	proxyservice.SubscriptionManager
-	sub    *model.Subscription
-	config *model.SubscriptionConfig
+	sub           *model.Subscription
+	config        *model.SubscriptionConfig
+	subscriptions []*model.Subscription
+	cursorCalls   []subscriptionCursorCall
+	refreshedIDs  []uint
 }
 
 func (f *fakeSubscriptionManager) GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error) {
@@ -162,4 +208,23 @@ func (f *fakeSubscriptionManager) GetSubscriptionByID(uint) (*model.Subscription
 
 func (f *fakeSubscriptionManager) GetSubscriptionConfig(uint) (*model.SubscriptionConfig, error) {
 	return f.config, nil
+}
+
+func (f *fakeSubscriptionManager) GetSubscriptionsAfterID(afterID uint, limit int) ([]*model.Subscription, error) {
+	f.cursorCalls = append(f.cursorCalls, subscriptionCursorCall{afterID, limit})
+	result := make([]*model.Subscription, 0, limit)
+	for _, subscription := range f.subscriptions {
+		if subscription.ID > afterID {
+			result = append(result, subscription)
+			if len(result) == limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeSubscriptionManager) RefreshSubscriptionAsync(_ context.Context, id uint, _ *util.DownloadOptions) error {
+	f.refreshedIDs = append(f.refreshedIDs, id)
+	return nil
 }

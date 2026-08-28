@@ -10,9 +10,7 @@ const IntervalSelector = ({ form, fieldName, mode, setMode, label = "更新间�
     const unit = form.getFieldValue('simple_interval_unit');
     const cron = generateCronFromSimple(value, unit);
 
-    form.setFieldsValue({
-      [fieldName]: cron
-    });
+    form.setFieldValue(fieldName, cron);
   };
 
   return (

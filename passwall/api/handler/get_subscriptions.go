@@ -48,6 +48,16 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 			})
 			return
 		}
+		var valid bool
+		req.Page, req.PageSize, valid = normalizePagination(req.Page, req.PageSize)
+		if !valid {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Invalid pagination parameters",
+			})
+			return
+		}
 
 		var items []SubscriptionResp
 		var subscriptions []*model.Subscription

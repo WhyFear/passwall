@@ -5,10 +5,11 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -48,13 +49,19 @@ func DownloadFromURLWithContext(ctx context.Context, targetURL string, options *
 		ctx = context.Background()
 	}
 
-	// 使用默认选项（如果未提供）
-	if options == nil {
-		options = &DefaultDownloadOptions
+	resolvedOptions := DefaultDownloadOptions
+	if options != nil {
+		if options.Timeout > 0 {
+			resolvedOptions.Timeout = options.Timeout
+		}
+		if options.MaxFileSize > 0 {
+			resolvedOptions.MaxFileSize = options.MaxFileSize
+		}
+		resolvedOptions.ProxyURL = options.ProxyURL
 	}
 
 	// 创建带超时的上下文
-	ctx, cancel := context.WithTimeout(ctx, options.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, resolvedOptions.Timeout)
 	defer cancel()
 
 	// 创建HTTP请求
@@ -67,31 +74,22 @@ func DownloadFromURLWithContext(ctx context.Context, targetURL string, options *
 	//req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 	req.Header.Set("Accept", "*/*")
 
-	// 创建HTTP客户端
-	client := &http.Client{
-		Timeout: options.Timeout,
-	}
-
-	// 如果配置了代理，设置代理
-	if options.ProxyURL != "" {
-		proxyURLParsed, err := url.Parse(options.ProxyURL)
-		if err != nil {
-			return nil, errors.New("invalid proxy URL: " + err.Error())
-		}
-
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURLParsed),
-		}
+	client, err := newRestrictedHTTPClient(resolvedOptions.Timeout, resolvedOptions.ProxyURL, net.DefaultResolver)
+	if err != nil {
+		return nil, err
 	}
 
 	// 发送请求
 	resp, err := client.Do(req)
 	if err != nil {
 		// 检查是否是超时错误
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, errors.New("request timed out after " + options.Timeout.String())
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("request timed out after %s: %w", resolvedOptions.Timeout, context.DeadlineExceeded)
 		}
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, errors.New("HTTP request failed")
 	}
 	defer resp.Body.Close()
 
@@ -101,14 +99,14 @@ func DownloadFromURLWithContext(ctx context.Context, targetURL string, options *
 	}
 
 	// 限制读取大小
-	limitReader := io.LimitReader(resp.Body, options.MaxFileSize)
+	limitReader := io.LimitReader(resp.Body, resolvedOptions.MaxFileSize)
 	content, err := io.ReadAll(limitReader)
 	if err != nil {
 		return nil, err
 	}
 
 	// 检查是否达到了大小限制
-	if int64(len(content)) >= options.MaxFileSize {
+	if int64(len(content)) >= resolvedOptions.MaxFileSize {
 		return nil, errors.New("content too large, exceeded maximum allowed size")
 	}
 

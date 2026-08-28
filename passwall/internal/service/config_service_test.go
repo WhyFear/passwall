@@ -91,6 +91,17 @@ func TestConfigServiceUpdateRejectsWrongTypeBeforePersistence(t *testing.T) {
 	assert.Equal(t, 9, cfg.Concurrent)
 }
 
+func TestConfigServiceUpdateRejectsInvalidCandidateBeforePersistence(t *testing.T) {
+	prepareConfigServiceTestEnv(t)
+	repo := &fakeSystemConfigRepo{values: map[string]string{"concurrent": "9"}}
+	service := NewConfigService(repo)
+
+	err := service.UpdateConfig(map[string]interface{}{"concurrent": 0})
+
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Equal(t, "9", repo.values["concurrent"])
+}
+
 func TestConfigServiceUpdateReturnsSchedulerError(t *testing.T) {
 	prepareConfigServiceTestEnv(t)
 	repo := &fakeSystemConfigRepo{values: map[string]string{}}

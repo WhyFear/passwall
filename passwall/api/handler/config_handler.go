@@ -1,12 +1,71 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"passwall/config"
 	"passwall/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
+
+type configPatch struct {
+	Concurrent *int                                    `json:"concurrent"`
+	Proxy      *config.Proxy                           `json:"proxy"`
+	IPCheck    *ipCheckConfigPatch                     `json:"ip_check"`
+	ClashAPI   *clashAPIConfigPatch                    `json:"clash_api"`
+	CronJobs   *[]cronJobPatch                         `json:"cron_jobs"`
+	DefaultSub *config.DefaultSubscriptionUpdateConfig `json:"default_sub"`
+}
+
+type ipCheckConfigPatch struct {
+	Enable     bool                   `json:"enable"`
+	IPInfo     ipInfoConfigPatch      `json:"ip_info"`
+	AppUnlock  config.AppUnlockConfig `json:"app_unlock"`
+	Refresh    bool                   `json:"refresh"`
+	Concurrent int                    `json:"concurrent"`
+}
+
+type ipInfoConfigPatch struct {
+	Enable      bool                    `json:"enable"`
+	Scamalytics *scamalyticsConfigPatch `json:"scamalytics,omitempty"`
+}
+
+type scamalyticsConfigPatch struct {
+	Configured bool `json:"configured"`
+}
+
+type clashAPIConfigPatch struct {
+	Enable  bool                  `json:"enable"`
+	Clients []clashAPIClientPatch `json:"clients"`
+}
+
+type clashAPIClientPatch struct {
+	ExistingIndex *int   `json:"existing_index,omitempty"`
+	URL           string `json:"url"`
+	Secret        string `json:"secret"`
+}
+
+type cronJobPatch struct {
+	ExistingIndex *int                   `json:"existing_index,omitempty"`
+	Name          string                 `json:"name"`
+	Schedule      string                 `json:"schedule"`
+	TestProxy     config.TestProxyConfig `json:"test_proxy"`
+	AutoBan       config.BanProxyConfig  `json:"auto_ban"`
+	IPCheck       ipCheckConfigPatch     `json:"ip_check"`
+	Webhook       []webhookConfigPatch   `json:"webhook"`
+}
+
+type webhookConfigPatch struct {
+	ExistingIndex *int   `json:"existing_index,omitempty"`
+	Name          string `json:"name"`
+	Method        string `json:"method"`
+	URL           string `json:"url"`
+	Header        string `json:"header"`
+	Body          string `json:"body"`
+}
 
 type ConfigHandler struct {
 	configService service.ConfigService
@@ -147,16 +206,56 @@ func newIPCheckConfigResponse(cfg config.IPCheckConfig) IPCheckConfigResponse {
 }
 
 func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
-	var updates map[string]interface{}
-	if err := c.ShouldBindJSON(&updates); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	updates, err := decodeConfigPatch(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid configuration patch"})
 		return
 	}
 
 	if err := h.configService.UpdateConfig(updates); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if errors.Is(err, service.ErrInvalidConfig) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Invalid configuration"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update configuration"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Configuration updated successfully"})
+}
+
+func decodeConfigPatch(c *gin.Context) (map[string]interface{}, error) {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	var patch configPatch
+	if err := decoder.Decode(&patch); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, errors.New("request body must contain one JSON object")
+	}
+
+	updates := make(map[string]interface{}, 6)
+	if patch.Concurrent != nil {
+		updates["concurrent"] = *patch.Concurrent
+	}
+	if patch.Proxy != nil {
+		updates["proxy"] = *patch.Proxy
+	}
+	if patch.IPCheck != nil {
+		updates["ip_check"] = *patch.IPCheck
+	}
+	if patch.ClashAPI != nil {
+		updates["clash_api"] = *patch.ClashAPI
+	}
+	if patch.CronJobs != nil {
+		updates["cron_jobs"] = *patch.CronJobs
+	}
+	if patch.DefaultSub != nil {
+		updates["default_sub"] = *patch.DefaultSub
+	}
+	if len(updates) == 0 {
+		return nil, errors.New("configuration patch is empty")
+	}
+	return updates, nil
 }

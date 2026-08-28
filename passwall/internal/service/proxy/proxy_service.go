@@ -24,6 +24,7 @@ type ProxyService interface {
 	GetProxyByID(id uint) (*model.Proxy, error)
 	GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool, statusOK bool) (int64, error)
 	GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
+	GetProxyIDsAfter(afterID uint, limit int) ([]uint, error)
 	GetProxyByName(name string) (*model.Proxy, error)
 	CreateProxy(proxy *model.Proxy) error
 	BatchCreateProxies(proxies []*model.Proxy) error
@@ -91,6 +92,10 @@ func (s *DefaultProxyService) GetProxiesByFilters(filters *repository.NodeFilter
 	return queryResult.Items, queryResult.Total, err
 }
 
+func (s *DefaultProxyService) GetProxyIDsAfter(afterID uint, limit int) ([]uint, error) {
+	return s.proxyRepo.FindIDsAfter(afterID, limit)
+}
+
 func buildProxyOrderBy(sort string, sortOrder string) string {
 	allowedSortFields := map[string]bool{
 		"id":               true,
@@ -144,7 +149,7 @@ func (s *DefaultProxyService) PinProxy(id uint, pin bool) error {
 func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) error {
 	var finishMessage string
 
-	taskCtx, success := s.taskManager.StartTaskWithSpec(ctx, task.TaskSpec{
+	taskRun, success := task.StartRunWithSpec(ctx, s.taskManager, task.TaskSpec{
 		Type:  task.TaskTypeBanProxy,
 		Total: 0,
 		Accesses: []task.TaskAccess{
@@ -156,10 +161,11 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		log.Warnln("已有冲突的代理任务正在运行")
 		return task.ErrTaskConflict
 	}
+	taskCtx := taskRun.Context()
 
 	// 确保在函数返回时完成任务
 	defer func() {
-		s.taskManager.FinishTask(task.TaskTypeBanProxy, finishMessage)
+		taskRun.Finish(finishMessage)
 	}()
 
 	if req.ID > 0 {
@@ -197,7 +203,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 	}
 
 	log.Infoln("找到 %d 个代理", len(allProxies))
-	s.taskManager.UpdateTotal(task.TaskTypeBanProxy, len(allProxies))
+	taskRun.UpdateTotal(len(allProxies))
 	// 收集需要封禁的代理ID
 	proxiesToBan := make([]uint, 0)
 
@@ -240,7 +246,7 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 		}
 
 		// 更新进度
-		s.taskManager.UpdateProgress(task.TaskTypeBanProxy, i+1, "")
+		taskRun.UpdateProgress(i+1, "")
 	}
 
 	// 批量更新需要封禁的代理状态

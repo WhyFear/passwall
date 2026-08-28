@@ -60,6 +60,22 @@ func TestProxyRepositoryFindPageFiltersSortsAndPaginates(t *testing.T) {
 	assert.Equal(t, "c", result.Items[1].Name)
 }
 
+func TestProxyRepositoryFindIDsAfterUsesKeysetAndSkipsBanned(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	proxies := []*model.Proxy{
+		{Name: "a", Domain: "a.example", Port: 1, Password: "a", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "b", Domain: "b.example", Port: 2, Password: "b", Type: model.ProxyTypeSS, Status: model.ProxyStatusBanned},
+		{Name: "c", Domain: "c.example", Port: 3, Password: "c", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	ids, err := repo.FindIDsAfter(proxies[0].ID, 1)
+
+	require.NoError(t, err)
+	assert.Equal(t, []uint{proxies[2].ID}, ids)
+}
+
 func TestProxyRepositoryFindByStatusAndTypesIncludingBanned(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)
 	repo := NewProxyRepository(db)

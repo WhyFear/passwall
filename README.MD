@@ -143,15 +143,14 @@ services:
       - TZ=Asia/Shanghai
     # 若使用postgres，请取消注释
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 
   postgres:
     image: postgres:17-alpine
     container_name: passwall-postgres
     restart: unless-stopped
-    ports:
-      - "5432:5432"
     volumes:
       - ./data:/var/lib/postgresql/data
       - ./pg-init:/docker-entrypoint-initdb.d
@@ -160,6 +159,12 @@ services:
       - POSTGRES_PASSWORD=passwall
       - POSTGRES_DB=passwall
       - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 ```
 
 ```bash

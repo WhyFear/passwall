@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"passwall/internal/adapter/generator"
 	"passwall/internal/model"
@@ -16,6 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const testShareSlug = "AAAAAAAAAAAAAAAA"
 
 func TestParseNodeFilterIncludesAllSupportedFilters(t *testing.T) {
 	filters, err := parseNodeFilter("1,2", "trojan", "US,JP", "low", "Netflix,OpenAI")
@@ -66,11 +69,11 @@ func TestGetSharedSubscribeReplaysAppUnlockFilter(t *testing.T) {
 	router.GET("/s/:slug", GetSharedSubscribe(shareService, proxyService, generatorFactory))
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/s/demo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/s/"+testShareSlug, nil)
 	router.ServeHTTP(resp, req)
 
 	require.Equal(t, http.StatusOK, resp.Code)
-	assert.Equal(t, "demo", shareService.slug)
+	assert.Equal(t, testShareSlug, shareService.slug)
 	require.NotNil(t, proxyService.filters)
 	assert.Equal(t, []model.ProxyStatus{model.ProxyStatusOK}, proxyService.filters.Status)
 	assert.Equal(t, []string{"Netflix", "OpenAI"}, proxyService.filters.AppUnlock)
@@ -91,11 +94,85 @@ func TestGetSharedSubscribeReturnsNotFoundForMissingConfig(t *testing.T) {
 	))
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/s/missing", nil)
+	req := httptest.NewRequest(http.MethodGet, "/s/"+testShareSlug, nil)
 	router.ServeHTTP(resp, req)
 
 	assert.Equal(t, http.StatusNotFound, resp.Code)
 	assert.Empty(t, resp.Body.String())
+}
+
+func TestGetSharedSubscribeRejectsInvalidSlugBeforeLookup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	shareService := &fakeSubscribeShareConfigService{config: &model.ShareConfig{Type: "test"}}
+	router := gin.New()
+	router.GET("/s/:slug", GetSharedSubscribe(shareService, &fakeSubscribeProxyService{}, generator.NewGeneratorFactory()))
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/s/short", nil))
+
+	assert.Equal(t, http.StatusNotFound, resp.Code)
+	assert.Empty(t, shareService.slug)
+}
+
+func TestGetSharedSubscribeCapsNodesAndRateLimitsBurst(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	proxyService := &fakeSubscribeProxyService{proxies: []*model.Proxy{{ID: 1, Name: "node-1"}}}
+	generatorFactory := generator.NewGeneratorFactory()
+	generatorFactory.RegisterGenerator("test", fakeSubscribeGenerator{})
+	router := gin.New()
+	router.GET("/s/:slug", GetSharedSubscribe(
+		&fakeSubscribeShareConfigService{config: &model.ShareConfig{Type: "test"}},
+		proxyService,
+		generatorFactory,
+	))
+
+	for i := 0; i < 5; i++ {
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/s/"+testShareSlug, nil))
+		if i < 4 {
+			assert.Equal(t, http.StatusOK, resp.Code)
+		} else {
+			assert.Equal(t, http.StatusTooManyRequests, resp.Code)
+		}
+	}
+	assert.Equal(t, 1000, proxyService.pageSize)
+}
+
+func TestGetSharedSubscribeLimitsConcurrentGeneration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	shareService := &blockingShareConfigService{
+		entered: make(chan struct{}, 4),
+		release: make(chan struct{}),
+	}
+	generatorFactory := generator.NewGeneratorFactory()
+	generatorFactory.RegisterGenerator("test", fakeSubscribeGenerator{})
+	router := gin.New()
+	router.GET("/s/:slug", GetSharedSubscribe(
+		shareService,
+		&fakeSubscribeProxyService{proxies: []*model.Proxy{{ID: 1}}},
+		generatorFactory,
+	))
+
+	codes := make(chan int, 4)
+	for i := 0; i < 4; i++ {
+		go func() {
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/s/"+testShareSlug, nil))
+			codes <- resp.Code
+		}()
+	}
+	for i := 0; i < 4; i++ {
+		<-shareService.entered
+	}
+	time.Sleep(1100 * time.Millisecond)
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/s/"+testShareSlug, nil))
+	assert.Equal(t, http.StatusTooManyRequests, resp.Code)
+	close(shareService.release)
+	for i := 0; i < 4; i++ {
+		assert.Equal(t, http.StatusOK, <-codes)
+	}
 }
 
 func TestGetSubscribeGeneratesContent(t *testing.T) {
@@ -133,6 +210,17 @@ func TestGetSubscribeRejectsInvalidStatusFilter(t *testing.T) {
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/subscribe?type=test&status=bad", nil)
 	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
+}
+
+func TestGetSubscribeRejectsLimitOverMaximum(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/subscribe", GetSubscribe(&fakeSubscribeProxyService{}, generator.NewGeneratorFactory()))
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/subscribe?type=test&limit=1001", nil))
 
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
@@ -262,6 +350,18 @@ type fakeSubscribeShareConfigService struct {
 	config *model.ShareConfig
 	err    error
 	slug   string
+}
+
+type blockingShareConfigService struct {
+	service.ShareConfigService
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingShareConfigService) GetEnabledBySlug(string) (*model.ShareConfig, error) {
+	f.entered <- struct{}{}
+	<-f.release
+	return &model.ShareConfig{Type: "test", Limit: 1}, nil
 }
 
 func (f *fakeSubscribeShareConfigService) GetEnabledBySlug(slug string) (*model.ShareConfig, error) {

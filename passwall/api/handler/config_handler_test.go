@@ -80,10 +80,101 @@ func TestGetConfigDoesNotExposeServiceError(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "database-secret")
 }
 
+func TestUpdateConfigRejectsUnknownAndWronglyTypedFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{name: "unknown", body: `{"concurent":5}`},
+		{name: "wrong type", body: `{"concurrent":"five"}`},
+		{name: "unknown nested", body: `{"proxy":{"enabled":true,"typo":1}}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &fakeConfigHandlerService{}
+			router := gin.New()
+			router.POST("/config", NewConfigHandler(service).UpdateConfig)
+			request := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+
+			router.ServeHTTP(response, request)
+
+			require.Equal(t, http.StatusBadRequest, response.Code)
+			assert.Zero(t, service.updateCalls)
+		})
+	}
+}
+
+func TestUpdateConfigRejectsEmptyPatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeConfigHandlerService{}
+	router := gin.New()
+	router.POST("/config", NewConfigHandler(service).UpdateConfig)
+	request := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Zero(t, service.updateCalls)
+}
+
+func TestUpdateConfigReturnsSemanticAndInternalStatuses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "semantic", err: service.ErrInvalidConfig, want: http.StatusUnprocessableEntity},
+		{name: "internal", err: errors.New("database failed"), want: http.StatusInternalServerError},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &fakeConfigHandlerService{updateErr: test.err}
+			router := gin.New()
+			router.POST("/config", NewConfigHandler(service).UpdateConfig)
+			request := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(`{"concurrent":5}`))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+
+			router.ServeHTTP(response, request)
+
+			require.Equal(t, test.want, response.Code)
+			assert.Equal(t, 1, service.updateCalls)
+		})
+	}
+}
+
+func TestUpdateConfigAcceptsTypedFrontendPatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeConfigHandlerService{}
+	router := gin.New()
+	router.POST("/config", NewConfigHandler(service).UpdateConfig)
+	body := `{
+		"clash_api":{"enable":true,"clients":[{"existing_index":0,"url":"","secret":""}]},
+		"cron_jobs":[{"existing_index":0,"name":"job","schedule":"0 0 4 * * *","test_proxy":{},"auto_ban":{},"ip_check":{},"webhook":[{"existing_index":0,"name":"hook","method":"POST","url":"","header":"","body":""}]}]
+	}`
+	request := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, 1, service.updateCalls)
+	assert.Contains(t, service.updates, "clash_api")
+	assert.Contains(t, service.updates, "cron_jobs")
+}
+
 type fakeConfigHandlerService struct {
 	service.ConfigService
-	cfg *config.Config
-	err error
+	cfg         *config.Config
+	err         error
+	updateErr   error
+	updates     map[string]interface{}
+	updateCalls int
 }
 
 func (f *fakeConfigHandlerService) GetConfig() (*config.Config, error) {
@@ -91,4 +182,10 @@ func (f *fakeConfigHandlerService) GetConfig() (*config.Config, error) {
 		return nil, f.err
 	}
 	return f.cfg, nil
+}
+
+func (f *fakeConfigHandlerService) UpdateConfig(updates map[string]interface{}) error {
+	f.updateCalls++
+	f.updates = updates
+	return f.updateErr
 }

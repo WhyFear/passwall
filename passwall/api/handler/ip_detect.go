@@ -40,31 +40,35 @@ func DetectIPQuality(configService service.ConfigService, ipDetectorService serv
 			return
 		}
 
-		// 执行IP质量检测
-		go func() {
-			defer func() {
-				if err := recover(); err != nil {
-					log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
-				}
-			}()
-
-			cfg, err := configService.GetConfig()
-			if err != nil {
-				log.Errorln("get config failed: %v", err)
-				return
-			}
-			ipCheckConfig := cfg.IPCheck
-
-			_ = ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
-				ProxyIDList:     []uint{req.ProxyID},
-				Enabled:         ipCheckConfig.Enable,
-				IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
-				APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
-				Refresh:         true,
-				Concurrent:      1,
-				TaskResourceID:  req.ProxyID,
+		cfg, err := configService.GetConfig()
+		if err != nil {
+			log.Errorln("get config failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"result": "fail", "status_code": http.StatusInternalServerError, "status_msg": "获取配置失败",
 			})
-		}()
+			return
+		}
+		ipCheckConfig := cfg.IPCheck
+		err = ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
+			ProxyIDList:     []uint{req.ProxyID},
+			Enabled:         ipCheckConfig.Enable,
+			IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
+			APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
+			Refresh:         true,
+			Concurrent:      1,
+			TaskResourceID:  req.ProxyID,
+			Async:           true,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "IP 检测启动失败"
+			if task.IsConflictError(err) {
+				status = http.StatusConflict
+				msg = "已有冲突任务正在运行"
+			}
+			c.JSON(status, gin.H{"result": "fail", "status_code": status, "status_msg": msg})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "success",
@@ -87,30 +91,34 @@ func BatchDetectIPQuality(configService service.ConfigService, ipDetectorService
 			return
 		}
 
-		// 执行IP质量检测
-		go func() {
-			defer func() {
-				if err := recover(); err != nil {
-					log.Errorln("batch detect proxy ip failed, proxy id list: %v, err: %v", req.ProxyIDList, err)
-				}
-			}()
-
-			cfg, err := configService.GetConfig()
-			if err != nil {
-				log.Errorln("get config failed: %v", err)
-				return
-			}
-			ipCheckConfig := cfg.IPCheck
-
-			_ = ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
-				ProxyIDList:     req.ProxyIDList,
-				Enabled:         ipCheckConfig.Enable,
-				IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
-				APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
-				Refresh:         true,
-				Concurrent:      ipCheckConfig.Concurrent,
+		cfg, err := configService.GetConfig()
+		if err != nil {
+			log.Errorln("get config failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"result": "fail", "status_code": http.StatusInternalServerError, "status_msg": "获取配置失败",
 			})
-		}()
+			return
+		}
+		ipCheckConfig := cfg.IPCheck
+		err = ipDetectorService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
+			ProxyIDList:     req.ProxyIDList,
+			Enabled:         ipCheckConfig.Enable,
+			IPInfoEnable:    ipCheckConfig.IPInfo.Enable,
+			APPUnlockEnable: ipCheckConfig.AppUnlock.Enable,
+			Refresh:         true,
+			Concurrent:      ipCheckConfig.Concurrent,
+			Async:           true,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			msg := "IP 检测启动失败"
+			if task.IsConflictError(err) {
+				status = http.StatusConflict
+				msg = "已有冲突任务正在运行"
+			}
+			c.JSON(status, gin.H{"result": "fail", "status_code": status, "status_msg": msg})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "success",
@@ -146,9 +154,9 @@ func DetectMissingIPQuality(ctx context.Context, ipDetectorService service.IPDet
 		total, err := ipDetectorService.DetectMissing(ctx, types, true)
 		if err != nil {
 			if task.IsConflictError(err) {
-				c.JSON(http.StatusOK, gin.H{
+				c.JSON(http.StatusConflict, gin.H{
 					"result":      "error",
-					"status_code": http.StatusOK,
+					"status_code": http.StatusConflict,
 					"status_msg":  "已有其他任务正在运行",
 				})
 				return

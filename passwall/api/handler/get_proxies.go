@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	externalPageSizeMax       = 200
 	proxyMetadataMaxIDs       = 100
 	proxySuccessRateHistories = 5
 	proxyMetadataSuccessRate  = "success_rate"
@@ -90,11 +91,15 @@ func GetProxyList(proxyService proxy.ProxyService) gin.HandlerFunc {
 			return
 		}
 
-		if req.Page <= 0 {
-			req.Page = 1
-		}
-		if req.PageSize <= 0 {
-			req.PageSize = 10
+		var valid bool
+		req.Page, req.PageSize, valid = normalizePagination(req.Page, req.PageSize)
+		if !valid {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Invalid pagination parameters",
+			})
+			return
 		}
 
 		filters, err := parseNodeFilter(req.Status, req.Type, req.CountryCode, req.RiskLevel, req.AppUnlock)
@@ -139,6 +144,19 @@ func GetProxyList(proxyService proxy.ProxyService) gin.HandlerFunc {
 			Items: result,
 		})
 	}
+}
+
+func normalizePagination(page, pageSize int) (int, int, bool) {
+	if page < 0 || pageSize < 0 || pageSize > externalPageSizeMax {
+		return 0, 0, false
+	}
+	if page == 0 {
+		page = 1
+	}
+	if pageSize == 0 {
+		pageSize = 10
+	}
+	return page, pageSize, true
 }
 
 func GetProxyMetadata(speedTestHistoryService service.SpeedTestHistoryService, ipDetectService service.IPDetectorService) gin.HandlerFunc {
