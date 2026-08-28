@@ -635,21 +635,21 @@ const NodesPage = () => {
               />
             </div>
             <div style={{marginBottom: '10px'}}>
-              <span style={{display: 'inline-block', width: '180px'}}>下载速度阈值(B/s)：</span>
+              <span style={{display: 'inline-block', width: '180px'}}>下载速度阈值(KB/s)：</span>
               <InputNumber
                 min={0}
                 defaultValue={0}
                 precision={0}
-                onChange={(value) => banParams.download_speed_threshold = value}
+                onChange={(value) => banParams.download_speed_threshold = (value || 0) * 1024}
               />
             </div>
             <div style={{marginBottom: '10px'}}>
-              <span style={{display: 'inline-block', width: '180px'}}>上传速度阈值(B/s)：</span>
+              <span style={{display: 'inline-block', width: '180px'}}>上传速度阈值(KB/s)：</span>
               <InputNumber
                 min={0}
                 defaultValue={0}
                 precision={0}
-                onChange={(value) => banParams.upload_speed_threshold = value}
+                onChange={(value) => banParams.upload_speed_threshold = (value || 0) * 1024}
               />
             </div>
             <div style={{marginBottom: '10px'}}>

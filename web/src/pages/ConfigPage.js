@@ -347,14 +347,18 @@ const ConfigPage = () => {
                         </Col>
                         <Col span={8}>
                           <Form.Item {...restField} name={[name, 'auto_ban', 'download_speed_threshold']}
-                                     label="下载阈值(B/s)">
-                            <InputNumber min={0} style={{width: '100%'}}/>
+                                     label="下载阈值(KB/s)"
+                                     getValueProps={(value) => ({value: value == null ? value : value / 1024})}
+                                     normalize={(value) => value == null ? value : value * 1024}>
+                            <InputNumber min={0} precision={0} style={{width: '100%'}}/>
                           </Form.Item>
                         </Col>
                         <Col span={8}>
                           <Form.Item {...restField} name={[name, 'auto_ban', 'upload_speed_threshold']}
-                                     label="上传阈值(B/s)">
-                            <InputNumber min={0} style={{width: '100%'}}/>
+                                     label="上传阈值(KB/s)"
+                                     getValueProps={(value) => ({value: value == null ? value : value / 1024})}
+                                     normalize={(value) => value == null ? value : value * 1024}>
+                            <InputNumber min={0} precision={0} style={{width: '100%'}}/>
                           </Form.Item>
                         </Col>
                         <Col span={8}>
