@@ -2,9 +2,9 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"passwall/internal/model"
 	"passwall/internal/service/proxy"
-	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/log"
@@ -20,6 +20,8 @@ type SubscriptionReq struct {
 type SubscriptionResp struct {
 	ID          int       `json:"id"`
 	Type        string    `json:"type"`
+	URL         string    `json:"url,omitempty"`
+	Source      string    `json:"source"`
 	Refreshable bool      `json:"refreshable"`
 	Status      int       `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -95,16 +97,21 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 				log.Infoln("Failed to get proxy num, error type: %T", err)
 				proxyNum = 0
 			}
+			refreshable, source := subscriptionSource(subscription.URL)
 			tempSubscription := SubscriptionResp{
 				ID:          int(subscription.ID),
 				Type:        string(subscription.Type),
-				Refreshable: strings.HasPrefix(subscription.URL, "http://") || strings.HasPrefix(subscription.URL, "https://"),
+				Source:      source,
+				Refreshable: refreshable,
 				Status:      int(subscription.Status),
 				CreatedAt:   subscription.CreatedAt,
 				UpdatedAt:   subscription.UpdatedAt,
 				OKProxyNum:  OKProxyNum,
 				ProxyNum:    validProxyNum,
 				AllProxyNum: proxyNum,
+			}
+			if req.ID > 0 && refreshable {
+				tempSubscription.URL = subscription.URL
 			}
 			items = append(items, tempSubscription)
 		}
@@ -114,4 +121,12 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 			Items: items,
 		})
 	}
+}
+
+func subscriptionSource(rawURL string) (bool, string) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		return false, "本地导入"
+	}
+	return true, parsed.Hostname()
 }

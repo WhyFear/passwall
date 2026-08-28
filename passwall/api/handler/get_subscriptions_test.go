@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetSubscriptionsOmitsURLAndRawContent(t *testing.T) {
+func TestGetSubscriptionsListShowsSafeSourceWithoutSecrets(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	subscription := &model.Subscription{
 		ID:      7,
@@ -28,15 +28,41 @@ func TestGetSubscriptionsOmitsURLAndRawContent(t *testing.T) {
 	))
 	response := httptest.NewRecorder()
 
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/subscriptions?id=7&content=true", nil))
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/subscriptions?page=1&pageSize=10", nil))
 
 	require.Equal(t, http.StatusOK, response.Code)
 	body := response.Body.String()
 	assert.NotContains(t, body, "url-secret")
+	assert.NotContains(t, body, "password")
 	assert.NotContains(t, body, "raw-subscription-secret")
 	assert.NotContains(t, body, `"url"`)
 	assert.NotContains(t, body, `"content"`)
 	assert.Contains(t, body, `"refreshable":true`)
+	assert.Contains(t, body, `"source":"example.com"`)
+}
+
+func TestGetSubscriptionDetailShowsURLWithoutRawContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	subscription := &model.Subscription{
+		ID:      7,
+		URL:     "https://user:password@example.com/sub?token=url-secret",
+		Content: "raw-subscription-secret",
+		Status:  model.SubscriptionStatusOK,
+	}
+	router := gin.New()
+	router.GET("/subscriptions", GetSubscriptions(
+		&fakeSafeSubscriptionManager{subscription: subscription},
+		&fakeSafeSubscriptionProxyService{},
+	))
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/subscriptions?id=7", nil))
+
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, `"url":"https://user:password@example.com/sub?token=url-secret"`)
+	assert.NotContains(t, body, "raw-subscription-secret")
+	assert.NotContains(t, body, `"content"`)
 }
 
 type fakeSafeSubscriptionManager struct {

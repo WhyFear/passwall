@@ -1,8 +1,9 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip} from 'antd';
+import {Button, Descriptions, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Tooltip, Typography} from 'antd';
 import {
   DeleteOutlined,
   ExclamationCircleOutlined,
+  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
@@ -36,6 +37,8 @@ const SubscriptionPage = () => {
   const [configForm] = Form.useForm();
   const [isCustomConfig, setIsCustomConfig] = useState(false);
   const [intervalMode, setIntervalMode] = useState('simple'); // 'simple' or 'advanced'
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [viewingId, setViewingId] = useState(null);
 
   // 获取订阅列表
   const fetchSubscriptions = useCallback(async (page, pageSize) => {
@@ -213,6 +216,22 @@ const SubscriptionPage = () => {
     setModalVisible(true);
   };
 
+  const handleViewSubscription = async (record) => {
+    setViewingId(record.id);
+    try {
+      const data = await subscriptionApi.getSubscriptionDetail(record.id);
+      if (!data?.items?.length) {
+        throw new Error('未找到订阅');
+      }
+      setCurrentSubscription(data.items[0]);
+      setDetailModalVisible(true);
+    } catch (error) {
+      message.error(`获取订阅详情失败: ${error.message || '未知错误'}`);
+    } finally {
+      setViewingId(null);
+    }
+  };
+
   // 提交表单
   const handleSubmit = async () => {
     try {
@@ -304,10 +323,13 @@ const SubscriptionPage = () => {
     title: '序号', key: 'index', width: 80, render: (_, __, index) => index + 1,
   }, {
     title: '来源',
-    dataIndex: 'refreshable',
+    dataIndex: 'source',
     key: 'source',
-    width: 120,
-    render: (refreshable) => refreshable ? '远程订阅' : '本地导入',
+    width: 200,
+    ellipsis: true,
+    render: (source, record) => <Tooltip title={record.refreshable ? '远程订阅；点击“查看”显示完整 URL' : '本地导入'}>
+      <span>{source || (record.refreshable ? '远程订阅' : '本地导入')}</span>
+    </Tooltip>,
   }, {
     title: '上次拉取状态',
     dataIndex: 'status',
@@ -338,6 +360,16 @@ const SubscriptionPage = () => {
     title: '添加时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (text) => formatDate(text),
   }, {
     title: '操作', key: 'action', width: 360, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
+      <Tooltip title="查看订阅详情">
+        <Button
+          type="text"
+          icon={<EyeOutlined/>}
+          loading={viewingId === record.id}
+          onClick={() => handleViewSubscription(record)}
+        >
+          查看
+        </Button>
+      </Tooltip>
       <Tooltip title="刷新订阅">
         <Button
           type="text"
@@ -469,6 +501,35 @@ const SubscriptionPage = () => {
         uploadType={uploadType}
         onValuesChange={handleFormValuesChange}
       />
+    </Modal>
+
+    <Modal
+      title={`订阅详情 #${currentSubscription?.id || ''}`}
+      open={detailModalVisible}
+      onCancel={() => setDetailModalVisible(false)}
+      footer={<Button type="primary" onClick={() => setDetailModalVisible(false)}>关闭</Button>}
+      width={720}
+    >
+      <Descriptions bordered column={1} size="small">
+        <Descriptions.Item label="来源">{currentSubscription?.source || '-'}</Descriptions.Item>
+        <Descriptions.Item label="订阅链接">
+          {currentSubscription?.url ? <Typography.Paragraph
+            copyable={{text: currentSubscription.url}}
+            style={{marginBottom: 0, wordBreak: 'break-all'}}
+          >
+            <a href={currentSubscription.url} target="_blank" rel="noopener noreferrer">{currentSubscription.url}</a>
+          </Typography.Paragraph> : '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="解析类型">{currentSubscription?.type || '-'}</Descriptions.Item>
+        <Descriptions.Item label="上次拉取状态">
+          <StatusTag status={currentSubscription?.status}/>
+        </Descriptions.Item>
+        <Descriptions.Item label="正常 / 生效 / 全部节点">
+          {currentSubscription?.ok_proxy_num ?? 0} / {currentSubscription?.proxy_num ?? 0} / {currentSubscription?.all_proxy_num ?? 0}
+        </Descriptions.Item>
+        <Descriptions.Item label="添加时间">{formatDate(currentSubscription?.created_at)}</Descriptions.Item>
+        <Descriptions.Item label="上次更新时间">{formatDate(currentSubscription?.updated_at)}</Descriptions.Item>
+      </Descriptions>
     </Modal>
 
     {/* 订阅更新配置弹窗 */}

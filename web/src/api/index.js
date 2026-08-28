@@ -58,6 +58,9 @@ export const subscriptionApi = {
   // 获取所有订阅链接
   getSubscriptions: (params) => api.get('/subscriptions', params),
 
+  // 获取单条订阅详情
+  getSubscriptionDetail: (id) => api.get('/subscriptions', {params: {id}}),
+
   // 获取所有代理节点
   getProxies: (params) => api.get('/proxies', params),
 

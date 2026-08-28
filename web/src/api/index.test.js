@@ -104,6 +104,12 @@ describe('api client', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/subscriptions', {params: {page: 2, pageSize: 20}});
   });
 
+  test('requests one subscription detail by id', () => {
+    subscriptionApi.getSubscriptionDetail(7);
+
+    expect(mockApi.get).toHaveBeenCalledWith('/subscriptions', {params: {id: 7}});
+  });
+
   test('keeps proxy list and metadata endpoints aligned with backend routes', () => {
     subscriptionApi.getProxies({params: {page: 1}});
     subscriptionApi.getProxyMetadata({params: {proxy_ids: '1', include: 'success_rate'}});
