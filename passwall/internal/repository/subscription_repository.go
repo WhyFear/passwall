@@ -122,20 +122,30 @@ func (r *GormSubscriptionRepository) Update(subscription *model.Subscription) er
 
 // UpdateStatus 更新订阅状态
 func (r *GormSubscriptionRepository) UpdateStatus(subscription *model.Subscription) error {
-	return r.db.Model(subscription).Select("status").Updates(map[string]interface{}{"status": subscription.Status}).Error
+	return r.db.Model(&model.Subscription{}).
+		Where("id = ? AND status != ?", subscription.ID, model.SubscriptionStatusDeleted).
+		Update("status", subscription.Status).Error
 }
 
 // UpdateStatusAndContent 更新订阅状态和内容
 func (r *GormSubscriptionRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
 	// 在保存前处理content内容
 	subscription.Content = sanitizeContent(subscription.Content)
-	return r.db.Model(subscription).Select("status", "content").Updates(map[string]interface{}{
-		"status":  subscription.Status,
-		"content": subscription.Content,
-	}).Error
+	return r.db.Model(&model.Subscription{}).
+		Where("id = ? AND status != ?", subscription.ID, model.SubscriptionStatusDeleted).
+		Updates(map[string]interface{}{
+			"status":  subscription.Status,
+			"content": subscription.Content,
+		}).Error
 }
 
 // Delete 删除订阅
 func (r *GormSubscriptionRepository) Delete(id uint) error {
-	return r.db.Model(&model.Subscription{}).Where("id = ?", id).Update("status", model.SubscriptionStatusDeleted).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Subscription{}).Where("id = ?", id).
+			Update("status", model.SubscriptionStatusDeleted).Error; err != nil {
+			return err
+		}
+		return tx.Where("subscription_id = ?", id).Delete(&model.SubscriptionConfig{}).Error
+	})
 }

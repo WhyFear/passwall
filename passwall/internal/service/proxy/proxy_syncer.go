@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
@@ -16,6 +17,8 @@ import (
 type proxySyncer struct {
 	parserFactory parser.ParserFactory
 	proxyRepo     repository.ProxyRepository
+	// ponytail: 全局串行可止住跨订阅死锁；同步吞吐成为瓶颈时再改固定锁序或批量 UPSERT。
+	syncMu sync.Mutex
 }
 
 type proxySyncResult struct {
@@ -34,16 +37,19 @@ func newProxySyncer(parserFactory parser.ParserFactory, proxyRepo repository.Pro
 }
 
 func (s *proxySyncer) Sync(ctx context.Context, subscription *model.Subscription, content []byte) (*proxySyncResult, error) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	subParser, err := s.parserFactory.GetParser(string(subscription.Type), content)
 	if err != nil {
-		log.Errorln("获取解析器失败: %v", err)
-		return nil, fmt.Errorf("获取解析器失败: %w", err)
+		log.Errorln("订阅[ID:%d]获取解析器失败，error type: %T", subscription.ID, err)
+		return nil, fmt.Errorf("获取解析器失败")
 	}
 
 	newProxies, err := subParser.Parse(content)
 	if err != nil {
-		log.Errorln("解析订阅内容失败: %v", err)
-		return nil, fmt.Errorf("解析订阅内容失败: %w", err)
+		log.Errorln("订阅[ID:%d]解析失败，error type: %T", subscription.ID, err)
+		return nil, fmt.Errorf("解析订阅内容失败")
 	}
 
 	if len(newProxies) == 0 {
@@ -59,16 +65,16 @@ func (s *proxySyncer) Sync(ctx context.Context, subscription *model.Subscription
 
 	if len(toCreate) > 0 {
 		if err := s.proxyRepo.BatchCreate(toCreate); err != nil {
-			log.Errorln("批量创建代理失败: %v", err)
-			return nil, err
+			log.Errorln("订阅[ID:%d]批量创建代理失败，error type: %T", subscription.ID, err)
+			return nil, fmt.Errorf("批量创建代理失败")
 		}
 		log.Infoln("批量创建了 %d 个新代理", len(toCreate))
 	}
 
 	if len(toUpdate) > 0 {
 		if err := s.proxyRepo.BatchUpdateProxyConfig(toUpdate); err != nil {
-			log.Errorln("批量更新代理配置失败: %v", err)
-			return nil, err
+			log.Errorln("订阅[ID:%d]批量更新代理失败，error type: %T", subscription.ID, err)
+			return nil, fmt.Errorf("批量更新代理失败")
 		}
 		log.Infoln("批量更新了 %d 个代理", len(toUpdate))
 	}
@@ -96,7 +102,7 @@ func (s *proxySyncer) planProxyChanges(ctx context.Context, subscriptionID uint,
 
 		oldProxy, err := s.proxyRepo.FindByDomainPortPassword(newProxy.Domain, newProxy.Port, newProxy.Password)
 		if err != nil {
-			log.Errorln("查找旧代理失败: %v", err)
+			log.Errorln("订阅[ID:%d]查找代理失败，error type: %T", subscriptionID, err)
 			continue
 		}
 
@@ -130,7 +136,7 @@ func dedupeProxies(proxies []*model.Proxy) []*model.Proxy {
 	for _, proxy := range proxies {
 		key := proxy.DedupKey()
 		if exist[key] {
-			log.Infoln("跳过重复的代理服务器：%s:%d:%s", proxy.Domain, proxy.Port, proxy.Password)
+			log.Infoln("跳过重复的代理节点")
 			continue
 		}
 		exist[key] = true

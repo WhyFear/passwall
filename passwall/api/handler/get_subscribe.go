@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"passwall/internal/model"
 	"passwall/internal/service/proxy"
-	"strconv"
 	"strings"
 
 	"passwall/internal/adapter/generator"
@@ -24,7 +23,6 @@ const (
 )
 
 type SubscribeReq struct {
-	Token       string `form:"token" required:"true"`
 	Type        string `form:"type" required:"true"`
 	StatusStr   string `form:"status"`
 	ProxyType   string `form:"proxy_type"`
@@ -44,7 +42,7 @@ func GetSubscribe(proxyService proxy.ProxyService, generatorFactory generator.Ge
 		// 解析请求参数
 		var req SubscribeReq
 		if err := c.ShouldBindQuery(&req); err != nil {
-			log.Errorln("解析请求参数失败: %v", err)
+			log.Errorln("解析订阅请求参数失败，error type: %T", err)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"result":      "fail",
 				"status_code": http.StatusBadRequest,
@@ -86,8 +84,8 @@ func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService,
 
 		proxies, _, err = proxyService.GetProxiesByFilters(filters, req.Sort, req.SortOrder, 1, limit)
 		if err != nil {
-			log.Errorln("查询代理服务器失败: %v", err)
-			return nil, fmt.Errorf("Failed to query proxies: %w", err)
+			log.Errorln("查询订阅代理失败，error type: %T", err)
+			return nil, fmt.Errorf("Failed to query proxies")
 		}
 
 		if len(proxies) == 0 {
@@ -96,17 +94,21 @@ func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService,
 		}
 	}
 
-	if req.WithIndex {
-		for i, singleProxy := range proxies {
-			singleProxy.Name = "[" + strconv.Itoa(i+1) + "]-" + singleProxy.Name
-
-			if subType == SubscribeTypeClash {
-				if err := updateProxyConfigName(singleProxy); err != nil {
-					log.Errorln("%s: %v，id：%v", ErrConfigUpdate, err, singleProxy.ID)
-					continue
-				}
+	runtimeProxies := make([]*model.Proxy, 0, len(proxies))
+	for i, storedProxy := range proxies {
+		runtimeProxy := *storedProxy
+		index := 0
+		if req.WithIndex {
+			index = i + 1
+		}
+		runtimeProxy.Name = storedProxy.RuntimeName(index)
+		if subType == SubscribeTypeClash {
+			if err := updateProxyConfigName(&runtimeProxy); err != nil {
+				log.Errorln("%s，proxy ID: %v，error type: %T", ErrConfigUpdate, storedProxy.ID, err)
+				continue
 			}
 		}
+		runtimeProxies = append(runtimeProxies, &runtimeProxy)
 	}
 
 	subscribeGenerator, err := generatorFactory.GetGenerator(subType)
@@ -115,13 +117,13 @@ func GenerateSubscribeContent(req SubscribeReq, proxyService proxy.ProxyService,
 		return nil, fmt.Errorf("Unsupported subscription type: %s", subType)
 	}
 
-	content, err := subscribeGenerator.Generate(proxies)
+	content, err := subscribeGenerator.Generate(runtimeProxies)
 	if err != nil {
-		log.Errorln("生成订阅内容失败: %v", err.Error())
+		log.Errorln("生成订阅内容失败，error type: %T", err)
 		return nil, err
 	}
 
-	log.Infoln("成功生成订阅，类型: %s，代理数量: %d", subType, len(proxies))
+	log.Infoln("成功生成订阅，类型: %s，代理数量: %d", subType, len(runtimeProxies))
 	return content, nil
 }
 
@@ -154,7 +156,7 @@ func writeSubscribeError(c *gin.Context, err error) {
 	c.JSON(http.StatusInternalServerError, gin.H{
 		"result":      "fail",
 		"status_code": http.StatusInternalServerError,
-		"status_msg":  "Failed to generate subscription: " + msg,
+		"status_msg":  "Failed to generate subscription",
 	})
 }
 

@@ -33,7 +33,7 @@ func ReloadSubscription(ctx context.Context, subscriptionManager proxy.Subscript
 		// 获取当前配置以检查是否使用代理
 		cfg, err := configService.GetConfig()
 		if err != nil {
-			log.Errorln("获取配置失败: %v", err)
+			log.Errorln("获取订阅刷新配置失败，error type: %T", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"result":      "error",
 				"status_code": http.StatusInternalServerError,

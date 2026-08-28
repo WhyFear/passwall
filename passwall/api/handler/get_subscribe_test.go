@@ -172,7 +172,7 @@ func TestGetSubscribeMapsGeneratorNotImplementedError(t *testing.T) {
 func TestGetSubscribeMapsGenericGeneratorError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	generatorFactory := generator.NewGeneratorFactory()
-	generatorFactory.RegisterGenerator("test", fakeSubscribeGenerator{err: errors.New("boom")})
+	generatorFactory.RegisterGenerator("test", fakeSubscribeGenerator{err: errors.New("raw-subscription-secret")})
 	router := gin.New()
 	router.GET("/subscribe", GetSubscribe(&fakeSubscribeProxyService{
 		proxies: []*model.Proxy{{ID: 1, Name: "node-1"}},
@@ -184,6 +184,7 @@ func TestGetSubscribeMapsGenericGeneratorError(t *testing.T) {
 	router.ServeHTTP(resp, req)
 
 	assert.Equal(t, http.StatusInternalServerError, resp.Code)
+	assert.NotContains(t, resp.Body.String(), "raw-subscription-secret")
 }
 
 func TestGenerateSubscribeContentUsesSingleProxyByID(t *testing.T) {
@@ -233,22 +234,27 @@ func TestGenerateSubscribeContentReturnsEmptyWhenNoProxiesMatch(t *testing.T) {
 	assert.Empty(t, content)
 }
 
-func TestGenerateSubscribeContentWithIndexUpdatesClashConfigNames(t *testing.T) {
-	proxies := []*model.Proxy{{
-		ID:     1,
-		Name:   "node-1",
-		Config: `{"name":"old"}`,
-	}}
+func TestGenerateSubscribeContentEncodesStableIDsInRuntimeNames(t *testing.T) {
+	proxies := []*model.Proxy{
+		{ID: 1, Name: "same", Config: `{"name":"old-1"}`},
+		{ID: 2, Name: "same", Config: `{"name":"old-2"}`},
+	}
 	proxyService := &fakeSubscribeProxyService{proxies: proxies, total: 1}
+	generated := make([]*model.Proxy, 0, len(proxies))
 	generatorFactory := generator.NewGeneratorFactory()
-	generatorFactory.RegisterGenerator(SubscribeTypeClash, fakeSubscribeGenerator{})
+	generatorFactory.RegisterGenerator(SubscribeTypeClash, capturingSubscribeGenerator{generated: &generated})
 
 	content, err := GenerateSubscribeContent(SubscribeReq{Type: SubscribeTypeClash, WithIndex: true}, proxyService, generatorFactory)
 
 	require.NoError(t, err)
 	assert.Equal(t, []byte("generated"), content)
-	assert.Equal(t, "[1]-node-1", proxies[0].Name)
-	assert.Contains(t, proxies[0].Config, "[1]-node-1")
+	require.Len(t, generated, 2)
+	assert.Equal(t, "[pw:1]-[1]-same", generated[0].Name)
+	assert.Equal(t, "[pw:2]-[2]-same", generated[1].Name)
+	assert.Contains(t, generated[0].Config, `"name":"[pw:1]-[1]-same"`)
+	assert.Contains(t, generated[1].Config, `"name":"[pw:2]-[2]-same"`)
+	assert.Equal(t, "same", proxies[0].Name, "generation must not mutate repository models")
+	assert.Equal(t, `{"name":"old-1"}`, proxies[0].Config)
 }
 
 type fakeSubscribeShareConfigService struct {
@@ -314,3 +320,17 @@ func (g fakeSubscribeGenerator) Generate(_ []*model.Proxy) ([]byte, error) {
 func (fakeSubscribeGenerator) Format() string {
 	return "test"
 }
+
+type capturingSubscribeGenerator struct {
+	generated *[]*model.Proxy
+}
+
+func (g capturingSubscribeGenerator) Generate(proxies []*model.Proxy) ([]byte, error) {
+	for _, proxy := range proxies {
+		copy := *proxy
+		*g.generated = append(*g.generated, &copy)
+	}
+	return []byte("generated"), nil
+}
+
+func (capturingSubscribeGenerator) Format() string { return SubscribeTypeClash }

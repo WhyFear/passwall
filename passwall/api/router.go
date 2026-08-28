@@ -17,15 +17,16 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	ctx = context.WithValue(ctx, "concurrent", cfg.Concurrent)
 
 	// 创建Gin路由
-	router := gin.Default()
+	router := gin.New()
 	// 添加中间件
+	router.Use(middleware.AccessLogger())
 	router.Use(middleware.Cors())
 	router.Use(middleware.Recovery())
 	// no token required
 	router.GET("/s/:slug", handler.GetSharedSubscribe(services.ShareConfigService, services.ProxyService, services.GeneratorFactory))
 
 	openApiGroup := router.Group("/api")
-	openAuthMiddleware := middleware.AuthReq(cfg.Token)
+	openAuthMiddleware := middleware.Auth(cfg.Token)
 	openApiGroup.Use(openAuthMiddleware)
 	{
 		openApiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
@@ -72,7 +73,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager, scheduler))
 
 		// 获取代理信息
-		webGroup.GET("/proxies", handler.GetProxyList(services.ProxyService, services.SubscriptionManager))
+		webGroup.GET("/proxies", handler.GetProxyList(services.ProxyService))
 		webGroup.GET("/proxies/metadata", handler.GetProxyMetadata(services.SpeedTestHistoryService, services.IPDetectorService))
 		webGroup.GET("/proxies/:id/details", handler.GetProxyDetails(services.StatisticsService, services.IPDetectorService))
 		// 获取代理历史测速记录

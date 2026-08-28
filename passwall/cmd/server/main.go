@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"passwall/api"
 	"passwall/config"
@@ -43,8 +44,8 @@ func main() {
 		mergedConfig.Token = cfg.Token
 	}
 
-	if mergedConfig.ClashAPI.Enable {
-		_ = services.StatisticsService.Start()
+	if err := services.StatisticsService.Restart(mergedConfig.ClashAPI); err != nil {
+		log.Fatalf("Failed to start traffic statistics service: %v", err)
 	}
 
 	// 4. 初始化调度器
@@ -84,8 +85,18 @@ func main() {
 
 	// 停止调度器
 	newScheduler.Stop()
-	if cfg.ClashAPI.Enable {
-		services.StatisticsService.Stop()
+	const trafficStopAttempts = 5
+	for attempt := 1; attempt <= trafficStopAttempts; attempt++ {
+		if err := services.StatisticsService.Stop(); err != nil {
+			if attempt == trafficStopAttempts {
+				log.Printf("Failed to stop traffic statistics service after %d attempts: %v", attempt, err)
+				break
+			}
+			log.Printf("Failed to stop traffic statistics service, retrying (%d/%d): %v", attempt, trafficStopAttempts, err)
+			time.Sleep(time.Second)
+			continue
+		}
+		break
 	}
 
 	log.Println("Server exiting")

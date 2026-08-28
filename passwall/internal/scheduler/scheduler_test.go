@@ -31,21 +31,44 @@ func TestSchedulerInitRegistersConfiguredJobs(t *testing.T) {
 	assert.Contains(t, jobs, "nightly")
 }
 
-func TestSchedulerInitSkipsInvalidSchedules(t *testing.T) {
+func TestSchedulerInitRejectsInvalidSchedulesWithoutReplacingCurrentJobs(t *testing.T) {
 	scheduler := NewScheduler()
 	scheduler.SetServices(nil, nil, &fakeSubscriptionManager{}, nil, nil)
+	require.NoError(t, scheduler.Init(config.Config{
+		CronJobs: []config.CronJob{{Name: "current", Schedule: "0 0 0 1 1 *"}},
+	}))
+	defer scheduler.Stop()
 
 	err := scheduler.Init(config.Config{
 		CronJobs: []config.CronJob{
 			{Name: "invalid", Schedule: "not a cron"},
 		},
 	})
-	require.NoError(t, err)
-	defer scheduler.Stop()
+	require.Error(t, err)
 
 	status := scheduler.GetStatus()
 	jobs := status["jobs"].(map[string]interface{})
+	assert.Contains(t, jobs, "current")
 	assert.NotContains(t, jobs, "invalid")
+}
+
+func TestSchedulerInitRejectsDuplicateAndReservedJobNames(t *testing.T) {
+	scheduler := NewScheduler()
+	scheduler.SetServices(nil, nil, &fakeSubscriptionManager{}, nil, nil)
+
+	err := scheduler.Validate(config.Config{CronJobs: []config.CronJob{
+		{Name: "duplicate", Schedule: "0 0 0 1 1 *"},
+		{Name: "duplicate", Schedule: "0 0 1 1 1 *"},
+	}})
+	require.ErrorContains(t, err, "duplicate")
+
+	err = scheduler.Validate(config.Config{CronJobs: []config.CronJob{
+		{Name: "default_sub_update", Schedule: "0 0 0 1 1 *"},
+	}})
+	require.ErrorContains(t, err, "reserved")
+
+	err = scheduler.Validate(config.Config{DefaultSub: config.DefaultSubscriptionUpdateConfig{AutoUpdate: true}})
+	require.ErrorContains(t, err, "interval is empty")
 }
 
 func TestSchedulerInitRequiresServices(t *testing.T) {
@@ -55,6 +78,22 @@ func TestSchedulerInitRequiresServices(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "scheduler services are not set")
+}
+
+func TestUpdateSubscriptionJobKeepsOldJobWhenReplacementIsInvalid(t *testing.T) {
+	manager := &fakeSubscriptionManager{sub: &model.Subscription{ID: 7, Status: model.SubscriptionStatusOK}}
+	scheduler := NewScheduler()
+	scheduler.SetServices(nil, nil, manager, nil, nil)
+	require.NoError(t, scheduler.Init(config.Config{}))
+	defer scheduler.Stop()
+
+	manager.config = &model.SubscriptionConfig{SubscriptionID: 7, AutoUpdate: true, UpdateInterval: "0 0 0 1 1 *"}
+	require.NoError(t, scheduler.UpdateSubscriptionJob(7))
+	assert.Contains(t, scheduler.GetStatus()["jobs"].(map[string]interface{}), "sub_update_7")
+
+	manager.config = &model.SubscriptionConfig{SubscriptionID: 7, AutoUpdate: true, UpdateInterval: "invalid"}
+	require.Error(t, scheduler.UpdateSubscriptionJob(7))
+	assert.Contains(t, scheduler.GetStatus()["jobs"].(map[string]interface{}), "sub_update_7")
 }
 
 func TestSchedulerCronSkipsOverlappingRuns(t *testing.T) {
@@ -109,8 +148,18 @@ func TestSchedulerCronContinuesAfterRecoveredPanic(t *testing.T) {
 
 type fakeSubscriptionManager struct {
 	proxyservice.SubscriptionManager
+	sub    *model.Subscription
+	config *model.SubscriptionConfig
 }
 
 func (f *fakeSubscriptionManager) GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error) {
 	return nil, nil
+}
+
+func (f *fakeSubscriptionManager) GetSubscriptionByID(uint) (*model.Subscription, error) {
+	return f.sub, nil
+}
+
+func (f *fakeSubscriptionManager) GetSubscriptionConfig(uint) (*model.SubscriptionConfig, error) {
+	return f.config, nil
 }

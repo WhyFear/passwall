@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"passwall/config"
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 	"passwall/internal/util"
 
-	"passwall/config"
+	"github.com/metacubex/mihomo/log"
 )
 
 type SubsPage struct {
@@ -145,7 +146,13 @@ func (s *subscriptionManagerImpl) UpdateSubscriptionStatus(subscription *model.S
 
 // DeleteSubscription 删除订阅
 func (s *subscriptionManagerImpl) DeleteSubscription(id uint) error {
-	return s.subscriptionRepo.Delete(id)
+	if err := s.subscriptionRepo.Delete(id); err != nil {
+		return err
+	}
+	if _, timedOut := s.refresher.taskManager.CancelResourceTask(task.TaskTypeReloadSubs, id, true); timedOut {
+		log.Warnln("等待订阅[ID:%d]刷新任务取消超时", id)
+	}
+	return nil
 }
 
 // RefreshSubscriptionAsync 刷新单个订阅
@@ -157,6 +164,9 @@ func (s *subscriptionManagerImpl) RefreshSubscriptionAsync(ctx context.Context, 
 
 	if subscription == nil {
 		return fmt.Errorf("订阅不存在")
+	}
+	if subscription.Status == model.SubscriptionStatusDeleted {
+		return fmt.Errorf("订阅已删除")
 	}
 	s.refresher.RefreshAsync(ctx, subscription, options)
 	return nil

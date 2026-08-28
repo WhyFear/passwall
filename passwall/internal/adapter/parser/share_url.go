@@ -27,7 +27,7 @@ func (p *ShareURLParser) Parse(content []byte) ([]*model.Proxy, error) {
 		// 转换成proxy格式
 		singleProxy, err := parseProxies(proxy)
 		if err != nil {
-			log.Warnln("parse proxies error: %v", err)
+			log.Warnln("parse proxy failed, error type: %T", err)
 			continue
 		}
 		proxyList = append(proxyList, singleProxy)

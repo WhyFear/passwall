@@ -34,18 +34,17 @@ type ProxyReq struct {
 }
 
 type ProxyResp struct {
-	ID              int        `json:"id"`
-	SubscriptionUrl string     `json:"subscription_url"`
-	Name            string     `json:"name"`
-	Address         string     `json:"address"`
-	Type            string     `json:"type"`
-	Status          int        `json:"status"`
-	Pinned          bool       `json:"pinned"`
-	Ping            int        `json:"ping"`
-	DownloadSpeed   int        `json:"download_speed"`
-	UploadSpeed     int        `json:"upload_speed"`
-	LatestTestTime  *time.Time `json:"latest_test_time"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID             int        `json:"id"`
+	Name           string     `json:"name"`
+	Address        string     `json:"address"`
+	Type           string     `json:"type"`
+	Status         int        `json:"status"`
+	Pinned         bool       `json:"pinned"`
+	Ping           int        `json:"ping"`
+	DownloadSpeed  int        `json:"download_speed"`
+	UploadSpeed    int        `json:"upload_speed"`
+	LatestTestTime *time.Time `json:"latest_test_time"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // PaginatedResponse 分页响应
@@ -79,7 +78,7 @@ type ProxyDetailsResponse struct {
 }
 
 // GetProxyList 获取代理主列表。列表页慢数据由 GetProxyMetadata 和 GetProxyDetails 异步加载。
-func GetProxyList(proxyService proxy.ProxyService, subscriptionManager proxy.SubscriptionManager) gin.HandlerFunc {
+func GetProxyList(proxyService proxy.ProxyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ProxyReq
 		if err := c.ShouldBindQuery(&req); err != nil {
@@ -118,35 +117,20 @@ func GetProxyList(proxyService proxy.ProxyService, subscriptionManager proxy.Sub
 			return
 		}
 
-		subscriptionUrls := make(map[uint]string)
 		result := make([]ProxyResp, 0, len(proxies))
 		for _, singleProxy := range proxies {
-			subscriptionUrl := "未知"
-			if singleProxy.SubscriptionID != nil {
-				if url, ok := subscriptionUrls[*singleProxy.SubscriptionID]; ok {
-					subscriptionUrl = url
-				} else {
-					subscription, err := subscriptionManager.GetSubscriptionByID(*singleProxy.SubscriptionID)
-					if err == nil && subscription != nil {
-						subscriptionUrl = subscription.URL
-						subscriptionUrls[*singleProxy.SubscriptionID] = subscriptionUrl
-					}
-				}
-			}
-
 			result = append(result, ProxyResp{
-				ID:              int(singleProxy.ID),
-				SubscriptionUrl: subscriptionUrl,
-				Name:            singleProxy.Name,
-				Address:         singleProxy.Domain + ":" + strconv.Itoa(singleProxy.Port),
-				Type:            string(singleProxy.Type),
-				Status:          int(singleProxy.Status),
-				Pinned:          singleProxy.Pinned,
-				Ping:            singleProxy.Ping,
-				DownloadSpeed:   singleProxy.DownloadSpeed,
-				UploadSpeed:     singleProxy.UploadSpeed,
-				LatestTestTime:  singleProxy.LatestTestTime,
-				CreatedAt:       singleProxy.CreatedAt,
+				ID:             int(singleProxy.ID),
+				Name:           singleProxy.Name,
+				Address:        singleProxy.Domain + ":" + strconv.Itoa(singleProxy.Port),
+				Type:           string(singleProxy.Type),
+				Status:         int(singleProxy.Status),
+				Pinned:         singleProxy.Pinned,
+				Ping:           singleProxy.Ping,
+				DownloadSpeed:  singleProxy.DownloadSpeed,
+				UploadSpeed:    singleProxy.UploadSpeed,
+				LatestTestTime: singleProxy.LatestTestTime,
+				CreatedAt:      singleProxy.CreatedAt,
 			})
 		}
 

@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"math"
 
 	"passwall/internal/model"
 	"passwall/internal/repository"
@@ -227,26 +226,15 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 			log.Infoln("代理 %d 的测速历史记录不足 %d 条，跳过", proxy.ID, req.TestTimes)
 			continue
 		}
-		// 计算成功率
+		// 计算成功率：下载成功是基础条件，其他启用的阈值必须全部达标。
 		successCount := 0
 		for _, history := range speedTestHistory.Items {
-			satisfy := false
-			if history.DownloadSpeed > req.DownloadSpeedThreshold {
-				satisfy = true
-			}
-			if history.UploadSpeed > req.UploadSpeedThreshold {
-				satisfy = true
-			}
-			if history.Ping > req.PingThreshold {
-				satisfy = true
-			}
-			if satisfy {
+			if speedTestMeetsThresholds(history, req) {
 				successCount++
 			}
 		}
 		successRate := float64(successCount) / float64(req.TestTimes) * 100
-		successRate = math.Trunc(successRate*100) / 100
-		if successRate <= req.SuccessRateThreshold {
+		if successRateBelowThreshold(successCount, req.TestTimes, req.SuccessRateThreshold) {
 			log.Infoln("代理 %d 的成功数为 %v，成功率为 %.2f，低于阈值 %v，将被封禁", proxy.ID, successCount, successRate, req.SuccessRateThreshold)
 			proxiesToBan = append(proxiesToBan, proxy.ID)
 		}
@@ -266,4 +254,15 @@ func (s *DefaultProxyService) BanProxy(ctx context.Context, req BanProxyReq) err
 	log.Infoln("处理完成，共封禁 %d 个代理,共计 %d 个代理", len(proxiesToBan), len(allProxies))
 
 	return nil
+}
+
+func successRateBelowThreshold(successCount, total int, threshold float64) bool {
+	return total > 0 && float64(successCount)/float64(total)*100 < threshold
+}
+
+func speedTestMeetsThresholds(history *model.SpeedTestHistory, req BanProxyReq) bool {
+	return history.DownloadSpeed > 0 &&
+		(req.DownloadSpeedThreshold <= 0 || history.DownloadSpeed >= req.DownloadSpeedThreshold) &&
+		(req.UploadSpeedThreshold <= 0 || history.UploadSpeed >= req.UploadSpeedThreshold) &&
+		(req.PingThreshold <= 0 || history.Ping > 0 && history.Ping <= req.PingThreshold)
 }

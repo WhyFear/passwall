@@ -181,6 +181,24 @@ func TestTaskManagerCancelTaskCancelsActiveResourceTasks(t *testing.T) {
 	assert.Equal(t, 2, status.Total)
 }
 
+func TestTaskManagerCancelResourceTaskOnlyCancelsTarget(t *testing.T) {
+	manager := NewTaskManager()
+
+	ctxOne, startedOne := manager.StartResourceTask(context.Background(), TaskTypeReloadSubs, 1, 1)
+	ctxTwo, startedTwo := manager.StartResourceTask(context.Background(), TaskTypeReloadSubs, 2, 1)
+	require.True(t, startedOne)
+	require.True(t, startedTwo)
+
+	cancelled, timedOut := manager.CancelResourceTask(TaskTypeReloadSubs, 1, false)
+
+	assert.True(t, cancelled)
+	assert.False(t, timedOut)
+	assert.ErrorIs(t, ctxOne.Err(), context.Canceled)
+	assert.NoError(t, ctxTwo.Err())
+	assert.True(t, manager.IsResourceRunning(TaskTypeReloadSubs, 1))
+	assert.True(t, manager.IsResourceRunning(TaskTypeReloadSubs, 2))
+}
+
 func TestTaskManagerCancelTask(t *testing.T) {
 	manager := NewTaskManager()
 

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"testing"
 
 	"passwall/internal/model"
@@ -10,6 +11,27 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestProxyRepositoryBatchUpdateStopsAtFirstError(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	proxies := []*model.Proxy{
+		{Name: "one", Domain: "one.example", Port: 1001, Password: "p1", Type: model.ProxyTypeSS},
+		{Name: "two", Domain: "two.example", Port: 1002, Password: "p2", Type: model.ProxyTypeSS},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	updates := 0
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("test:fail-first-proxy-update", func(tx *gorm.DB) {
+		updates++
+		tx.AddError(errors.New("write failed"))
+	}))
+
+	err := repo.BatchUpdateProxyConfig(proxies)
+
+	require.ErrorContains(t, err, "write failed")
+	assert.Equal(t, 1, updates)
+}
 
 func TestProxyRepositoryFindPageFiltersSortsAndPaginates(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)

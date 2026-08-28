@@ -48,8 +48,8 @@ type Proxy struct {
 	Type           ProxyType   `json:"type" gorm:"index:idx_proxies_type"`
 	Config         string      `json:"config"`         // JSON格式存储
 	Ping           int         `json:"ping"`           // 延迟(ms)
-	DownloadSpeed  int         `json:"download_speed"` // 下载速度(KB/s)
-	UploadSpeed    int         `json:"upload_speed"`   // 上传速度(KB/s)
+	DownloadSpeed  int         `json:"download_speed"` // 下载速度(B/s)
+	UploadSpeed    int         `json:"upload_speed"`   // 上传速度(B/s)
 	Status         ProxyStatus `json:"status" gorm:"index:idx_proxies_status"`
 	Pinned         bool        `json:"pinned"` // 是否置顶
 	LatestTestTime *time.Time  `json:"latest_test_time"`

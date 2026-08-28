@@ -74,6 +74,8 @@ type ClashAPIClient struct {
 	Secret string `yaml:"secret" json:"secret"`
 }
 
+const AutoBanUnitVersion = 2
+
 type BanProxyConfig struct {
 	Enable                 bool    `yaml:"enable" json:"enable"`
 	SuccessRateThreshold   float64 `yaml:"success_rate_threshold" json:"success_rate_threshold"`
@@ -81,6 +83,7 @@ type BanProxyConfig struct {
 	UploadSpeedThreshold   int     `yaml:"upload_speed_threshold" json:"upload_speed_threshold"`
 	PingThreshold          int     `yaml:"ping_threshold" json:"ping_threshold"`
 	TestTimes              int     `yaml:"test_times" json:"test_times"`
+	UnitVersion            int     `yaml:"unit_version,omitempty" json:"unit_version,omitempty"`
 }
 
 type TestProxyConfig struct {

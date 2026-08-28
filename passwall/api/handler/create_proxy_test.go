@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"passwall/config"
 	"passwall/internal/adapter/parser"
@@ -16,6 +18,7 @@ import (
 	"passwall/internal/service/proxy"
 
 	"github.com/gin-gonic/gin"
+	"github.com/metacubex/mihomo/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +67,37 @@ func TestCreateProxyReportsFailureAfterSubscriptionWasCreated(t *testing.T) {
 	assert.Equal(t, "fail", result["result"])
 	assert.Equal(t, float64(http.StatusBadRequest), result["status_code"])
 	assert.Equal(t, model.SubscriptionStatusInvalid, subscriptions.status)
+}
+
+func TestCreateProxyDownloadFailureDoesNotLogCredentialURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
+	handler := CreateProxy(
+		&fakeCreateProxyService{},
+		&fakeCreateSubscriptionManager{},
+		&fakeCreateParserFactory{},
+		fakeCreateProxyTester{},
+		fakeCreateIPDetector{},
+		fakeCreateConfigService{},
+	)
+	router := gin.New()
+	router.POST("/create_proxy", handler)
+	body := bytes.NewBufferString(`{"url":"https://user:password@%41?token=create-url-secret","type":"fake"}`)
+	request := httptest.NewRequest(http.MethodPost, "/create_proxy", body)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.NotContains(t, response.Body.String(), "create-url-secret")
+	select {
+	case event := <-events:
+		assert.NotContains(t, strings.ToLower(event.Payload), "create-url-secret")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for import log")
+	}
 }
 
 type fakeCreateParserFactory struct {

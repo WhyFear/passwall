@@ -3,12 +3,14 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"passwall/internal/model"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
 	"passwall/internal/util"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 // Scheduler 定时任务调度器
 type Scheduler struct {
 	cron            *cron.Cron
+	reloadMutex     sync.Mutex
 	jobMutex        sync.Mutex
 	isRunning       bool
 	taskManager     task.TaskManager
@@ -34,6 +37,12 @@ type Scheduler struct {
 	configMutex   sync.RWMutex
 	customConfigs map[uint]*model.SubscriptionConfig
 	sysConfig     config.Config
+}
+
+type schedulerCandidate struct {
+	cron          *cron.Cron
+	jobIDs        map[string]cron.EntryID
+	customConfigs map[uint]*model.SubscriptionConfig
 }
 
 // NewScheduler 创建调度器
@@ -70,6 +79,14 @@ func (s *Scheduler) SetServices(taskManager task.TaskManager,
 
 // UpdateSubscriptionJob 更新订阅任务
 func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
+	s.reloadMutex.Lock()
+	defer s.reloadMutex.Unlock()
+
+	subscription, err := s.subsManager.GetSubscriptionByID(subID)
+	if err != nil {
+		return err
+	}
+
 	s.configMutex.Lock()
 	defer s.configMutex.Unlock()
 
@@ -77,6 +94,21 @@ func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	subscriptionConfig, err := s.subsManager.GetSubscriptionConfig(subID)
 	if err != nil {
 		return err
+	}
+	if subscription == nil || subscription.Status == model.SubscriptionStatusDeleted {
+		subscriptionConfig = nil
+	}
+	if subscriptionConfig != nil && subscriptionConfig.AutoUpdate && strings.TrimSpace(subscriptionConfig.UpdateInterval) == "" {
+		return errors.New("subscription update interval is empty")
+	}
+
+	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
+	var newEntryID cron.EntryID
+	if subscriptionConfig != nil && subscriptionConfig.AutoUpdate && subscriptionConfig.UpdateInterval != "" {
+		newEntryID, err = addCustomSubJob(s.cron, s.subsManager, subID, subscriptionConfig, s.sysConfig.Proxy)
+		if err != nil {
+			return fmt.Errorf("add custom subscription job %s: %w", jobName, err)
+		}
 	}
 
 	// 2. 更新内存映射
@@ -87,8 +119,6 @@ func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	}
 
 	// 3. 处理 Cron 任务
-	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
-
 	s.jobMutex.Lock()
 	defer s.jobMutex.Unlock()
 
@@ -100,72 +130,109 @@ func (s *Scheduler) UpdateSubscriptionJob(subID uint) error {
 	}
 
 	// 如果有自定义配置且开启了自动更新，添加新任务
-	if subscriptionConfig != nil && subscriptionConfig.AutoUpdate && subscriptionConfig.UpdateInterval != "" {
-		s.addCustomSubJobLocked(subID, subscriptionConfig, s.sysConfig.Proxy)
+	if newEntryID != 0 {
+		s.jobIDs[jobName] = newEntryID
+		log.Infoln("Added custom subscription update job %s with schedule %s", jobName, subscriptionConfig.UpdateInterval)
 	}
 	return nil
 }
 
+// Validate 验证完整候选调度配置，不替换当前运行态。
+func (s *Scheduler) Validate(sysConfig config.Config) error {
+	s.reloadMutex.Lock()
+	defer s.reloadMutex.Unlock()
+	_, err := s.buildCandidate(sysConfig)
+	return err
+}
+
 // Init 启动调度器
 func (s *Scheduler) Init(sysConfig config.Config) error {
-	if s.jobExecutor == nil || s.subsManager == nil {
-		return errors.New("scheduler services are not set")
-	}
+	s.reloadMutex.Lock()
+	defer s.reloadMutex.Unlock()
 
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
+	candidate, err := s.buildCandidate(sysConfig)
+	if err != nil {
+		return err
+	}
 
 	s.jobMutex.Lock()
-	defer s.jobMutex.Unlock()
-
-	// 如果已经在运行，先停止
-	if s.isRunning {
-		s.cron.Stop()
+	oldCron := s.cron
+	wasRunning := s.isRunning
+	s.isRunning = false
+	s.jobMutex.Unlock()
+	if wasRunning {
+		<-oldCron.Stop().Done()
 	}
 
-	// 重新创建cron
-	s.cron = newCron()
-	s.jobIDs = make(map[string]cron.EntryID)
+	s.jobMutex.Lock()
+	s.configMutex.Lock()
+	s.cron = candidate.cron
+	s.jobIDs = candidate.jobIDs
+	s.customConfigs = candidate.customConfigs
+	s.sysConfig = sysConfig
+	s.configMutex.Unlock()
+	s.cron.Start()
+	s.isRunning = true
+	s.jobMutex.Unlock()
+	return nil
+}
+
+func (s *Scheduler) buildCandidate(sysConfig config.Config) (*schedulerCandidate, error) {
+	if s.jobExecutor == nil || s.subsManager == nil {
+		return nil, errors.New("scheduler services are not set")
+	}
+
+	candidate := &schedulerCandidate{
+		cron:          newCron(),
+		jobIDs:        make(map[string]cron.EntryID),
+		customConfigs: make(map[uint]*model.SubscriptionConfig),
+	}
+	jobNames := make(map[string]struct{}, len(sysConfig.CronJobs))
 
 	// 添加任务
 	for _, job := range sysConfig.CronJobs {
-		// 检查任务配置是否有效
-		if job.Schedule == "" {
-			log.Infoln("Job %s has invalid schedule, skipping", job.Name)
-			continue
+		if strings.TrimSpace(job.Name) == "" || job.Name == "default_sub_update" || strings.HasPrefix(job.Name, "sub_update_") {
+			return nil, fmt.Errorf("invalid or reserved cron job name %q", job.Name)
 		}
+		if _, exists := jobNames[job.Name]; exists {
+			return nil, fmt.Errorf("duplicate cron job name %q", job.Name)
+		}
+		jobNames[job.Name] = struct{}{}
 
 		// 创建任务闭包
 		jobConfig := job // 创建副本避免闭包问题
-		entryID, err := s.cron.AddFunc(jobConfig.Schedule, func() {
+		entryID, err := candidate.cron.AddFunc(jobConfig.Schedule, func() {
 			s.jobExecutor.Execute(jobConfig)
 		})
 
 		if err != nil {
-			log.Infoln("Failed to add job %s: %v", job.Name, err)
-			continue
+			return nil, fmt.Errorf("add cron job %q: %w", job.Name, err)
 		}
 
 		// 存储任务ID
-		s.jobIDs[job.Name] = entryID
-		log.Infoln("Added job %s with schedule %s", job.Name, job.Schedule)
+		candidate.jobIDs[job.Name] = entryID
 	}
 
 	// 处理订阅更新任务
 	// 1. 获取所有订阅自定义配置
 	customConfigs, err := s.subsManager.GetAllSubscriptionConfigs()
 	if err != nil {
-		log.Errorln("Failed to get subscription configs: %v", err)
+		return nil, fmt.Errorf("get subscription configs: %w", err)
 	}
 
-	s.customConfigs = make(map[uint]*model.SubscriptionConfig)
 	for _, cfg := range customConfigs {
 		// 验证该配置对应的订阅是否未被删除
 		sub, err := s.subsManager.GetSubscriptionByID(cfg.SubscriptionID)
-		if err != nil || sub == nil || sub.Status == model.SubscriptionStatusDeleted {
+		if err != nil {
+			return nil, fmt.Errorf("get subscription %d: %w", cfg.SubscriptionID, err)
+		}
+		if sub == nil || sub.Status == model.SubscriptionStatusDeleted {
 			continue
 		}
-		s.customConfigs[cfg.SubscriptionID] = cfg
+		if _, exists := candidate.customConfigs[cfg.SubscriptionID]; exists {
+			return nil, fmt.Errorf("duplicate subscription config %d", cfg.SubscriptionID)
+		}
+		candidate.customConfigs[cfg.SubscriptionID] = cfg
 	}
 
 	// 2. 注册有个性化配置的任务
@@ -173,15 +240,25 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 	// 为了复用代码，UpdateSubscriptionJob 需要能够创建任务。
 	// 但 Init 这里有 sysConfig 上下文。
 
-	for subID, subCfg := range s.customConfigs {
-		if subCfg.AutoUpdate && subCfg.UpdateInterval != "" {
-			s.addCustomSubJobLocked(subID, subCfg, sysConfig.Proxy)
+	for subID, subCfg := range candidate.customConfigs {
+		if subCfg.AutoUpdate && strings.TrimSpace(subCfg.UpdateInterval) == "" {
+			return nil, fmt.Errorf("subscription %d update interval is empty", subID)
+		}
+		if subCfg.AutoUpdate {
+			entryID, err := addCustomSubJob(candidate.cron, s.subsManager, subID, subCfg, sysConfig.Proxy)
+			if err != nil {
+				return nil, fmt.Errorf("add custom subscription job %d: %w", subID, err)
+			}
+			candidate.jobIDs["sub_update_"+strconv.FormatUint(uint64(subID), 10)] = entryID
 		}
 	}
 
 	// 3. 处理默认订阅更新任务（针对没有自定义配置的订阅）
-	if sysConfig.DefaultSub.AutoUpdate && sysConfig.DefaultSub.Interval != "" {
-		entryID, err := s.cron.AddFunc(sysConfig.DefaultSub.Interval, func() {
+	if sysConfig.DefaultSub.AutoUpdate && strings.TrimSpace(sysConfig.DefaultSub.Interval) == "" {
+		return nil, errors.New("default subscription update interval is empty")
+	}
+	if sysConfig.DefaultSub.AutoUpdate {
+		entryID, err := candidate.cron.AddFunc(sysConfig.DefaultSub.Interval, func() {
 			ctx := context.Background()
 			log.Infoln("Executing default subscription update job (filtered)")
 
@@ -199,7 +276,6 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 				log.Errorln("Failed to get all subscriptions for default update: %v", err)
 				return
 			}
-
 			s.configMutex.RLock()
 			defer s.configMutex.RUnlock()
 
@@ -214,35 +290,16 @@ func (s *Scheduler) Init(sysConfig config.Config) error {
 		})
 
 		if err != nil {
-			log.Infoln("Failed to add default subscription update job: %v", err)
-		} else {
-			s.jobIDs["default_sub_update"] = entryID
-			log.Infoln("Added filtered default subscription update job with schedule %s", sysConfig.DefaultSub.Interval)
+			return nil, fmt.Errorf("add default subscription update job: %w", err)
 		}
+		candidate.jobIDs["default_sub_update"] = entryID
 	}
-
-	// 保存 sysConfig 以便后续使用 (需要修改 Struct)
-	s.sysConfig = sysConfig
-
-	// 启动cron
-	s.cron.Start()
-	s.isRunning = true
-
-	return nil
+	return candidate, nil
 }
 
-// addCustomSubJob 辅助方法：添加自定义订阅任务
-func (s *Scheduler) addCustomSubJob(subID uint, subCfg *model.SubscriptionConfig, proxyConfig config.Proxy) {
-	s.jobMutex.Lock()
-	defer s.jobMutex.Unlock()
-	s.addCustomSubJobLocked(subID, subCfg, proxyConfig)
-}
-
-func (s *Scheduler) addCustomSubJobLocked(subID uint, subCfg *model.SubscriptionConfig, proxyConfig config.Proxy) {
-	jobName := "sub_update_" + strconv.FormatUint(uint64(subID), 10)
-
+func addCustomSubJob(target *cron.Cron, subsManager proxy.SubscriptionManager, subID uint, subCfg *model.SubscriptionConfig, proxyConfig config.Proxy) (cron.EntryID, error) {
 	// 使用闭包捕获
-	entryID, err := s.cron.AddFunc(subCfg.UpdateInterval, func() {
+	return target.AddFunc(subCfg.UpdateInterval, func() {
 		ctx := context.Background()
 		log.Infoln("Executing custom subscription update job for sub %d", subID)
 
@@ -253,29 +310,27 @@ func (s *Scheduler) addCustomSubJobLocked(subID uint, subCfg *model.Subscription
 			}
 		}
 
-		if err := s.subsManager.RefreshSubscriptionAsync(ctx, subID, opts); err != nil {
+		if err := subsManager.RefreshSubscriptionAsync(ctx, subID, opts); err != nil {
 			log.Errorln("Custom subscription update failed for sub %d: %v", subID, err)
 		}
 	})
-
-	if err != nil {
-		log.Infoln("Failed to add custom job %s: %v", jobName, err)
-	} else {
-		s.jobIDs[jobName] = entryID
-		log.Infoln("Added custom subscription update job %s with schedule %s", jobName, subCfg.UpdateInterval)
-	}
 }
 
 // Stop 停止调度器
 func (s *Scheduler) Stop() {
-	s.jobMutex.Lock()
-	defer s.jobMutex.Unlock()
+	s.reloadMutex.Lock()
+	defer s.reloadMutex.Unlock()
 
-	if s.isRunning {
-		s.cron.Stop()
-		s.isRunning = false
-		log.Infoln("Scheduler stopped")
+	s.jobMutex.Lock()
+	if !s.isRunning {
+		s.jobMutex.Unlock()
+		return
 	}
+	cronToStop := s.cron
+	s.isRunning = false
+	s.jobMutex.Unlock()
+	<-cronToStop.Stop().Done()
+	log.Infoln("Scheduler stopped")
 }
 
 // GetStatus 获取调度器状态

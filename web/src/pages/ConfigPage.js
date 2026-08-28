@@ -25,6 +25,7 @@ const {Panel} = Collapse;
 
 const {TabPane} = Tabs;
 const {Option} = Select;
+const AUTO_BAN_UNIT_VERSION = 2;
 
 const ConfigPage = () => {
   const [form] = Form.useForm();
@@ -40,8 +41,25 @@ const ConfigPage = () => {
       if (!data.default_sub) {
         data.default_sub = {auto_update: false, interval: "0 0 4 * * *", use_proxy: false};
       }
-      form.setFieldsValue(data);
-      setInitialData(data); // 保存初始数据
+		const editableData = {
+			...data,
+			proxy: {enabled: data.proxy?.enabled},
+			ip_check: {...data.ip_check, ip_info: {enable: data.ip_check?.ip_info?.enable}},
+			clash_api: {
+				...data.clash_api,
+				clients: (data.clash_api?.clients || []).map(({existing_index}) => ({
+					existing_index, url: '', secret: '',
+				})),
+			},
+			cron_jobs: (data.cron_jobs || []).map(job => ({
+				...job,
+				webhook: (job.webhook || []).map(({existing_index, name, method}) => ({
+					existing_index, name, method, url: '', header: '', body: '',
+				})),
+			})),
+		};
+		form.setFieldsValue(editableData);
+		setInitialData(editableData);
 
       // 解析 Interval，设置模式
       const {mode, value, unit} = parseCronToSimple(data.default_sub.interval);
@@ -154,8 +172,7 @@ const ConfigPage = () => {
               {({getFieldValue}) => getFieldValue(['proxy', 'enabled']) && (<Form.Item
                 label="代理地址"
                 name={['proxy', 'url']}
-                rules={[{required: true, message: '请输入代理地址'}]}
-                help="例如: http://127.0.0.1:7890 或 socks5://127.0.0.1:1080"
+				help="敏感地址不回显；留空保留现有值，输入新值可替换"
               >
                 <Input placeholder="http://127.0.0.1:7890"/>
               </Form.Item>)}
@@ -200,23 +217,25 @@ const ConfigPage = () => {
               {(fields, {add, remove}) => (<>
                 {fields.map(({key, name, ...restField}) => (
                   <Space key={key} style={{display: 'flex', marginBottom: 8}} align="baseline">
+					<Form.Item {...restField} name={[name, 'existing_index']} hidden>
+						<InputNumber/>
+					</Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'url']}
-                      rules={[{required: true, message: 'Missing URL'}]}
                     >
-                      <Input placeholder="API URL"/>
+						<Input placeholder="API URL（留空保留）"/>
                     </Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'secret']}
                     >
-                      <Input placeholder="Secret (Optional)"/>
+						<Input.Password placeholder="Secret（留空保留）"/>
                     </Form.Item>
                     <DeleteOutlined onClick={() => remove(name)}/>
                   </Space>))}
                 <Form.Item>
-                  <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined/>}>
+				  <Button type="dashed" onClick={() => add({existing_index: -1})} block icon={<PlusOutlined/>}>
                     添加客户端
                   </Button>
                 </Form.Item>
@@ -263,6 +282,12 @@ const ConfigPage = () => {
                 {fields.map(({key, name, ...restField}) => (<Card key={key} size="small" style={{marginBottom: 16}}
                                                                   extra={<DeleteOutlined
                                                                     onClick={() => remove(name)}/>}>
+                  <Form.Item {...restField} name={[name, 'existing_index']} hidden>
+                    <InputNumber/>
+                  </Form.Item>
+                  <Form.Item {...restField} name={[name, 'auto_ban', 'unit_version']} hidden>
+                    <InputNumber/>
+                  </Form.Item>
                   <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item
@@ -317,18 +342,18 @@ const ConfigPage = () => {
                         <Col span={8}>
                           <Form.Item {...restField} name={[name, 'auto_ban', 'success_rate_threshold']}
                                      label="成功率阈值">
-                            <InputNumber step={0.1} min={0} max={1} placeholder="0.5" style={{width: '100%'}}/>
+                            <InputNumber step={1} min={0} max={100} placeholder="50" style={{width: '100%'}}/>
                           </Form.Item>
                         </Col>
                         <Col span={8}>
                           <Form.Item {...restField} name={[name, 'auto_ban', 'download_speed_threshold']}
-                                     label="下载阈值(KB/s)">
+                                     label="下载阈值(B/s)">
                             <InputNumber min={0} style={{width: '100%'}}/>
                           </Form.Item>
                         </Col>
                         <Col span={8}>
                           <Form.Item {...restField} name={[name, 'auto_ban', 'upload_speed_threshold']}
-                                     label="上传阈值(KB/s)">
+                                     label="上传阈值(B/s)">
                             <InputNumber min={0} style={{width: '100%'}}/>
                           </Form.Item>
                         </Col>
@@ -386,6 +411,9 @@ const ConfigPage = () => {
                                                             style={{marginBottom: 8}}
                                                             extra={<DeleteOutlined
                                                               onClick={() => removeWh(whField.name)}/>}>
+                            <Form.Item {...whField} name={[whField.name, 'existing_index']} hidden>
+                              <InputNumber/>
+                            </Form.Item>
                             <Row gutter={8}>
                               <Col span={12}>
                                 <Form.Item {...whField} name={[whField.name, 'name']} label="名称"
@@ -405,26 +433,26 @@ const ConfigPage = () => {
                               </Col>
                               <Col span={24}>
                                 <Form.Item {...whField} name={[whField.name, 'url']} label="URL"
-                                           rules={[{required: true}]}>
-                                  <Input/>
+															>
+									<Input placeholder="留空保留现有值"/>
                                 </Form.Item>
                               </Col>
                               <Col span={24}>
                                 <Form.Item {...whField} name={[whField.name, 'header']}
                                            label="Header (JSON 字符串)">
-                                  <Input.TextArea rows={2}
+									<Input.TextArea rows={2}
                                                   placeholder='{"Content-Type": "application/json"}'/>
                                 </Form.Item>
                               </Col>
                               <Col span={24}>
                                 <Form.Item {...whField} name={[whField.name, 'body']}
                                            label="Body (模板字符串)">
-                                  <Input.TextArea rows={3}/>
+									<Input.TextArea rows={3} placeholder="留空保留现有值"/>
                                 </Form.Item>
                               </Col>
                             </Row>
                           </Card>))}
-                          <Button type="dashed" onClick={() => addWh()} block icon={<PlusOutlined/>}>添加
+                          <Button type="dashed" onClick={() => addWh({existing_index: -1})} block icon={<PlusOutlined/>}>添加
                             Webhook</Button>
                         </>)}
                       </Form.List>
@@ -432,7 +460,7 @@ const ConfigPage = () => {
                   </Collapse>
                 </Card>))}
                 <Form.Item>
-                  <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined/>}>
+                  <Button type="dashed" onClick={() => add({existing_index: -1, auto_ban: {unit_version: AUTO_BAN_UNIT_VERSION}})} block icon={<PlusOutlined/>}>
                     添加 Cron 任务
                   </Button>
                 </Form.Item>

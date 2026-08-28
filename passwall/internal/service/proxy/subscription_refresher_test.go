@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"passwall/internal/service/task"
 	"passwall/internal/util"
 
+	"github.com/metacubex/mihomo/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +78,44 @@ func TestSubscriptionRefresherMarksInvalidOnDownloadFailure(t *testing.T) {
 	assert.Equal(t, model.SubscriptionStatusInvalid, subRepo.status)
 }
 
-func TestSubscriptionRefresherRefreshAsyncKeepsFailureMessage(t *testing.T) {
+func TestSubscriptionRefresherDoesNotExposeCredentialURLs(t *testing.T) {
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
+	refresher := newSubscriptionRefresher(
+		&fakeSubscriptionStatusRepository{},
+		task.NewTaskManager(),
+		&fakeConfigProvider{},
+		nil,
+		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
+		func(context.Context, string, *util.DownloadOptions) ([]byte, error) {
+			return nil, errors.New("GET https://user:password@example.test/sub?token=error-secret failed")
+		},
+	)
+
+	err := refresher.RefreshOne(
+		context.Background(),
+		&model.Subscription{ID: 7, URL: "https://user:password@example.test/sub?token=url-secret"},
+		&util.DownloadOptions{ProxyURL: "http://proxy-user:proxy-secret@proxy.test"},
+	)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "error-secret")
+	payloads := make([]string, 0, 3)
+	for len(payloads) < 3 {
+		select {
+		case event := <-events:
+			payloads = append(payloads, event.Payload)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for refresh logs")
+		}
+	}
+	logs := strings.Join(payloads, "\n")
+	for _, secret := range []string{"password", "url-secret", "error-secret", "proxy-secret"} {
+		assert.NotContains(t, logs, secret)
+	}
+}
+
+func TestSubscriptionRefresherRefreshAsyncSanitizesFailureMessage(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	refresher := newSubscriptionRefresher(
 		&fakeSubscriptionStatusRepository{},
@@ -110,7 +149,7 @@ func TestSubscriptionRefresherRefreshAsyncKeepsFailureMessage(t *testing.T) {
 		}
 	}
 	require.NotNil(t, status)
-	assert.Contains(t, status.Error, "network failed")
+	assert.Equal(t, "下载订阅内容失败", status.Error)
 }
 
 func TestSubscriptionRefresherRefreshManyKeepsCancellationMessage(t *testing.T) {
@@ -270,6 +309,10 @@ type fakeSubscriptionStatusRepository struct {
 	content string
 }
 
+func (r *fakeSubscriptionStatusRepository) FindByID(id uint) (*model.Subscription, error) {
+	return &model.Subscription{ID: id, Status: r.status}, nil
+}
+
 func (r *fakeSubscriptionStatusRepository) UpdateStatus(subscription *model.Subscription) error {
 	r.status = subscription.Status
 	return nil
@@ -278,6 +321,74 @@ func (r *fakeSubscriptionStatusRepository) UpdateStatus(subscription *model.Subs
 func (r *fakeSubscriptionStatusRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
 	r.status = subscription.Status
 	r.content = subscription.Content
+	return nil
+}
+
+func TestSubscriptionRefresherSkipsDeletedBulkItemsWithoutStoppingOthers(t *testing.T) {
+	subRepo := &bulkDeleteSubscriptionRepository{statuses: map[uint]model.SubscriptionStatus{
+		1: model.SubscriptionStatusOK,
+		2: model.SubscriptionStatusOK,
+		3: model.SubscriptionStatusOK,
+	}}
+	proxyRepo := &bulkDeleteProxyRepository{subRepo: subRepo}
+	refresher := newSubscriptionRefresher(
+		subRepo,
+		task.NewTaskManager(),
+		&fakeConfigProvider{},
+		nil,
+		newProxySyncer(&fakeParserFactory{parser: freshProxyParser{}}, proxyRepo),
+		func(_ context.Context, url string, _ *util.DownloadOptions) ([]byte, error) {
+			if url == "https://example.test/one" {
+				subRepo.statuses[1] = model.SubscriptionStatusDeleted
+			}
+			return []byte(url), nil
+		},
+	)
+
+	refresher.RefreshMany(context.Background(), []*model.Subscription{
+		{ID: 1, URL: "https://example.test/one", Type: model.SubscriptionTypeClash},
+		{ID: 2, URL: "https://example.test/two", Type: model.SubscriptionTypeClash},
+		{ID: 3, URL: "https://example.test/three", Type: model.SubscriptionTypeClash},
+	}, nil, false)
+
+	assert.Equal(t, []uint{2, 3}, proxyRepo.syncedIDs)
+	assert.Equal(t, []uint{3}, subRepo.okIDs)
+}
+
+type bulkDeleteSubscriptionRepository struct {
+	repository.SubscriptionRepository
+	statuses map[uint]model.SubscriptionStatus
+	okIDs    []uint
+}
+
+func (r *bulkDeleteSubscriptionRepository) FindByID(id uint) (*model.Subscription, error) {
+	return &model.Subscription{ID: id, Status: r.statuses[id]}, nil
+}
+
+func (r *bulkDeleteSubscriptionRepository) UpdateStatus(*model.Subscription) error { return nil }
+
+func (r *bulkDeleteSubscriptionRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
+	r.okIDs = append(r.okIDs, subscription.ID)
+	r.statuses[subscription.ID] = subscription.Status
+	return nil
+}
+
+type bulkDeleteProxyRepository struct {
+	repository.ProxyRepository
+	subRepo   *bulkDeleteSubscriptionRepository
+	syncedIDs []uint
+}
+
+func (r *bulkDeleteProxyRepository) FindByDomainPortPassword(string, int, string) (*model.Proxy, error) {
+	return nil, nil
+}
+
+func (r *bulkDeleteProxyRepository) BatchCreate(proxies []*model.Proxy) error {
+	id := *proxies[0].SubscriptionID
+	r.syncedIDs = append(r.syncedIDs, id)
+	if id == 2 {
+		r.subRepo.statuses[id] = model.SubscriptionStatusDeleted
+	}
 	return nil
 }
 

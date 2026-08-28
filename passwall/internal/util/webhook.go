@@ -86,7 +86,7 @@ func (wc *WebhookClient) ExecuteWebhook(webhook config.WebhookConfig, data map[s
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
+		return fmt.Errorf("failed to create webhook request")
 	}
 
 	// 处理请求头
@@ -120,13 +120,13 @@ func (wc *WebhookClient) ExecuteWebhook(webhook config.WebhookConfig, data map[s
 
 	resp, err := wc.Client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send webhook: %v", err)
+		return fmt.Errorf("failed to send webhook")
 	}
 	defer resp.Body.Close()
 
 	// 检查响应状态
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned non-2xx status: %s", resp.Status)
+		return fmt.Errorf("webhook returned HTTP status %d", resp.StatusCode)
 	}
 
 	return nil

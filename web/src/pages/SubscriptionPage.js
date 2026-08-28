@@ -3,7 +3,6 @@ import {Button, Form, message, Modal, Progress, Switch, Table, Tabs, Tag, Toolti
 import {
   DeleteOutlined,
   ExclamationCircleOutlined,
-  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
@@ -21,7 +20,6 @@ const SubscriptionPage = () => {
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalType, setModalType] = useState('add'); // 'add' 或 'view'
   const [currentSubscription, setCurrentSubscription] = useState(null);
   const [form] = Form.useForm();
   const [activeTab, setActiveTab] = useState('1');
@@ -208,44 +206,11 @@ const SubscriptionPage = () => {
 
   // 添加订阅
   const handleAddSubscription = () => {
-    setModalType('add');
     setCurrentSubscription(null);
     form.resetFields();
     setUploadType('url');
     form.setFieldsValue({upload_type: 'url', type: 'auto'});
     setModalVisible(true);
-  };
-
-  // 查看订阅详情
-  const handleViewSubscription = (record) => {
-    setModalType('view');
-    setCurrentSubscription(record);
-    setLoading(true);
-
-    // 调用API获取订阅详情，包含content内容
-    subscriptionApi.getSubscriptionDetail(record.id, true)
-      .then(data => {
-        if (data && data.total > 0) {
-          // 使用返回的详细数据
-          setCurrentSubscription(data.items[0]);
-          form.setFieldsValue(data.items[0]);
-        } else {
-          message.error('获取订阅详情失败:' + (data.status_msg || '未知错误'));
-          // 如果没有返回数据，使用原始记录
-          form.setFieldsValue(record);
-        }
-        setModalVisible(true);
-      })
-      .catch(error => {
-        message.error('获取订阅详情失败');
-        console.error(error);
-        // 失败时使用原始记录
-        form.setFieldsValue(record);
-        setModalVisible(true);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
   };
 
   // 提交表单
@@ -338,13 +303,11 @@ const SubscriptionPage = () => {
   const columns = [{
     title: '序号', key: 'index', width: 80, render: (_, __, index) => index + 1,
   }, {
-    title: '链接',
-    dataIndex: 'url',
-    key: 'url',
-    width: 400,
-    ellipsis: true,
-    render: (url) => /^https?:\/\//.test(url) ?
-      <a href={url} target="_blank" rel="noopener noreferrer">{url}</a> : (url || '-'),
+    title: '来源',
+    dataIndex: 'refreshable',
+    key: 'source',
+    width: 120,
+    render: (refreshable) => refreshable ? '远程订阅' : '本地导入',
   }, {
     title: '上次拉取状态',
     dataIndex: 'status',
@@ -375,20 +338,11 @@ const SubscriptionPage = () => {
     title: '添加时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (text) => formatDate(text),
   }, {
     title: '操作', key: 'action', width: 360, fixed: isMobile ? undefined : 'right', render: (_, record) => (<div>
-      <Tooltip title="查看内容">
-        <Button
-          type="text"
-          icon={<EyeOutlined/>}
-          onClick={() => handleViewSubscription(record)}
-        >
-          查看
-        </Button>
-      </Tooltip>
       <Tooltip title="刷新订阅">
         <Button
           type="text"
           icon={<ReloadOutlined/>}
-          disabled={!record.url || !record.url.startsWith('http')}
+			disabled={!record.refreshable}
           onClick={() => handleReloadSubs(record.id)}
         >
           刷新
@@ -398,7 +352,7 @@ const SubscriptionPage = () => {
         <Button
           type="text"
           icon={<SettingOutlined/>}
-          disabled={!record.url || !record.url.startsWith('http')}
+			disabled={!record.refreshable}
           onClick={() => handleOpenConfig(record)}
         >
           配置
@@ -494,13 +448,13 @@ const SubscriptionPage = () => {
       </Tabs.TabPane>
     </Tabs>
 
-    {/* 添加/查看订阅的弹窗 */}
+    {/* 添加订阅弹窗 */}
     <Modal
-      title={modalType === 'add' ? '添加订阅' : '订阅详情'}
+		title="添加订阅"
       open={modalVisible}
       onCancel={() => setModalVisible(false)}
-      footer={modalType === 'add' ? [<Button key="cancel" onClick={() => setModalVisible(false)}>
-        取消
+		footer={[<Button key="cancel" onClick={() => setModalVisible(false)}>
+			取消
       </Button>, <Button
         key="submit"
         type="primary"
@@ -508,15 +462,11 @@ const SubscriptionPage = () => {
         onClick={handleSubmit}
       >
         确定
-      </Button>] : [<Button key="close" type="primary" onClick={() => setModalVisible(false)}>
-        关闭
-      </Button>]}
+		</Button>]}
     >
       <SubscriptionForm
         form={form}
-        modalType={modalType}
         uploadType={uploadType}
-        currentSubscription={currentSubscription}
         onValuesChange={handleFormValuesChange}
       />
     </Modal>

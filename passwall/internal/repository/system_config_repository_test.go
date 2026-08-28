@@ -41,3 +41,20 @@ func TestSystemConfigRepositorySetManyRollsBackOnFailure(t *testing.T) {
 	assert.Equal(t, "7", values["concurrent"])
 	assert.JSONEq(t, `{"enabled":false}`, values["proxy"])
 }
+
+func TestSystemConfigRepositoryRestoreAllReplacesSnapshot(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.SystemConfig{}))
+	require.NoError(t, db.Create([]model.SystemConfig{
+		{Key: "concurrent", Value: "11"},
+		{Key: "new_key", Value: "new"},
+	}).Error)
+
+	repo := NewSystemConfigRepository(db)
+	require.NoError(t, repo.RestoreAll(map[string]string{"concurrent": "7"}))
+
+	values, err := repo.GetAll()
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"concurrent": "7"}, values)
+}

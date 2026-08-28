@@ -178,16 +178,16 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 				return
 			}
 			go func() {
-				for _, u := range req.URLList {
+				for batchIndex, u := range req.URLList {
 					if content, err := proc.download(u); err == nil {
-						_, i, err := proc.run(u, req.Type, content)
+						subscription, count, err := proc.run(u, req.Type, content)
 						if err != nil {
-							log.Errorln("订阅 [%s] 处理时错！ error：%v", u, err.Error())
+							log.Errorln("批量订阅[%d]处理失败，error type: %T", batchIndex, err)
 						} else {
-							log.Infoln("订阅 [%s] 处理成功，共 %d 个节点", u, i)
+							log.Infoln("批量订阅[%d][ID:%d]处理成功，共 %d 个节点", batchIndex, subscription.ID, count)
 						}
 					} else {
-						log.Errorln("订阅 [%s] 下载失败: %v", u, err)
+						log.Errorln("批量订阅[%d]下载失败，error type: %T", batchIndex, err)
 					}
 				}
 			}()
@@ -196,14 +196,14 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 		} else if req.URL != "" { // 分支 2: 单个 URL 导入 (同步)
 			content, err := proc.download(req.URL)
 			if err != nil {
-				log.Errorln("订阅 [%s] 下载失败: %v", req.URL, err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅下载失败: " + err.Error()})
+				log.Errorln("订阅下载失败，error type: %T", err)
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅下载失败"})
 				return
 			}
 			sub, count, err := proc.run(req.URL, req.Type, content)
 			if err != nil {
-				log.Errorln("订阅 [%s] 处理失败: %v", req.URL, err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败: " + err.Error()})
+				log.Errorln("订阅处理失败，error type: %T", err)
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败"})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})
@@ -216,8 +216,8 @@ func CreateProxy(proxyService proxy.ProxyService, subscriptionManager proxy.Subs
 			pseudoURL := util.MD5(string(content))[:20]
 			sub, count, err := proc.run(pseudoURL, req.Type, content)
 			if err != nil {
-				log.Errorln("订阅 [%s] 处理失败: %v", pseudoURL, err)
-				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败: " + err.Error()})
+				log.Errorln("本地订阅处理失败，error type: %T", err)
+				c.JSON(http.StatusOK, gin.H{"result": "fail", "status_code": http.StatusBadRequest, "status_msg": "订阅处理失败"})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{"result": "success", "status_code": http.StatusOK, "subscription_id": sub.ID, "proxy_count": count})

@@ -111,7 +111,7 @@ func parseProxies(proxy map[string]any) (*model.Proxy, error) {
 	}
 
 	if err := util.ValidateByType(singleProxy.Type, proxy); err != nil {
-		log.Errorln("校验代理配置失败: %v，domain=%v, port=%v", err, singleProxy.Domain, singleProxy.Port)
+		log.Errorln("校验代理配置失败，error type: %T", err)
 		return nil, fmt.Errorf("校验代理配置失败: %v", err)
 	}
 

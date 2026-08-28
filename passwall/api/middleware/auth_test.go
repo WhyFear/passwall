@@ -44,10 +44,10 @@ func TestAuthRejectsMissingBearerToken(t *testing.T) {
 	assert.Contains(t, resp.Body.String(), "Unauthorized")
 }
 
-func TestAuthReqAcceptsQueryToken(t *testing.T) {
+func TestSubscribeAuthRejectsQueryToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(AuthReq("secret"))
+	router.Use(Auth("secret"))
 	router.GET("/subscribe", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -57,6 +57,6 @@ func TestAuthReqAcceptsQueryToken(t *testing.T) {
 
 	router.ServeHTTP(resp, req)
 
-	assert.Equal(t, http.StatusOK, resp.Code)
-	assert.Contains(t, resp.Body.String(), `"ok":true`)
+	assert.Equal(t, http.StatusUnauthorized, resp.Code)
+	assert.NotContains(t, resp.Body.String(), `"ok":true`)
 }

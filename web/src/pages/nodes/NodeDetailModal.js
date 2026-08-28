@@ -24,7 +24,6 @@ const NodeDetailModal = ({
     {node && (<div>
       <Card title="基本信息" style={{marginBottom: 5}}>
         <InfoItem label="名称" value={node.name || '未命名'}/>
-        <InfoItem label="订阅链接" value={node.subscription_url}/>
         <InfoItem label="地址" value={node.address}/>
         <InfoItem label="节点类型" value={node.type}/>
         <InfoItem label="状态" value={<StatusTag status={node.status}/>}/>

@@ -136,7 +136,7 @@ func (e *cronJobExecutor) executeWebhooks(job config.CronJob) {
 	log.Infoln("Job '%s': Start to send webhook.", job.Name)
 	if errs := e.webhookClient.ExecuteWebhooks(job.Webhook, nil); len(errs) > 0 {
 		for _, err := range errs {
-			log.Errorln("Webhook execution error: %v", err)
+			log.Errorln("Webhook execution failed, error type: %T", err)
 		}
 		return
 	}

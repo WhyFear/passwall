@@ -91,6 +91,8 @@ type TaskManager interface {
 
 	// CancelTask 取消任务
 	CancelTask(taskType TaskType, wait bool) (bool, bool)
+	// CancelResourceTask 取消指定资源任务
+	CancelResourceTask(taskType TaskType, resourceID uint, wait bool) (bool, bool)
 
 	// IsRunning 检查指定类型的全局任务是否正在运行
 	IsRunning(taskType TaskType) bool
@@ -369,6 +371,37 @@ func (m *defaultTaskManager) CancelTask(taskType TaskType, wait bool) (bool, boo
 		m.markCancelWaitTimeout(taskType)
 	}
 	return true, timeout
+}
+
+func (m *defaultTaskManager) CancelResourceTask(taskType TaskType, resourceID uint, wait bool) (bool, bool) {
+	m.mu.Lock()
+	key := m.getTaskKey(taskType, resourceID)
+	t, exists := m.tasks[key]
+	if !exists || !isActiveState(t.status.State) {
+		m.mu.Unlock()
+		return false, false
+	}
+
+	t.cancelFunc()
+	t.status.State = TaskStateCanceling
+	if t.status.Error == "" {
+		t.status.Error = TaskCanceledMessage
+	}
+	doneChan := t.doneChan
+	m.mu.Unlock()
+
+	if !wait {
+		return true, false
+	}
+	timedOut := waitForDone([]chan struct{}{doneChan}, m.cancelWaitTimeout)
+	if timedOut {
+		m.mu.Lock()
+		if current, ok := m.tasks[key]; ok && current.status.State == TaskStateCanceling {
+			current.status.Error = "任务取消等待超时，仍在清理中"
+		}
+		m.mu.Unlock()
+	}
+	return true, timedOut
 }
 
 func (m *defaultTaskManager) activeResourceTasksLocked(taskType TaskType) []*taskInfo {

@@ -9,6 +9,7 @@ import (
 type SystemConfigRepository interface {
 	Get(key string) (*model.SystemConfig, error)
 	SetMany(values map[string]string) error
+	RestoreAll(values map[string]string) error
 	GetAll() (map[string]string, error)
 }
 
@@ -33,6 +34,20 @@ func (r *systemConfigRepository) SetMany(values map[string]string) error {
 		for key, value := range values {
 			config := model.SystemConfig{Key: key, Value: value}
 			if err := tx.Save(&config).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *systemConfigRepository) RestoreAll(values map[string]string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("1 = 1").Delete(&model.SystemConfig{}).Error; err != nil {
+			return err
+		}
+		for key, value := range values {
+			if err := tx.Create(&model.SystemConfig{Key: key, Value: value}).Error; err != nil {
 				return err
 			}
 		}
