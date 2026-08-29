@@ -16,6 +16,7 @@ import (
 
 	"github.com/metacubex/mihomo/log"
 	"github.com/robfig/cron/v3"
+	"gorm.io/gorm"
 )
 
 type SubsPage struct {
@@ -123,7 +124,7 @@ func (s *subscriptionManagerImpl) SaveSubscriptionConfig(subConfig *model.Subscr
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
 
-	subscription, err := s.subscriptionRepo.FindByID(subConfig.SubscriptionID)
+	subscription, err := s.GetSubscriptionByID(subConfig.SubscriptionID)
 	if err != nil {
 		return fmt.Errorf("获取订阅失败: %w", err)
 	}
@@ -183,7 +184,11 @@ func (s *subscriptionManagerImpl) SaveSubscriptionConfig(subConfig *model.Subscr
 
 // GetSubscriptionByID 根据ID获取订阅
 func (s *subscriptionManagerImpl) GetSubscriptionByID(id uint) (*model.Subscription, error) {
-	return s.subscriptionRepo.FindByID(id)
+	subscription, err := s.subscriptionRepo.FindByID(id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrSubscriptionNotFound
+	}
+	return subscription, err
 }
 
 // GetAllSubscriptions 获取所有订阅

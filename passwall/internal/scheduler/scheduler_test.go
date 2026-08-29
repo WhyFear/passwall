@@ -82,6 +82,19 @@ func TestSchedulerInitRequiresServices(t *testing.T) {
 	assert.Contains(t, err.Error(), "scheduler services are not set")
 }
 
+func TestSchedulerInitSkipsOrphanedSubscriptionConfigs(t *testing.T) {
+	manager := &fakeSubscriptionManager{
+		configs: []*model.SubscriptionConfig{{SubscriptionID: 7, AutoUpdate: true, UpdateInterval: "0 0 0 1 1 *"}},
+		findErr: proxyservice.ErrSubscriptionNotFound,
+	}
+	scheduler := NewScheduler()
+	scheduler.SetServices(nil, nil, manager, nil, nil)
+
+	require.NoError(t, scheduler.Init(config.Config{}))
+	defer scheduler.Stop()
+	assert.NotContains(t, scheduler.GetStatus()["jobs"].(map[string]interface{}), "sub_update_7")
+}
+
 func TestSchedulerBeginStopClosesAdmission(t *testing.T) {
 	scheduler := NewScheduler()
 	scheduler.SetServices(nil, nil, &fakeSubscriptionManager{}, nil, nil)
@@ -193,17 +206,19 @@ type fakeSubscriptionManager struct {
 	proxyservice.SubscriptionManager
 	sub           *model.Subscription
 	config        *model.SubscriptionConfig
+	configs       []*model.SubscriptionConfig
+	findErr       error
 	subscriptions []*model.Subscription
 	cursorCalls   []subscriptionCursorCall
 	refreshedIDs  []uint
 }
 
 func (f *fakeSubscriptionManager) GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error) {
-	return nil, nil
+	return f.configs, nil
 }
 
 func (f *fakeSubscriptionManager) GetSubscriptionByID(uint) (*model.Subscription, error) {
-	return f.sub, nil
+	return f.sub, f.findErr
 }
 
 func (f *fakeSubscriptionManager) GetSubscriptionConfig(uint) (*model.SubscriptionConfig, error) {

@@ -236,6 +236,9 @@ func (s *Scheduler) buildCandidate(sysConfig config.Config) (*schedulerCandidate
 	for _, cfg := range customConfigs {
 		// 验证该配置对应的订阅是否未被删除
 		sub, err := s.subsManager.GetSubscriptionByID(cfg.SubscriptionID)
+		if errors.Is(err, proxy.ErrSubscriptionNotFound) {
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("get subscription %d: %w", cfg.SubscriptionID, err)
 		}

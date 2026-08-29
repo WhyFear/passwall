@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestDeleteSubscriptionCancelsItsRefresh(t *testing.T) {
@@ -49,7 +50,7 @@ func TestRefreshSubscriptionRejectsDeletedSubscription(t *testing.T) {
 func TestSaveSubscriptionConfigRejectsMissingSubscription(t *testing.T) {
 	configs := &fakeSubscriptionConfigRepository{}
 	manager := &subscriptionManagerImpl{
-		subscriptionRepo:       &fakeDeleteSubscriptionRepository{},
+		subscriptionRepo:       &fakeDeleteSubscriptionRepository{findErr: gorm.ErrRecordNotFound},
 		subscriptionConfigRepo: configs,
 		configProvider:         &fakeConfigProvider{cfg: &config.Config{}},
 	}
@@ -60,7 +61,7 @@ func TestSaveSubscriptionConfigRejectsMissingSubscription(t *testing.T) {
 		UpdateInterval: "0 0 0 * * *",
 	})
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	assert.Nil(t, configs.saved)
 }
 
@@ -109,6 +110,7 @@ func TestSaveSubscriptionConfigRollsBackWhenSchedulerUpdateFails(t *testing.T) {
 type fakeDeleteSubscriptionRepository struct {
 	repository.SubscriptionRepository
 	subscription *model.Subscription
+	findErr      error
 	deletedID    uint
 }
 
@@ -142,7 +144,7 @@ func (s *fakeSubscriptionScheduler) UpdateSubscriptionJob(uint) error {
 }
 
 func (r *fakeDeleteSubscriptionRepository) FindByID(uint) (*model.Subscription, error) {
-	return r.subscription, nil
+	return r.subscription, r.findErr
 }
 
 func (r *fakeDeleteSubscriptionRepository) Delete(id uint) error {
