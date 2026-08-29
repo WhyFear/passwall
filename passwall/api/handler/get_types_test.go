@@ -50,12 +50,16 @@ func (f *fakeProxyService) GetProxyByID(id uint) (*model.Proxy, error) {
 	return nil, nil
 }
 
-func (f *fakeProxyService) GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool, statusOK bool) (int64, error) {
-	return 0, nil
+func (f *fakeProxyService) GetProxyCountsBySubscriptionIDs([]uint) (map[uint]repository.SubscriptionProxyCounts, error) {
+	return nil, nil
 }
 
 func (f *fakeProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
 	return nil, 0, nil
+}
+
+func (f *fakeProxyService) GetProxyIDsAfter(uint, int) ([]uint, error) {
+	return nil, nil
 }
 
 func (f *fakeProxyService) GetProxyByName(name string) (*model.Proxy, error) {

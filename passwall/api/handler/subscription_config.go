@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"passwall/internal/model"
-	"passwall/internal/scheduler"
 	"passwall/internal/service/proxy"
 	"strconv"
 
@@ -49,7 +49,7 @@ func GetSubscriptionConfig(subsManager proxy.SubscriptionManager) gin.HandlerFun
 }
 
 // SaveSubscriptionConfig 保存订阅配置
-func SaveSubscriptionConfig(subsManager proxy.SubscriptionManager, scheduler *scheduler.Scheduler) gin.HandlerFunc {
+func SaveSubscriptionConfig(subsManager proxy.SubscriptionManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
@@ -77,15 +77,13 @@ func SaveSubscriptionConfig(subsManager proxy.SubscriptionManager, scheduler *sc
 		}
 
 		if err := subsManager.SaveSubscriptionConfig(subConfig); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		// 更新定时任务
-		if err := scheduler.UpdateSubscriptionJob(uint(id)); err != nil {
-			// 仅记录日志，不返回错误给前端，因为配置保存已成功
-			// 实际项目中可以考虑是否回滚或者警告
-			c.JSON(http.StatusOK, gin.H{"message": "保存成功，但定时任务更新失败: " + err.Error()})
+			status := http.StatusInternalServerError
+			if errors.Is(err, proxy.ErrSubscriptionNotFound) {
+				status = http.StatusNotFound
+			} else if errors.Is(err, proxy.ErrInvalidSubscriptionConfig) {
+				status = http.StatusUnprocessableEntity
+			}
+			c.JSON(status, gin.H{"error": "保存订阅配置失败"})
 			return
 		}
 

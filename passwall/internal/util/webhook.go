@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,15 +15,16 @@ import (
 
 // WebhookClient webhook客户端
 type WebhookClient struct {
-	Client *http.Client
+	Client   *http.Client
+	resolver outboundResolver
 }
 
 // NewWebhookClient 创建webhook客户端
 func NewWebhookClient() *WebhookClient {
+	client, _ := newRestrictedHTTPClient(30*time.Second, "", net.DefaultResolver)
 	return &WebhookClient{
-		Client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		Client:   client,
+		resolver: net.DefaultResolver,
 	}
 }
 
@@ -86,7 +88,7 @@ func (wc *WebhookClient) ExecuteWebhook(webhook config.WebhookConfig, data map[s
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
+		return fmt.Errorf("failed to create webhook request")
 	}
 
 	// 处理请求头
@@ -117,16 +119,38 @@ func (wc *WebhookClient) ExecuteWebhook(webhook config.WebhookConfig, data map[s
 	defer cancel()
 
 	req = req.WithContext(ctx)
+	resolver := wc.resolver
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	if err := validateOutboundURL(ctx, req.URL, resolver); err != nil {
+		return fmt.Errorf("webhook target is not allowed")
+	}
+	if wc.Client == nil {
+		return fmt.Errorf("webhook client is unavailable")
+	}
+	client := *wc.Client
+	redirectPolicy := restrictedRedirectPolicy(resolver)
+	previousRedirectPolicy := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := redirectPolicy(req, via); err != nil {
+			return err
+		}
+		if previousRedirectPolicy != nil {
+			return previousRedirectPolicy(req, via)
+		}
+		return nil
+	}
 
-	resp, err := wc.Client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send webhook: %v", err)
+		return fmt.Errorf("failed to send webhook")
 	}
 	defer resp.Body.Close()
 
 	// 检查响应状态
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned non-2xx status: %s", resp.Status)
+		return fmt.Errorf("webhook returned HTTP status %d", resp.StatusCode)
 	}
 
 	return nil

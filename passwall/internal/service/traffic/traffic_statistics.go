@@ -1,21 +1,21 @@
 package traffic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"passwall/config"
-	"passwall/internal/model"
-	"passwall/internal/repository"
-	"passwall/internal/service/proxy"
-	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/metacubex/mihomo/log"
+	"passwall/config"
+	"passwall/internal/model"
+	"passwall/internal/repository"
 
 	"github.com/gorilla/websocket"
+	"github.com/metacubex/mihomo/log"
 )
 
 type Connections struct {
@@ -34,359 +34,403 @@ type Connection struct {
 	RulePayload string    `json:"rulePayload"`
 }
 
-type NodeTraffic struct {
-	NodeName string `json:"nodeName"`
-	Upload   int64  `json:"upload"`
-	Download int64  `json:"download"`
-}
-
-type ClashConfigProvider interface {
-	GetClashClients() ([]config.ClashAPIClient, bool)
-}
-
-// trackedValue 用于记录连接上次的累计值，以便计算差值
 type trackedValue struct {
 	LastUpload   int64
 	LastDownload int64
 }
 
+type trafficDelta struct {
+	Upload   int64
+	Download int64
+}
+
+// A generation owns every mutable resource used by one Start call.
+type trafficGeneration struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	startTime time.Time
+	clients   []config.ClashAPIClient
+
+	connectionsMu sync.Mutex
+	connections   map[int]*websocket.Conn
+
+	mu             sync.Mutex
+	lastValues     []map[string]trackedValue
+	pending        map[uint]trafficDelta
+	finalFlushDone bool
+}
+
+func newTrafficGeneration(parent context.Context, startTime time.Time, clientCount int) *trafficGeneration {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	generation := &trafficGeneration{
+		ctx:         ctx,
+		cancel:      cancel,
+		startTime:   startTime,
+		connections: make(map[int]*websocket.Conn),
+		lastValues:  make([]map[string]trackedValue, clientCount),
+		pending:     make(map[uint]trafficDelta),
+	}
+	for i := range generation.lastValues {
+		generation.lastValues[i] = make(map[string]trackedValue)
+	}
+	return generation
+}
+
 type StatisticsService struct {
-	configProvider ClashConfigProvider
-	connections    sync.Map // {clientIndex: *websocket.Conn}
+	trafficRepo repository.TrafficRepository
 
-	// key: clientIndex, value: map[connID]trackedValue
-	lastValues []map[string]trackedValue
+	lifecycleMu sync.Mutex
+	run         *trafficGeneration
 
-	// 暂存尚未写入数据库的增量流量数据 key: nodeName
-	pendingTraffic map[string]*NodeTraffic
-
-	mu                sync.Mutex
-	startTime         time.Time
 	baseRetryInterval time.Duration
 	maxRetryInterval  time.Duration
 	maxRetries        int
-	ticker            *time.Ticker
-	done              chan struct{}
-	stopChan          chan struct{}
-	stopOnce          sync.Once
-	proxyService      proxy.ProxyService
-	trafficRepo       repository.TrafficRepository
-	cleanNameRegex    *regexp.Regexp
+	startTimeout      time.Duration
 }
 
-func NewTrafficStatisticsService(configProvider ClashConfigProvider, proxyService proxy.ProxyService, trafficRepo repository.TrafficRepository) StatisticsService {
+func NewTrafficStatisticsService(trafficRepo repository.TrafficRepository) StatisticsService {
 	return StatisticsService{
-		configProvider:    configProvider,
-		pendingTraffic:    make(map[string]*NodeTraffic),
-		proxyService:      proxyService,
 		trafficRepo:       trafficRepo,
 		baseRetryInterval: 5 * time.Second,
-		maxRetryInterval:  10 * 60 * time.Second,
+		maxRetryInterval:  10 * time.Minute,
 		maxRetries:        10,
-		cleanNameRegex:    regexp.MustCompile(`^\[\d+]-(.+)$`),
+		startTimeout:      10 * time.Second,
 	}
 }
 
-func (s *StatisticsService) Start() error {
-	clients, enabled := s.configProvider.GetClashClients()
-	if !enabled {
+func (s *StatisticsService) startLocked(cfg config.ClashAPIConfig) error {
+	if !cfg.Enable {
 		return nil
 	}
-
-	s.mu.Lock()
-	s.startTime = time.Now()
-	s.lastValues = make([]map[string]trackedValue, len(clients))
-	for i := range clients {
-		s.lastValues[i] = make(map[string]trackedValue)
+	if s.run != nil {
+		return fmt.Errorf("traffic statistics service is already running")
 	}
-	s.pendingTraffic = make(map[string]*NodeTraffic)
-	s.mu.Unlock()
-
-	done := make(chan struct{})
-	stopChan := make(chan struct{})
-	ticker := time.NewTicker(1 * time.Minute)
-	s.done = done
-	s.stopChan = stopChan
-	s.ticker = ticker
-	go s.startPeriodicProcessing(ticker.C, stopChan, done)
-	return s.connectAllClients(clients, stopChan)
-}
-
-func (s *StatisticsService) connectAllClients(clients []config.ClashAPIClient, stop <-chan struct{}) error {
-	for i, client := range clients {
-		if err := s.connectClient(i, client, stop); err != nil {
-			log.Errorln("Failed to connect to client %d: %v", i, err)
+	if len(cfg.Clients) > 0 {
+		if s.trafficRepo == nil {
+			return fmt.Errorf("traffic repository is not configured")
 		}
+		if err := s.trafficRepo.ValidateProxyIDUnique(); err != nil {
+			return err
+		}
+	}
+
+	generation := newTrafficGeneration(nil, time.Now(), len(cfg.Clients))
+	generation.clients = append([]config.ClashAPIClient(nil), cfg.Clients...)
+	startupCtx, cancelStartup := context.WithTimeout(generation.ctx, s.startTimeout)
+	defer cancelStartup()
+	initialConnections := make([]*websocket.Conn, len(cfg.Clients))
+	for i, client := range cfg.Clients {
+		conn, err := s.dialClient(startupCtx, i, client, 1)
+		if err != nil {
+			generation.cancel()
+			for _, opened := range initialConnections {
+				if opened != nil {
+					_ = opened.Close()
+				}
+			}
+			return err
+		}
+		initialConnections[i] = conn
+	}
+
+	s.run = generation
+	generation.wg.Add(1)
+	go s.runPeriodicFlush(generation)
+	for i, conn := range initialConnections {
+		generation.setConnection(i, conn)
+		generation.wg.Add(1)
+		go s.runClient(generation, i, generation.clients[i], conn)
 	}
 	return nil
 }
 
-func (s *StatisticsService) connectClient(clientIndex int, client config.ClashAPIClient, stop <-chan struct{}) error {
-	wsURL := client.URL + "/connections"
-	if client.Secret != "" {
-		if u, err := url.Parse(wsURL); err == nil {
-			query := u.Query()
-			query.Set("token", client.Secret)
-			u.RawQuery = query.Encode()
-			wsURL = u.String()
-		} else {
-			wsURL += "?token=" + client.Secret
-		}
+// Restart replaces one complete generation while holding the lifecycle lock.
+func (s *StatisticsService) Restart(cfg config.ClashAPIConfig) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if err := s.stopLocked(); err != nil {
+		return err
+	}
+	return s.startLocked(cfg)
+}
+
+// Stop synchronously waits for readers and the periodic flusher before the final flush.
+func (s *StatisticsService) Stop() error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.stopLocked()
+}
+
+func (s *StatisticsService) stopLocked() error {
+	generation := s.run
+	if generation == nil {
+		return nil
 	}
 
-	for attempt := 1; attempt <= s.maxRetries; attempt++ {
-		select {
-		case <-stop:
-			return nil
-		default:
+	generation.cancel()
+	generation.closeConnections()
+	generation.wg.Wait()
+
+	generation.mu.Lock()
+	done := generation.finalFlushDone
+	generation.mu.Unlock()
+	if !done {
+		log.Infoln("Statistics service stopping, performing final traffic flush...")
+		if err := s.flushTrafficToDB(generation); err != nil {
+			return fmt.Errorf("final traffic flush: %w", err)
 		}
-		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-		if err == nil {
-			select {
-			case <-stop:
+		generation.mu.Lock()
+		generation.finalFlushDone = true
+		generation.mu.Unlock()
+	}
+
+	s.run = nil
+	return nil
+}
+
+func (s *StatisticsService) dialClient(ctx context.Context, clientIndex int, client config.ClashAPIClient, attempts int) (*websocket.Conn, error) {
+	wsURL, err := connectionsURL(client)
+	if err != nil {
+		return nil, fmt.Errorf("build connections URL for client %d: %w", clientIndex, err)
+	}
+
+	for attempt := 1; attempt <= attempts; attempt++ {
+		conn, _, dialErr := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+		if dialErr == nil {
+			if ctx.Err() != nil {
 				_ = conn.Close()
-				return nil
-			default:
+				return nil, ctx.Err()
 			}
 			log.Infoln("WebSocket connection established for client %d", clientIndex)
-			s.connections.Store(clientIndex, conn)
-			go s.readMessages(clientIndex, conn, stop)
-			return nil
+			return conn, nil
 		}
-
-		if attempt >= s.maxRetries {
-			log.Errorln("Failed to connect to client %d after %d attempts: %v", clientIndex, s.maxRetries, err)
-			return err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if attempt == attempts {
+			log.Errorln("WebSocket connection failed for client %d after %d attempts (error type %T)", clientIndex, attempts, dialErr)
+			return nil, fmt.Errorf("connect client %d after %d attempts", clientIndex, attempts)
 		}
 
 		interval := s.baseRetryInterval * time.Duration(1<<uint(attempt-1))
 		if interval > s.maxRetryInterval {
 			interval = s.maxRetryInterval
 		}
-
-		log.Errorln("WebSocket connection failed for client %d, retrying in %v (attempt %d/%d)",
-			clientIndex, interval, attempt, s.maxRetries)
+		log.Errorln("WebSocket connection failed for client %d, retrying in %v (attempt %d/%d, error type %T)",
+			clientIndex, interval, attempt, attempts, dialErr)
+		timer := time.NewTimer(interval)
 		select {
-		case <-time.After(interval):
-		case <-stop:
-			return nil
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("connect client %d failed", clientIndex)
 }
 
-func (s *StatisticsService) Stop() {
-	s.stopOnce.Do(func() {
-		if s.stopChan != nil {
-			close(s.stopChan)
-		}
-	})
-
-	s.connections.Range(func(key, value interface{}) bool {
-		if conn, ok := value.(*websocket.Conn); ok {
-			conn.Close()
-		}
-		return true
-	})
-
-	s.connections = sync.Map{}
-
-	if s.ticker != nil {
-		s.ticker.Stop()
-		s.ticker = nil
+func connectionsURL(client config.ClashAPIClient) (string, error) {
+	u, err := url.Parse(client.URL)
+	if err != nil {
+		return "", fmt.Errorf("invalid client URL")
 	}
-
-	// 在停止前最后结算一次流量
-	log.Infoln("Statistics service stopping, performing final traffic flush...")
-	s.flushTrafficToDB()
-
-	if s.done != nil {
-		select {
-		case <-s.done:
-		case <-time.After(5 * time.Second):
-			log.Errorln("Stop timeout: periodic processing did not finish in time")
-		}
-		s.done = nil
+	u.Path = strings.TrimRight(u.Path, "/") + "/connections"
+	if client.Secret != "" {
+		query := u.Query()
+		query.Set("token", client.Secret)
+		u.RawQuery = query.Encode()
 	}
-	s.stopOnce = sync.Once{}
+	return u.String(), nil
 }
 
-func (s *StatisticsService) readMessages(clientIndex int, conn *websocket.Conn, stop <-chan struct{}) {
-	defer func() {
-		s.connections.Delete(clientIndex)
-		conn.Close()
-		log.Infoln("Traffic statistics service stopped for client %d", clientIndex)
-	}()
-
+func (s *StatisticsService) runClient(generation *trafficGeneration, clientIndex int, client config.ClashAPIClient, conn *websocket.Conn) {
+	defer generation.wg.Done()
 	for {
-		select {
-		case <-stop:
+		if generation.ctx.Err() != nil {
+			_ = conn.Close()
+			generation.deleteConnection(clientIndex, conn)
 			return
-		default:
 		}
 
-		_, message, err := conn.ReadMessage()
+		err := s.readMessages(generation, clientIndex, conn)
+		generation.deleteConnection(clientIndex, conn)
+		_ = conn.Close()
+		if generation.ctx.Err() != nil {
+			return
+		}
+		log.Errorln("WebSocket read error for client %d: %v", clientIndex, err)
+
+		conn, err = s.dialClient(generation.ctx, clientIndex, client, s.maxRetries)
 		if err != nil {
-			log.Errorln("WebSocket read error for client %d: %v", clientIndex, err)
-			select {
-			case <-stop:
-				return
-			default:
-				go func() {
-					select {
-					case <-time.After(s.baseRetryInterval):
-					case <-stop:
-						return
-					}
-					clients, _ := s.configProvider.GetClashClients()
-					if clientIndex < len(clients) {
-						_ = s.connectClient(clientIndex, clients[clientIndex], stop)
-					}
-				}()
+			if generation.ctx.Err() == nil {
+				log.Errorln("WebSocket reconnect failed for client %d: %v", clientIndex, err)
 			}
 			return
+		}
+		generation.setConnection(clientIndex, conn)
+	}
+}
+
+func (s *StatisticsService) readMessages(generation *trafficGeneration, clientIndex int, conn *websocket.Conn) error {
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			return err
 		}
 
 		var data Connections
 		if err := json.Unmarshal(message, &data); err != nil {
+			log.Errorln("Invalid connections payload for client %d: %v", clientIndex, err)
 			continue
 		}
-
-		s.processTrafficDelta(clientIndex, data)
+		s.processTrafficDelta(generation, clientIndex, data)
 	}
 }
 
-// processTrafficDelta 计算本次接收到的数据与上次的增量
-func (s *StatisticsService) processTrafficDelta(clientIndex int, data Connections) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *StatisticsService) processTrafficDelta(generation *trafficGeneration, clientIndex int, data Connections) {
+	generation.mu.Lock()
+	defer generation.mu.Unlock()
+	if clientIndex < 0 || clientIndex >= len(generation.lastValues) {
+		return
+	}
 
-	clientLastValues := s.lastValues[clientIndex]
-	currentConnIDs := make(map[string]bool)
-
+	clientLastValues := generation.lastValues[clientIndex]
+	currentConnIDs := make(map[string]struct{}, len(data.Connections))
 	for _, conn := range data.Connections {
-		currentConnIDs[conn.ID] = true
-
+		currentConnIDs[conn.ID] = struct{}{}
 		last, exists := clientLastValues[conn.ID]
-		if !exists {
-			// 重启保护：如果连接是在服务启动前建立的，初始值设为当前值，增量设为0
-			if conn.Start.Before(s.startTime) {
-				last = trackedValue{
-					LastUpload:   conn.Upload,
-					LastDownload: conn.Download,
-				}
-			} else {
-				last = trackedValue{0, 0}
-			}
+		if !exists && conn.Start.Before(generation.startTime) {
+			last = trackedValue{LastUpload: conn.Upload, LastDownload: conn.Download}
 		}
 
 		deltaUp := conn.Upload - last.LastUpload
 		deltaDown := conn.Download - last.LastDownload
-
-		// 如果增量为正，记录到暂存区
-		if deltaUp > 0 || deltaDown > 0 {
-			for _, nodeName := range conn.Chains {
-				node, ok := s.pendingTraffic[nodeName]
-				if !ok {
-					node = &NodeTraffic{NodeName: nodeName}
-					s.pendingTraffic[nodeName] = node
+		if (deltaUp > 0 || deltaDown > 0) && len(conn.Chains) > 0 {
+			if proxyID, ok := model.ParseRuntimeProxyID(conn.Chains[0]); ok {
+				delta := generation.pending[proxyID]
+				if deltaUp > 0 {
+					delta.Upload += deltaUp
 				}
-				node.Upload += deltaUp
-				node.Download += deltaDown
+				if deltaDown > 0 {
+					delta.Download += deltaDown
+				}
+				generation.pending[proxyID] = delta
 			}
 		}
 
-		// 更新快照
-		clientLastValues[conn.ID] = trackedValue{
-			LastUpload:   conn.Upload,
-			LastDownload: conn.Download,
-		}
+		// Builtin exits and empty chains still advance their snapshots.
+		clientLastValues[conn.ID] = trackedValue{LastUpload: conn.Upload, LastDownload: conn.Download}
 	}
 
-	// 清理已经关闭的连接 ID
 	for id := range clientLastValues {
-		if !currentConnIDs[id] {
+		if _, ok := currentConnIDs[id]; !ok {
 			delete(clientLastValues, id)
 		}
 	}
 }
 
-func (s *StatisticsService) flushTrafficToDB() {
-	s.mu.Lock()
-	if len(s.pendingTraffic) == 0 {
-		s.mu.Unlock()
-		return
+func (s *StatisticsService) flushTrafficToDB(generation *trafficGeneration) error {
+	generation.mu.Lock()
+	if len(generation.pending) == 0 {
+		generation.mu.Unlock()
+		return nil
 	}
-	// 拷贝一份数据并清空暂存区，然后解锁执行慢速的 DB 操作
-	workData := s.pendingTraffic
-	s.pendingTraffic = make(map[string]*NodeTraffic)
-	s.mu.Unlock()
+	work := generation.pending
+	generation.pending = make(map[uint]trafficDelta)
+	generation.mu.Unlock()
 
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorln("Flush traffic panic: %v", r)
-		}
+	proxyIDs := make([]uint, 0, len(work))
+	for proxyID := range work {
+		proxyIDs = append(proxyIDs, proxyID)
+	}
+	sort.Slice(proxyIDs, func(i, j int) bool { return proxyIDs[i] < proxyIDs[j] })
+	batch := make([]model.TrafficStatistics, 0, len(proxyIDs))
+	for _, proxyID := range proxyIDs {
+		delta := work[proxyID]
+		batch = append(batch, model.TrafficStatistics{
+			ProxyID:       proxyID,
+			UploadTotal:   delta.Upload,
+			DownloadTotal: delta.Download,
+		})
+	}
+
+	err := func() (err error) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err = fmt.Errorf("panic: %v", recovered)
+			}
+		}()
+		return s.trafficRepo.IncrementTraffic(batch)
 	}()
-
-	for _, node := range workData {
-		nodeProxy, err := s.proxyService.GetProxyByName(node.NodeName)
-		if err != nil {
-			continue
-		}
-		if nodeProxy == nil && strings.HasPrefix(node.NodeName, "[") {
-			cleanName := s.cleanNodeName(node.NodeName)
-			nodeProxy, _ = s.proxyService.GetProxyByName(cleanName)
-		}
-
-		if nodeProxy != nil {
-			traffic, err := s.trafficRepo.FindByProxyID(nodeProxy.ID)
-			if err != nil {
-				continue
-			}
-			if traffic == nil {
-				traffic = &model.TrafficStatistics{
-					ProxyID:       nodeProxy.ID,
-					UploadTotal:   node.Upload,
-					DownloadTotal: node.Download,
-				}
-				_ = s.trafficRepo.Create(traffic)
-			} else {
-				traffic.UploadTotal += node.Upload
-				traffic.DownloadTotal += node.Download
-				_ = s.trafficRepo.UpdateTrafficByProxyID(traffic)
-			}
-		}
+	if err == nil {
+		return nil
 	}
+
+	// The UPSERT is one statement, so the whole failed batch can be added back.
+	// ponytail: a lost commit acknowledgement can still duplicate; add batch IDs if that is observed.
+	generation.mu.Lock()
+	for proxyID, failed := range work {
+		pending := generation.pending[proxyID]
+		pending.Upload += failed.Upload
+		pending.Download += failed.Download
+		generation.pending[proxyID] = pending
+	}
+	generation.mu.Unlock()
+	return err
 }
 
-// cleanNodeName 清理节点名称，移除前面的序号前缀如"[1]-"
-func (s *StatisticsService) cleanNodeName(nodeName string) string {
-	matches := s.cleanNameRegex.FindStringSubmatch(nodeName)
-	if len(matches) == 2 {
-		return strings.TrimSpace(matches[1])
-	}
-	return nodeName
-}
-
-func (s *StatisticsService) startPeriodicProcessing(ticks <-chan time.Time, stop <-chan struct{}, done chan<- struct{}) {
-	defer close(done)
+func (s *StatisticsService) runPeriodicFlush(generation *trafficGeneration) {
+	defer generation.wg.Done()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
 		select {
-		case <-ticks:
-			s.flushTrafficToDB()
-		case <-stop:
+		case <-ticker.C:
+			if err := s.flushTrafficToDB(generation); err != nil {
+				log.Errorln("Flush traffic failed: %v", err)
+			}
+		case <-generation.ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *StatisticsService) GetTrafficStatistics(proxyId uint) (*model.TrafficStatistics, error) {
-	return s.trafficRepo.FindByProxyID(proxyId)
+func (generation *trafficGeneration) setConnection(clientIndex int, conn *websocket.Conn) {
+	generation.connectionsMu.Lock()
+	generation.connections[clientIndex] = conn
+	generation.connectionsMu.Unlock()
 }
 
-func (s *StatisticsService) BatchGetTrafficStatistics(proxyIdList []uint) (map[uint]*model.TrafficStatistics, error) {
-	if len(proxyIdList) == 0 {
+func (generation *trafficGeneration) deleteConnection(clientIndex int, conn *websocket.Conn) {
+	generation.connectionsMu.Lock()
+	if generation.connections[clientIndex] == conn {
+		delete(generation.connections, clientIndex)
+	}
+	generation.connectionsMu.Unlock()
+}
+
+func (generation *trafficGeneration) closeConnections() {
+	generation.connectionsMu.Lock()
+	for clientIndex, conn := range generation.connections {
+		_ = conn.Close()
+		delete(generation.connections, clientIndex)
+	}
+	generation.connectionsMu.Unlock()
+}
+
+func (s *StatisticsService) GetTrafficStatistics(proxyID uint) (*model.TrafficStatistics, error) {
+	return s.trafficRepo.FindByProxyID(proxyID)
+}
+
+func (s *StatisticsService) BatchGetTrafficStatistics(proxyIDList []uint) (map[uint]*model.TrafficStatistics, error) {
+	if len(proxyIDList) == 0 {
 		return nil, fmt.Errorf("proxyIdList is empty")
 	}
-	return s.trafficRepo.FindByProxyIDList(proxyIdList)
+	return s.trafficRepo.FindByProxyIDList(proxyIDList)
 }

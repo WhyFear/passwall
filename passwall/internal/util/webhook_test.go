@@ -38,7 +38,7 @@ func TestWebhookClient_ExecuteWebhooks(t *testing.T) {
 		{
 			Name:   "webhook1",
 			Method: "PUT",
-			URL:    "https://example.test/webhook",
+			URL:    "https://93.184.216.34/webhook",
 			Header: "X-Test: yes",
 			Body:   `{"status":"{{status}}"}`,
 		},
@@ -57,6 +57,20 @@ func TestWebhookClient_ExecuteWebhooksCollectsErrors(t *testing.T) {
 	}, nil)
 
 	assert.Len(t, errs, 1)
+}
+
+func TestWebhookClientErrorsDoNotExposeURLCredentials(t *testing.T) {
+	const secret = "webhook-secret"
+	webhookClient := NewWebhookClient()
+
+	err := webhookClient.ExecuteWebhook(config.WebhookConfig{
+		Method: http.MethodGet,
+		URL:    "https://user:password@%41?token=" + secret,
+	}, nil)
+
+	assert.Error(t, err)
+	assert.NotContains(t, err.Error(), secret)
+	assert.NotContains(t, err.Error(), "password")
 }
 
 type webhookRoundTripFunc func(*http.Request) (*http.Response, error)

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"passwall/internal/service/task"
 	"passwall/internal/util"
 
+	"github.com/metacubex/mihomo/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,8 +78,47 @@ func TestSubscriptionRefresherMarksInvalidOnDownloadFailure(t *testing.T) {
 	assert.Equal(t, model.SubscriptionStatusInvalid, subRepo.status)
 }
 
-func TestSubscriptionRefresherRefreshAsyncKeepsFailureMessage(t *testing.T) {
+func TestSubscriptionRefresherDoesNotExposeCredentialURLs(t *testing.T) {
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
+	refresher := newSubscriptionRefresher(
+		&fakeSubscriptionStatusRepository{},
+		task.NewTaskManager(),
+		&fakeConfigProvider{},
+		nil,
+		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
+		func(context.Context, string, *util.DownloadOptions) ([]byte, error) {
+			return nil, errors.New("GET https://user:password@example.test/sub?token=error-secret failed")
+		},
+	)
+
+	err := refresher.RefreshOne(
+		context.Background(),
+		&model.Subscription{ID: 7, URL: "https://user:password@example.test/sub?token=url-secret"},
+		&util.DownloadOptions{ProxyURL: "http://proxy-user:proxy-secret@proxy.test"},
+	)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "error-secret")
+	payloads := make([]string, 0, 3)
+	for len(payloads) < 3 {
+		select {
+		case event := <-events:
+			payloads = append(payloads, event.Payload)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for refresh logs")
+		}
+	}
+	logs := strings.Join(payloads, "\n")
+	for _, secret := range []string{"password", "url-secret", "error-secret", "proxy-secret"} {
+		assert.NotContains(t, logs, secret)
+	}
+}
+
+func TestSubscriptionRefresherRefreshAsyncRemovesFailedTask(t *testing.T) {
 	taskManager := task.NewTaskManager()
+	downloadStarted := make(chan struct{})
+	releaseDownload := make(chan struct{})
 	refresher := newSubscriptionRefresher(
 		&fakeSubscriptionStatusRepository{},
 		taskManager,
@@ -85,32 +126,21 @@ func TestSubscriptionRefresherRefreshAsyncKeepsFailureMessage(t *testing.T) {
 		nil,
 		newProxySyncer(&fakeParserFactory{parser: &fakeParser{}}, &fakeProxySyncRepository{}),
 		func(ctx context.Context, url string, options *util.DownloadOptions) ([]byte, error) {
+			close(downloadStarted)
+			<-releaseDownload
 			return nil, errors.New("network failed")
 		},
 	)
 
 	refresher.RefreshAsync(context.Background(), &model.Subscription{ID: 1, URL: "https://example.test/sub"}, nil)
 
+	<-downloadStarted
+	assert.True(t, taskManager.IsResourceRunning(task.TaskTypeReloadSubs, 1))
+	close(releaseDownload)
 	require.Eventually(t, func() bool {
-		allStatus := taskManager.GetAllStatus()
-		for _, s := range allStatus {
-			if s.Type == task.TaskTypeReloadSubs && s.ResourceID == 1 && s.State == task.TaskStateFinished {
-				return true
-			}
-		}
-		return false
+		return !taskManager.IsResourceRunning(task.TaskTypeReloadSubs, 1)
 	}, time.Second, 10*time.Millisecond)
-
-	allStatus := taskManager.GetAllStatus()
-	var status *task.TaskStatus
-	for _, s := range allStatus {
-		if s.Type == task.TaskTypeReloadSubs && s.ResourceID == 1 {
-			status = s
-			break
-		}
-	}
-	require.NotNil(t, status)
-	assert.Contains(t, status.Error, "network failed")
+	assert.Empty(t, taskManager.GetAllStatus())
 }
 
 func TestSubscriptionRefresherRefreshManyKeepsCancellationMessage(t *testing.T) {
@@ -131,10 +161,7 @@ func TestSubscriptionRefresherRefreshManyKeepsCancellationMessage(t *testing.T) 
 
 	refresher.RefreshMany(ctx, []*model.Subscription{{ID: 1, URL: "https://example.test/sub"}}, nil, false)
 
-	status := taskManager.GetStatus(task.TaskTypeReloadSubs)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskStateFinished, status.State)
-	assert.Equal(t, "任务被取消", status.Error)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeReloadSubs))
 }
 
 func TestSubscriptionRefresherCancellationStopsInFlightDownload(t *testing.T) {
@@ -174,13 +201,10 @@ func TestSubscriptionRefresherCancellationStopsInFlightDownload(t *testing.T) {
 	require.False(t, timedOut)
 
 	require.Eventually(t, func() bool {
-		status := taskManager.GetStatus(task.TaskTypeReloadSubs)
-		return status != nil && status.State == task.TaskStateFinished
+		return !taskManager.IsRunning(task.TaskTypeReloadSubs)
 	}, time.Second, 10*time.Millisecond)
 
-	status := taskManager.GetStatus(task.TaskTypeReloadSubs)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskCanceledMessage, status.Error)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeReloadSubs))
 	assert.NotEqual(t, model.SubscriptionStatusInvalid, subRepo.status)
 }
 
@@ -270,6 +294,10 @@ type fakeSubscriptionStatusRepository struct {
 	content string
 }
 
+func (r *fakeSubscriptionStatusRepository) FindByID(id uint) (*model.Subscription, error) {
+	return &model.Subscription{ID: id, Status: r.status}, nil
+}
+
 func (r *fakeSubscriptionStatusRepository) UpdateStatus(subscription *model.Subscription) error {
 	r.status = subscription.Status
 	return nil
@@ -278,6 +306,74 @@ func (r *fakeSubscriptionStatusRepository) UpdateStatus(subscription *model.Subs
 func (r *fakeSubscriptionStatusRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
 	r.status = subscription.Status
 	r.content = subscription.Content
+	return nil
+}
+
+func TestSubscriptionRefresherSkipsDeletedBulkItemsWithoutStoppingOthers(t *testing.T) {
+	subRepo := &bulkDeleteSubscriptionRepository{statuses: map[uint]model.SubscriptionStatus{
+		1: model.SubscriptionStatusOK,
+		2: model.SubscriptionStatusOK,
+		3: model.SubscriptionStatusOK,
+	}}
+	proxyRepo := &bulkDeleteProxyRepository{subRepo: subRepo}
+	refresher := newSubscriptionRefresher(
+		subRepo,
+		task.NewTaskManager(),
+		&fakeConfigProvider{},
+		nil,
+		newProxySyncer(&fakeParserFactory{parser: freshProxyParser{}}, proxyRepo),
+		func(_ context.Context, url string, _ *util.DownloadOptions) ([]byte, error) {
+			if url == "https://example.test/one" {
+				subRepo.statuses[1] = model.SubscriptionStatusDeleted
+			}
+			return []byte(url), nil
+		},
+	)
+
+	refresher.RefreshMany(context.Background(), []*model.Subscription{
+		{ID: 1, URL: "https://example.test/one", Type: model.SubscriptionTypeClash},
+		{ID: 2, URL: "https://example.test/two", Type: model.SubscriptionTypeClash},
+		{ID: 3, URL: "https://example.test/three", Type: model.SubscriptionTypeClash},
+	}, nil, false)
+
+	assert.Equal(t, []uint{2, 3}, proxyRepo.syncedIDs)
+	assert.Equal(t, []uint{3}, subRepo.okIDs)
+}
+
+type bulkDeleteSubscriptionRepository struct {
+	repository.SubscriptionRepository
+	statuses map[uint]model.SubscriptionStatus
+	okIDs    []uint
+}
+
+func (r *bulkDeleteSubscriptionRepository) FindByID(id uint) (*model.Subscription, error) {
+	return &model.Subscription{ID: id, Status: r.statuses[id]}, nil
+}
+
+func (r *bulkDeleteSubscriptionRepository) UpdateStatus(*model.Subscription) error { return nil }
+
+func (r *bulkDeleteSubscriptionRepository) UpdateStatusAndContent(subscription *model.Subscription) error {
+	r.okIDs = append(r.okIDs, subscription.ID)
+	r.statuses[subscription.ID] = subscription.Status
+	return nil
+}
+
+type bulkDeleteProxyRepository struct {
+	repository.ProxyRepository
+	subRepo   *bulkDeleteSubscriptionRepository
+	syncedIDs []uint
+}
+
+func (r *bulkDeleteProxyRepository) FindByDomainPortPassword(string, int, string) (*model.Proxy, error) {
+	return nil, nil
+}
+
+func (r *bulkDeleteProxyRepository) BatchCreate(proxies []*model.Proxy) error {
+	id := *proxies[0].SubscriptionID
+	r.syncedIDs = append(r.syncedIDs, id)
+	if id == 2 {
+		r.subRepo.statuses[id] = model.SubscriptionStatusDeleted
+	}
 	return nil
 }
 
@@ -612,17 +708,7 @@ func TestSubscriptionRefresherRefreshOneRecoversFromPanic(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "panic")
 
-	allStatus := taskManager.GetAllStatus()
-	var taskStatus *task.TaskStatus
-	for _, s := range allStatus {
-		if s.Type == task.TaskTypeReloadSubs && s.ResourceID == 1 {
-			taskStatus = s
-			break
-		}
-	}
-	require.NotNil(t, taskStatus)
-	assert.Equal(t, task.TaskStateFinished, taskStatus.State)
-	assert.Contains(t, taskStatus.Error, "panic")
+	assert.Empty(t, taskManager.GetAllStatus())
 
 	// A new refresh can start — no leftover Running task blocking it
 	err = refresher.RefreshOne(context.Background(),
@@ -630,7 +716,7 @@ func TestSubscriptionRefresherRefreshOneRecoversFromPanic(t *testing.T) {
 	require.NoError(t, err, "second refresh should succeed without conflict")
 }
 
-func TestSubscriptionRefresherRefreshOneUpdatesProgress(t *testing.T) {
+func TestSubscriptionRefresherRefreshOneRemovesCompletedTask(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	sampleProxy := &model.Proxy{Name: "test", Type: model.ProxyTypeVMess}
 	refresher := newSubscriptionRefresher(
@@ -648,17 +734,5 @@ func TestSubscriptionRefresherRefreshOneUpdatesProgress(t *testing.T) {
 		&model.Subscription{ID: 1, URL: "https://example.test/sub"}, nil)
 	require.NoError(t, err)
 
-	allStatus := taskManager.GetAllStatus()
-	var taskStatus *task.TaskStatus
-	for _, s := range allStatus {
-		if s.Type == task.TaskTypeReloadSubs && s.ResourceID == 1 {
-			taskStatus = s
-			break
-		}
-	}
-	require.NotNil(t, taskStatus)
-	assert.Equal(t, 1, taskStatus.Completed)
-	assert.Equal(t, 1, taskStatus.Total)
-	assert.Equal(t, 100, taskStatus.Progress)
-	assert.Equal(t, task.TaskStateFinished, taskStatus.State)
+	assert.Empty(t, taskManager.GetAllStatus())
 }

@@ -6,7 +6,6 @@ import (
 
 	"passwall/config"
 	"passwall/internal/model"
-	"passwall/internal/repository"
 	"passwall/internal/service"
 	"passwall/internal/service/proxy"
 	"passwall/internal/service/task"
@@ -18,7 +17,7 @@ import (
 func TestCronJobExecutorRunsConfiguredSteps(t *testing.T) {
 	taskManager := task.NewTaskManager()
 	proxyTester := &fakeCronProxyTester{}
-	proxyService := &fakeCronProxyService{proxies: []*model.Proxy{{ID: 7}, {ID: 9}}}
+	proxyService := &fakeCronProxyService{proxyIDs: []uint{7, 9}}
 	ipDetector := &fakeCronIPDetector{}
 	executor := newCronJobExecutor(taskManager, proxyTester, proxyService, ipDetector)
 
@@ -68,6 +67,59 @@ func TestCronJobExecutorDoesNotUseGlobalTaskSkip(t *testing.T) {
 	require.NotNil(t, proxyTester.request)
 }
 
+func TestCronJobPanicDoesNotFinishUnrelatedTask(t *testing.T) {
+	taskManager := task.NewTaskManager()
+	run, started := task.StartRun(context.Background(), taskManager, task.TaskTypeSpeedTest, 1)
+	require.True(t, started)
+	proxyTester := &fakeCronProxyTester{panicOnTest: true}
+	executor := newCronJobExecutor(taskManager, proxyTester, &fakeCronProxyService{}, &fakeCronIPDetector{})
+
+	executor.Execute(config.CronJob{
+		Name:      "panic",
+		TestProxy: config.TestProxyConfig{Enable: true},
+	})
+
+	assert.True(t, taskManager.IsRunning(task.TaskTypeSpeedTest))
+	run.Finish("")
+}
+
+func TestCronJobIPConflictStopsBeforeCompletionWebhook(t *testing.T) {
+	executor := newCronJobExecutor(
+		task.NewTaskManager(),
+		&fakeCronProxyTester{},
+		&fakeCronProxyService{proxyIDs: []uint{7}},
+		&fakeCronIPDetector{err: task.ErrTaskConflict},
+	)
+
+	continueJob := executor.executeIPCheck(config.CronJob{
+		Name:    "conflict",
+		IPCheck: config.IPCheckConfig{Enable: true},
+	})
+
+	assert.False(t, continueJob)
+}
+
+func TestCronIPCheckUsesKeysetBatches(t *testing.T) {
+	proxyIDs := make([]uint, schedulerBatchSize+1)
+	for index := range proxyIDs {
+		proxyIDs[index] = uint(index + 1)
+	}
+	proxyService := &fakeCronProxyService{proxyIDs: proxyIDs}
+	ipDetector := &fakeCronIPDetector{}
+	executor := newCronJobExecutor(task.NewTaskManager(), &fakeCronProxyTester{}, proxyService, ipDetector)
+
+	continueJob := executor.executeIPCheck(config.CronJob{
+		Name:    "batch",
+		IPCheck: config.IPCheckConfig{Enable: true, Concurrent: 3},
+	})
+
+	assert.True(t, continueJob)
+	assert.Equal(t, []proxyCursorCall{{0, schedulerBatchSize}, {schedulerBatchSize, schedulerBatchSize}}, proxyService.cursorCalls)
+	require.Len(t, ipDetector.reqs, 2)
+	assert.Len(t, ipDetector.reqs[0].ProxyIDList, schedulerBatchSize)
+	assert.Equal(t, []uint{schedulerBatchSize + 1}, ipDetector.reqs[1].ProxyIDList)
+}
+
 func TestBuildProxyFilterIgnoresInvalidStatuses(t *testing.T) {
 	filter := buildProxyFilter("bad,1,2")
 
@@ -77,7 +129,8 @@ func TestBuildProxyFilterIgnoresInvalidStatuses(t *testing.T) {
 }
 
 type fakeCronProxyTester struct {
-	request *proxy.TestRequest
+	request     *proxy.TestRequest
+	panicOnTest bool
 }
 
 func (f *fakeCronProxyTester) TestProxy(ctx context.Context, proxy *model.Proxy) (*model.SpeedTestResult, error) {
@@ -85,14 +138,23 @@ func (f *fakeCronProxyTester) TestProxy(ctx context.Context, proxy *model.Proxy)
 }
 
 func (f *fakeCronProxyTester) TestProxies(ctx context.Context, request *proxy.TestRequest, async bool) error {
+	if f.panicOnTest {
+		panic("test panic")
+	}
 	f.request = request
 	return nil
 }
 
 type fakeCronProxyService struct {
 	proxy.ProxyService
-	proxies []*model.Proxy
-	banReq  proxy.BanProxyReq
+	proxyIDs    []uint
+	cursorCalls []proxyCursorCall
+	banReq      proxy.BanProxyReq
+}
+
+type proxyCursorCall struct {
+	afterID uint
+	limit   int
 }
 
 func (f *fakeCronProxyService) BanProxy(ctx context.Context, req proxy.BanProxyReq) error {
@@ -100,16 +162,29 @@ func (f *fakeCronProxyService) BanProxy(ctx context.Context, req proxy.BanProxyR
 	return nil
 }
 
-func (f *fakeCronProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {
-	return f.proxies, int64(len(f.proxies)), nil
+func (f *fakeCronProxyService) GetProxyIDsAfter(afterID uint, limit int) ([]uint, error) {
+	f.cursorCalls = append(f.cursorCalls, proxyCursorCall{afterID, limit})
+	result := make([]uint, 0, limit)
+	for _, id := range f.proxyIDs {
+		if id > afterID {
+			result = append(result, id)
+			if len(result) == limit {
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 type fakeCronIPDetector struct {
 	service.IPDetectorService
-	req *service.BatchIPDetectorReq
+	req  *service.BatchIPDetectorReq
+	reqs []*service.BatchIPDetectorReq
+	err  error
 }
 
 func (f *fakeCronIPDetector) BatchDetect(ctx context.Context, req *service.BatchIPDetectorReq) error {
 	f.req = req
-	return nil
+	f.reqs = append(f.reqs, req)
+	return f.err
 }

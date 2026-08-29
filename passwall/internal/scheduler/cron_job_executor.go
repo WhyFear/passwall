@@ -46,7 +46,9 @@ func (e *cronJobExecutor) Execute(job config.CronJob) {
 	ctx := context.Background()
 	e.executeProxyTest(ctx, job)
 	e.executeAutoBan(ctx, job)
-	e.executeIPCheck(job)
+	if !e.executeIPCheck(job) {
+		return
+	}
 	e.executeWebhooks(job)
 	log.Infoln("Job '%s' finished execution.", job.Name)
 }
@@ -56,18 +58,6 @@ func (e *cronJobExecutor) recoverJob(job config.CronJob) {
 		return
 	} else {
 		log.Infoln("Job %s panic: %v", job.Name, r)
-	}
-
-	for _, status := range e.taskManager.GetAllStatus() {
-		if status.State != task.TaskStateRunning && status.State != task.TaskStateCanceling {
-			continue
-		}
-		if status.ResourceID == 0 {
-			e.taskManager.FinishTask(status.Type, "任务执行过程中发生严重错误")
-		} else {
-			e.taskManager.FinishResourceTask(status.Type, status.ResourceID, "任务执行过程中发生严重错误")
-		}
-		log.Infoln("Forced task %s (resource=%d) to finish due to panic", status.Type, status.ResourceID)
 	}
 }
 
@@ -102,30 +92,40 @@ func (e *cronJobExecutor) executeAutoBan(ctx context.Context, job config.CronJob
 	}
 }
 
-func (e *cronJobExecutor) executeIPCheck(job config.CronJob) {
+func (e *cronJobExecutor) executeIPCheck(job config.CronJob) bool {
 	if !job.IPCheck.Enable {
-		return
+		return true
 	}
 	log.Infoln("Job '%s': Start to check ip quality.", job.Name)
-	proxies, _, err := e.proxyService.GetProxiesByFilters(nil, "id", "asc", 1, 100000)
-	if err != nil {
-		log.Errorln("Job '%s': Failed to get proxies: %v", job.Name, err)
-		return
-	}
-	proxyIDList := make([]uint, 0, len(proxies))
-	for _, singleProxy := range proxies {
-		proxyIDList = append(proxyIDList, singleProxy.ID)
-	}
-	err = e.ipDetectService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
-		ProxyIDList:     proxyIDList,
-		Enabled:         true,
-		IPInfoEnable:    job.IPCheck.IPInfo.Enable,
-		APPUnlockEnable: job.IPCheck.AppUnlock.Enable,
-		Refresh:         job.IPCheck.Refresh,
-		Concurrent:      job.IPCheck.Concurrent,
-	})
-	if err != nil {
-		log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
+	for afterID := uint(0); ; {
+		proxyIDs, err := e.proxyService.GetProxyIDsAfter(afterID, schedulerBatchSize)
+		if err != nil {
+			log.Errorln("Job '%s': Failed to get proxies: %v", job.Name, err)
+			return true
+		}
+		if len(proxyIDs) == 0 {
+			return true
+		}
+		err = e.ipDetectService.BatchDetect(context.Background(), &service.BatchIPDetectorReq{
+			ProxyIDList:     proxyIDs,
+			Enabled:         true,
+			IPInfoEnable:    job.IPCheck.IPInfo.Enable,
+			APPUnlockEnable: job.IPCheck.AppUnlock.Enable,
+			Refresh:         job.IPCheck.Refresh,
+			Concurrent:      job.IPCheck.Concurrent,
+		})
+		if err != nil {
+			if task.IsConflictError(err) {
+				log.Warnln("Job '%s': IP detection skipped because another task holds a conflicting resource", job.Name)
+				return false
+			}
+			log.Errorln("Job '%s': Failed to detect ip quality: %v", job.Name, err)
+			return true
+		}
+		if len(proxyIDs) < schedulerBatchSize {
+			return true
+		}
+		afterID = proxyIDs[len(proxyIDs)-1]
 	}
 }
 
@@ -136,7 +136,7 @@ func (e *cronJobExecutor) executeWebhooks(job config.CronJob) {
 	log.Infoln("Job '%s': Start to send webhook.", job.Name)
 	if errs := e.webhookClient.ExecuteWebhooks(job.Webhook, nil); len(errs) > 0 {
 		for _, err := range errs {
-			log.Errorln("Webhook execution error: %v", err)
+			log.Errorln("Webhook execution failed, error type: %T", err)
 		}
 		return
 	}

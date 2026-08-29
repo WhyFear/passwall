@@ -19,6 +19,7 @@ type TaskRun struct {
 	manager    TaskManager
 	taskType   TaskType
 	resourceID uint
+	runID      uint64
 	ctx        context.Context
 	completed  atomic.Int32
 	finishOnce sync.Once
@@ -32,7 +33,7 @@ func StartRun(ctx context.Context, manager TaskManager, taskType TaskType, total
 }
 
 func StartRunWithSpec(ctx context.Context, manager TaskManager, spec TaskSpec) (*TaskRun, bool) {
-	taskCtx, started := manager.StartTaskWithSpec(ctx, spec)
+	taskCtx, runID, started := manager.startTaskWithSpec(ctx, spec)
 	if !started {
 		return nil, false
 	}
@@ -40,6 +41,7 @@ func StartRunWithSpec(ctx context.Context, manager TaskManager, spec TaskSpec) (
 		manager:    manager,
 		taskType:   spec.Type,
 		resourceID: spec.ResourceID,
+		runID:      runID,
 		ctx:        taskCtx,
 	}, true
 }
@@ -50,30 +52,22 @@ func (r *TaskRun) Context() context.Context {
 
 func (r *TaskRun) IncrementProgress(errMsg string) int {
 	completed := int(r.completed.Add(1))
-	if r.resourceID != 0 {
-		r.manager.UpdateResourceProgress(r.taskType, r.resourceID, completed, errMsg)
-	} else {
-		r.manager.UpdateProgress(r.taskType, completed, errMsg)
-	}
+	r.manager.updateRunProgress(r.taskType, r.resourceID, r.runID, completed, errMsg)
 	return completed
 }
 
 func (r *TaskRun) UpdateProgress(completed int, errMsg string) {
 	r.completed.Store(int32(completed))
-	if r.resourceID != 0 {
-		r.manager.UpdateResourceProgress(r.taskType, r.resourceID, completed, errMsg)
-	} else {
-		r.manager.UpdateProgress(r.taskType, completed, errMsg)
-	}
+	r.manager.updateRunProgress(r.taskType, r.resourceID, r.runID, completed, errMsg)
+}
+
+func (r *TaskRun) UpdateTotal(total int) {
+	r.manager.updateRunTotal(r.taskType, r.resourceID, r.runID, total)
 }
 
 func (r *TaskRun) Finish(errMsg string) {
 	r.finishOnce.Do(func() {
-		if r.resourceID != 0 {
-			r.manager.FinishResourceTask(r.taskType, r.resourceID, errMsg)
-		} else {
-			r.manager.FinishTask(r.taskType, errMsg)
-		}
+		r.manager.finishRun(r.taskType, r.resourceID, r.runID, errMsg)
 	})
 }
 

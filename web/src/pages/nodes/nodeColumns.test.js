@@ -27,7 +27,6 @@ describe('node columns', () => {
 
     expect(columns.map(column => column.key)).toEqual([
       'index',
-      'subscription_url',
       'name',
       'address',
       'type',

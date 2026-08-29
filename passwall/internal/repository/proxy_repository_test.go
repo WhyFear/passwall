@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"errors"
+	"strconv"
 	"testing"
 
 	"passwall/internal/model"
@@ -10,6 +12,72 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestProxyRepositoryBatchUpdateStopsAtFirstError(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	proxies := []*model.Proxy{
+		{Name: "one", Domain: "one.example", Port: 1001, Password: "p1", Type: model.ProxyTypeSS},
+		{Name: "two", Domain: "two.example", Port: 1002, Password: "p2", Type: model.ProxyTypeSS},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	updates := 0
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("test:fail-first-proxy-update", func(tx *gorm.DB) {
+		updates++
+		tx.AddError(errors.New("write failed"))
+	}))
+
+	err := repo.BatchUpdateProxyConfig(proxies)
+
+	require.ErrorContains(t, err, "write failed")
+	assert.Equal(t, 1, updates)
+}
+
+func TestProxyRepositoryBatchCreateRollsBackFailedBatch(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	proxies := make([]*model.Proxy, 501)
+	for i := range proxies {
+		proxies[i] = &model.Proxy{
+			Name: "proxy", Domain: "proxy-" + strconv.Itoa(i) + ".example", Port: 443,
+			Password: "secret", Type: model.ProxyTypeTrojan,
+		}
+	}
+	creates := 0
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test:fail-second-proxy-batch", func(tx *gorm.DB) {
+		creates++
+		if creates == 2 {
+			tx.AddError(errors.New("second batch failed"))
+		}
+	}))
+
+	err := repo.BatchCreate(proxies)
+
+	require.ErrorContains(t, err, "second batch failed")
+	var count int64
+	require.NoError(t, db.Model(&model.Proxy{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestProxyRepositoryCountsSubscriptionsInOneQuery(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	subscriptionOne, subscriptionTwo := uint(1), uint(2)
+	require.NoError(t, repo.BatchCreate([]*model.Proxy{
+		{Name: "ok", Domain: "ok.example", Port: 1, Password: "1", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionOne, Status: model.ProxyStatusOK},
+		{Name: "failed", Domain: "failed.example", Port: 2, Password: "2", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionOne, Status: model.ProxyStatusFailed},
+		{Name: "banned", Domain: "banned.example", Port: 3, Password: "3", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionOne, Status: model.ProxyStatusBanned},
+		{Name: "other", Domain: "other.example", Port: 4, Password: "4", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionTwo, Status: model.ProxyStatusOK},
+	}))
+
+	counts, err := repo.CountBySubscriptionIDs([]uint{subscriptionOne, subscriptionTwo, 3})
+
+	require.NoError(t, err)
+	assert.Equal(t, SubscriptionProxyCounts{SubscriptionID: 1, AllCount: 3, ValidCount: 2, OKCount: 1}, counts[1])
+	assert.Equal(t, SubscriptionProxyCounts{SubscriptionID: 2, AllCount: 1, ValidCount: 1, OKCount: 1}, counts[2])
+	assert.Zero(t, counts[3].AllCount)
+}
 
 func TestProxyRepositoryFindPageFiltersSortsAndPaginates(t *testing.T) {
 	db := newProxyRepositoryTestDB(t)
@@ -36,6 +104,22 @@ func TestProxyRepositoryFindPageFiltersSortsAndPaginates(t *testing.T) {
 	require.Len(t, result.Items, 2)
 	assert.Equal(t, "b", result.Items[0].Name)
 	assert.Equal(t, "c", result.Items[1].Name)
+}
+
+func TestProxyRepositoryFindIDsAfterUsesKeysetAndSkipsBanned(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	proxies := []*model.Proxy{
+		{Name: "a", Domain: "a.example", Port: 1, Password: "a", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+		{Name: "b", Domain: "b.example", Port: 2, Password: "b", Type: model.ProxyTypeSS, Status: model.ProxyStatusBanned},
+		{Name: "c", Domain: "c.example", Port: 3, Password: "c", Type: model.ProxyTypeSS, Status: model.ProxyStatusOK},
+	}
+	require.NoError(t, repo.BatchCreate(proxies))
+
+	ids, err := repo.FindIDsAfter(proxies[0].ID, 1)
+
+	require.NoError(t, err)
+	assert.Equal(t, []uint{proxies[2].ID}, ids)
 }
 
 func TestProxyRepositoryFindByStatusAndTypesIncludingBanned(t *testing.T) {

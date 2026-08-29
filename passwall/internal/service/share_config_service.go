@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const maxShareConfigLimit = 1000
+
 type ShareConfigService interface {
 	List() ([]*model.ShareConfig, error)
 	Create(req ShareConfigRequest) (*model.ShareConfig, error)
@@ -160,6 +162,9 @@ func validateShareConfig(config *model.ShareConfig) error {
 	}
 	if config.Limit < 0 {
 		return errors.New("limit must be greater than or equal to 0")
+	}
+	if config.Limit > maxShareConfigLimit {
+		return errors.New("limit must be less than or equal to 1000")
 	}
 	return nil
 }

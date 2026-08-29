@@ -14,7 +14,7 @@ func Recovery() gin.HandlerFunc {
 		defer func() {
 			if err := recover(); err != nil {
 				// 打印错误堆栈信息
-				log.Errorln("panic: %v\n", err)
+				log.Errorln("panic, error type: %T", err)
 				debug.PrintStack()
 
 				// 返回500响应

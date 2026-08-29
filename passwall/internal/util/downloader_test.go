@@ -24,6 +24,18 @@ func TestDownloadFromURLWithContextReturnsCanceledContext(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDownloadFromURLWithContextPreservesDeadline(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	_, err := DownloadFromURLWithContext(ctx, "https://93.184.216.34", &DownloadOptions{
+		Timeout:     time.Minute,
+		MaxFileSize: 1024,
+	})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 func TestGetUrlWithContextUsesRequestContext(t *testing.T) {
 	type contextKey string
 	key := contextKey("marker")

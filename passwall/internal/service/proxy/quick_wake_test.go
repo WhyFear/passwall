@@ -42,11 +42,7 @@ func TestQuickWakeWakesSuccessfulBannedProxies(t *testing.T) {
 	assert.Equal(t, uint(1), proxyRepo.updated[0].ID)
 	assert.Equal(t, model.ProxyStatusPending, proxyRepo.updated[0].Status)
 
-	status := taskManager.GetStatus(task.TaskTypeQuickWake)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskStateFinished, status.State)
-	assert.Equal(t, 2, status.Completed)
-	assert.Equal(t, 100, status.Progress)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeQuickWake))
 }
 
 func TestQuickWakePassesTypeFilter(t *testing.T) {

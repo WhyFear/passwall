@@ -80,6 +80,33 @@ func TestProxyServiceBanProxyReturnsConflictWhenProxyWriteTaskIsActive(t *testin
 	assert.True(t, errors.Is(err, task.ErrTaskConflict), "expected ErrTaskConflict, got: %v", err)
 }
 
+func TestSpeedTestMeetsAllEnabledAutoBanThresholds(t *testing.T) {
+	req := BanProxyReq{
+		DownloadSpeedThreshold: 1000,
+		UploadSpeedThreshold:   500,
+		PingThreshold:          100,
+	}
+
+	assert.True(t, speedTestMeetsThresholds(&model.SpeedTestHistory{
+		DownloadSpeed: 1000,
+		UploadSpeed:   500,
+		Ping:          100,
+	}, req))
+	assert.False(t, speedTestMeetsThresholds(&model.SpeedTestHistory{
+		DownloadSpeed: 999,
+		UploadSpeed:   500,
+		Ping:          100,
+	}, req))
+	assert.False(t, speedTestMeetsThresholds(&model.SpeedTestHistory{
+		DownloadSpeed: 1000,
+		UploadSpeed:   500,
+		Ping:          101,
+	}, req))
+	assert.False(t, speedTestMeetsThresholds(&model.SpeedTestHistory{}, BanProxyReq{}))
+	assert.False(t, successRateBelowThreshold(1, 2, 50))
+	assert.True(t, successRateBelowThreshold(1, 2, 50.1))
+}
+
 type capturingProxyRepository struct {
 	repository.ProxyRepository
 	query  repository.PageQuery

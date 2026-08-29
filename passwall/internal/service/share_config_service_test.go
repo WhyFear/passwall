@@ -95,6 +95,15 @@ func TestShareConfigServiceCreateValidatesRequest(t *testing.T) {
 	assert.Equal(t, "limit must be greater than or equal to 0", err.Error())
 }
 
+func TestShareConfigServiceRejectsLimitOverMaximum(t *testing.T) {
+	service := NewShareConfigService(&fakeShareConfigRepo{})
+
+	config, err := service.Create(ShareConfigRequest{Name: "节点分享", Type: "share_link", Limit: 1001})
+
+	require.Error(t, err)
+	assert.Nil(t, config)
+}
+
 func TestShareConfigServiceUpdatePersistsAppUnlock(t *testing.T) {
 	repo := &fakeShareConfigRepo{
 		config: &model.ShareConfig{

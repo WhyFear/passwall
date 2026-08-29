@@ -48,7 +48,7 @@ func (r *subscriptionRefresher) RefreshAsync(ctx context.Context, subscription *
 			if ctx.Err() != nil {
 				return
 			}
-			log.Errorln("刷新订阅失败: %v", err)
+			log.Errorln("刷新订阅[ID:%d]失败，error type: %T", subscription.ID, err)
 		}
 	}()
 }
@@ -90,8 +90,8 @@ func (r *subscriptionRefresher) refreshMany(ctx context.Context, taskRun *task.T
 
 	defer func() {
 		if recoverValue := recover(); recoverValue != nil {
-			finishMessage = fmt.Sprintf("刷新订阅任务发生panic: %v", recoverValue)
-			log.Errorln("%s", finishMessage)
+			finishMessage = "刷新订阅任务发生panic"
+			log.Errorln("刷新订阅任务发生panic，error type: %T", recoverValue)
 			shouldTriggerPendingTest = false
 		}
 		taskRun.FinishWithContextMessage(finishMessage)
@@ -125,7 +125,7 @@ subscriptionLoop:
 				lastError = ctx.Err()
 				break subscriptionLoop
 			}
-			log.Errorln("刷新订阅[%s]失败: %v", subscription.URL, err)
+			log.Errorln("刷新订阅[ID:%d]失败，error type: %T", subscription.ID, err)
 			lastError = err
 		}
 		if triggerPendingTest {
@@ -140,15 +140,15 @@ subscriptionLoop:
 	if stoppedByContext {
 		finishMessage = task.MessageForContext(ctx)
 	} else if lastError != nil {
-		finishMessage = lastError.Error()
+		finishMessage = "部分订阅刷新失败"
 	}
 
-	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 错误: %v", jobsTotal, jobsDone, lastError)
+	log.Infoln("所有订阅刷新完成, 共处理 %d 个订阅, 完成 %d 个, 是否有错误: %t", jobsTotal, jobsDone, lastError != nil)
 }
 
 func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) (retErr error) {
 	taskType := task.TaskTypeReloadSubs
-	taskCtx, started := r.taskManager.StartTaskWithSpec(ctx, task.TaskSpec{
+	taskRun, started := task.StartRunWithSpec(ctx, r.taskManager, task.TaskSpec{
 		Type:       taskType,
 		ResourceID: subscription.ID,
 		Total:      1,
@@ -161,23 +161,24 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 		log.Infoln("订阅[ID:%d]正在刷新中，本次跳过", subscription.ID)
 		return fmt.Errorf("订阅[ID:%d]正在刷新或存在冲突任务", subscription.ID)
 	}
+	taskCtx := taskRun.Context()
 
 	shouldTriggerPendingTest := false
 	defer func() {
 		if recoverValue := recover(); recoverValue != nil {
-			retErr = fmt.Errorf("刷新订阅发生panic: %v", recoverValue)
-			log.Errorln("刷新订阅[ID:%d]发生panic: %v", subscription.ID, recoverValue)
-			r.taskManager.FinishResourceTask(taskType, subscription.ID, retErr.Error())
+			retErr = fmt.Errorf("刷新订阅发生panic")
+			log.Errorln("刷新订阅[ID:%d]发生panic，error type: %T", subscription.ID, recoverValue)
+			taskRun.Finish(retErr.Error())
 			return
 		}
 		if retErr == nil {
-			r.taskManager.UpdateResourceProgress(taskType, subscription.ID, 1, "")
+			taskRun.UpdateProgress(1, "")
 		}
 		errMsg := ""
 		if retErr != nil {
 			errMsg = retErr.Error()
 		}
-		r.taskManager.FinishResourceTask(taskType, subscription.ID, errMsg)
+		taskRun.Finish(errMsg)
 		if retErr == nil && shouldTriggerPendingTest {
 			r.triggerPendingProxyTest(taskCtx)
 		}
@@ -191,7 +192,13 @@ func (r *subscriptionRefresher) RefreshOne(ctx context.Context, subscription *mo
 func (r *subscriptionRefresher) refreshOneWithContext(ctx context.Context, subscription *model.Subscription, options *util.DownloadOptions) (bool, error) {
 	var err error
 
-	log.Infoln("开始刷新订阅: %s", subscription.URL)
+	if deleted, err := r.subscriptionDeleted(subscription.ID); err != nil {
+		return false, err
+	} else if deleted {
+		return false, nil
+	}
+
+	log.Infoln("开始刷新订阅[ID:%d]", subscription.ID)
 	if subscription.URL == "" {
 		err = fmt.Errorf("订阅为空")
 		return false, err
@@ -203,7 +210,7 @@ func (r *subscriptionRefresher) refreshOneWithContext(ctx context.Context, subsc
 
 	downloadOptions := buildDownloadOptions(options)
 	if downloadOptions.ProxyURL != "" {
-		log.Infoln("使用代理下载: %s", downloadOptions.ProxyURL)
+		log.Infoln("订阅[ID:%d]使用代理下载", subscription.ID)
 	}
 
 	var content []byte
@@ -212,9 +219,14 @@ func (r *subscriptionRefresher) refreshOneWithContext(ctx context.Context, subsc
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		log.Errorln("下载订阅内容失败: %v", err)
+		log.Errorln("订阅[ID:%d]下载失败，error type: %T", subscription.ID, err)
 		_ = markSubscriptionInvalid(r.subscriptionRepo, subscription)
-		return false, fmt.Errorf("下载订阅内容失败: %w", err)
+		return false, fmt.Errorf("下载订阅内容失败")
+	}
+	if deleted, err := r.subscriptionDeleted(subscription.ID); err != nil {
+		return false, err
+	} else if deleted {
+		return false, nil
 	}
 
 	result, err := r.proxySyncer.Sync(ctx, subscription, content)
@@ -222,9 +234,14 @@ func (r *subscriptionRefresher) refreshOneWithContext(ctx context.Context, subsc
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		log.Errorln("解析订阅内容失败: %v", err)
+		log.Errorln("订阅[ID:%d]解析失败，error type: %T", subscription.ID, err)
 		_ = markSubscriptionInvalid(r.subscriptionRepo, subscription)
+		return false, fmt.Errorf("解析订阅内容失败")
+	}
+	if deleted, err := r.subscriptionDeleted(subscription.ID); err != nil {
 		return false, err
+	} else if deleted {
+		return false, nil
 	}
 
 	if err = markSubscriptionOK(r.subscriptionRepo, subscription, content); err != nil {
@@ -233,6 +250,15 @@ func (r *subscriptionRefresher) refreshOneWithContext(ctx context.Context, subsc
 	logProxySyncResult(subscription, result)
 
 	return true, nil
+}
+
+func (r *subscriptionRefresher) subscriptionDeleted(id uint) (bool, error) {
+	subscription, err := r.subscriptionRepo.FindByID(id)
+	if err != nil {
+		log.Errorln("检查订阅[ID:%d]状态失败，error type: %T", id, err)
+		return false, fmt.Errorf("检查订阅状态失败")
+	}
+	return subscription == nil || subscription.Status == model.SubscriptionStatusDeleted, nil
 }
 
 func buildDownloadOptions(options *util.DownloadOptions) *util.DownloadOptions {

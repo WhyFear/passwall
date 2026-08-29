@@ -32,12 +32,7 @@ func TestTesterTracksProgress(t *testing.T) {
 	err := tester.TestProxies(context.Background(), &TestRequest{Concurrent: 2}, false)
 
 	require.NoError(t, err)
-	status := taskManager.GetStatus(task.TaskTypeSpeedTest)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskStateFinished, status.State)
-	assert.Equal(t, 2, status.Completed)
-	assert.Equal(t, 100, status.Progress)
-	assert.Empty(t, status.Error)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeSpeedTest))
 }
 
 func TestTesterCancellationStopsPendingTests(t *testing.T) {
@@ -86,14 +81,10 @@ func TestTesterCancellationStopsPendingTests(t *testing.T) {
 	require.False(t, timedOut)
 
 	require.Eventually(t, func() bool {
-		status := taskManager.GetStatus(task.TaskTypeSpeedTest)
-		return status != nil && status.State == task.TaskStateFinished
+		return !taskManager.IsRunning(task.TaskTypeSpeedTest)
 	}, time.Second, 10*time.Millisecond)
 
-	status := taskManager.GetStatus(task.TaskTypeSpeedTest)
-	require.NotNil(t, status)
-	assert.Equal(t, task.TaskCanceledMessage, status.Error)
-	assert.Equal(t, 1, status.Completed)
+	assert.Nil(t, taskManager.GetStatus(task.TaskTypeSpeedTest))
 	assert.Equal(t, int32(1), calls.Load())
 	assert.Empty(t, proxyRepo.updated)
 	assert.Empty(t, historyRepo.created)

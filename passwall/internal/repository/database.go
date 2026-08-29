@@ -71,6 +71,7 @@ func InitDB(dbConfig config.Database) (*gorm.DB, error) {
 			&model.IPUnlockInfo{},
 			&model.SystemConfig{},
 			&model.ShareConfig{},
+			&model.TrafficStatistics{},
 		)
 		if err != nil {
 			return nil, err

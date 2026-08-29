@@ -16,9 +16,8 @@ type TrafficRepository interface {
 	FindByProxyID(proxyID uint) (*model.TrafficStatistics, error)
 	FindByProxyIDList(proxyIDList []uint) (map[uint]*model.TrafficStatistics, error)
 	FindAll() ([]*model.TrafficStatistics, error)
-	Create(traffic *model.TrafficStatistics) error
-	CreateOrUpdate(traffic *model.TrafficStatistics) error
-	UpdateTrafficByProxyID(traffic *model.TrafficStatistics) error
+	IncrementTraffic(batch []model.TrafficStatistics) error
+	ValidateProxyIDUnique() error
 }
 
 // GormTrafficRepository 基于GORM的流量统计仓库实现
@@ -96,26 +95,59 @@ func (r *GormTrafficRepository) FindAll() ([]*model.TrafficStatistics, error) {
 	return traffics, nil
 }
 
-// Create 创建流量统计记录
-func (r *GormTrafficRepository) Create(traffic *model.TrafficStatistics) error {
-	return r.db.Create(traffic).Error
+// IncrementTraffic atomically adds a whole flush batch in one UPSERT.
+func (r *GormTrafficRepository) IncrementTraffic(batch []model.TrafficStatistics) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	// ponytail: one statement is atomic; chunk transactionally if a flush reaches PostgreSQL's bind limit.
+	return r.incrementTrafficStatement(batch).Error
 }
 
-// CreateOrUpdate 创建或更新流量统计记录（根据proxy_id判断）
-func (r *GormTrafficRepository) CreateOrUpdate(traffic *model.TrafficStatistics) error {
+func (r *GormTrafficRepository) incrementTrafficStatement(batch []model.TrafficStatistics) *gorm.DB {
 	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "proxy_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"download_total", "upload_total", "updated_at"}),
-	}).Create(traffic).Error
+		Columns: []clause.Column{{Name: "proxy_id"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"download_total": gorm.Expr("traffic_statistics.download_total + excluded.download_total"),
+			"upload_total":   gorm.Expr("traffic_statistics.upload_total + excluded.upload_total"),
+			"updated_at":     time.Now(),
+		}),
+	}).Create(&batch)
 }
 
-// UpdateTrafficByProxyID 根据代理ID更新流量数据
-func (r *GormTrafficRepository) UpdateTrafficByProxyID(traffic *model.TrafficStatistics) error {
-	return r.db.Model(&model.TrafficStatistics{}).
-		Where("proxy_id = ?", traffic.ProxyID).
-		Updates(map[string]interface{}{
-			"download_total": traffic.DownloadTotal,
-			"upload_total":   traffic.UploadTotal,
-			"updated_at":     time.Now(),
-		}).Error
+func (r *GormTrafficRepository) ValidateProxyIDUnique() error {
+	if r.db.Dialector.Name() == "postgres" {
+		var ready bool
+		err := r.db.Raw(`
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_index AS i
+				JOIN pg_class AS t ON t.oid = i.indrelid
+				JOIN pg_attribute AS a ON a.attrelid = t.oid AND a.attname = 'proxy_id'
+				WHERE t.oid = to_regclass('traffic_statistics')
+				  AND i.indisunique AND i.indisvalid AND i.indisready
+				  AND i.indnkeyatts = 1 AND i.indkey[0] = a.attnum
+				  AND i.indpred IS NULL AND i.indexprs IS NULL
+			)`).Scan(&ready).Error
+		if err != nil {
+			return fmt.Errorf("inspect traffic_statistics indexes: %w", err)
+		}
+		if ready {
+			return nil
+		}
+		return fmt.Errorf("traffic_statistics(proxy_id) requires a unique index; apply the PostgreSQL traffic migration")
+	}
+
+	indexes, err := r.db.Migrator().GetIndexes(&model.TrafficStatistics{})
+	if err != nil {
+		return fmt.Errorf("inspect traffic_statistics indexes: %w", err)
+	}
+	for _, index := range indexes {
+		unique, ok := index.Unique()
+		columns := index.Columns()
+		if ok && unique && len(columns) == 1 && columns[0] == "proxy_id" {
+			return nil
+		}
+	}
+	return fmt.Errorf("traffic_statistics(proxy_id) requires a unique index; apply the PostgreSQL traffic migration")
 }

@@ -41,13 +41,8 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 		}},
 		total: 1,
 	}
-	subscriptionManager := &fakeListSubscriptionManager{
-		subscriptions: map[uint]*model.Subscription{
-			3: {ID: 3, URL: "https://sub.example/list"},
-		},
-	}
 	router := gin.New()
-	router.GET("/proxies", GetProxyList(proxyService, subscriptionManager))
+	router.GET("/proxies", GetProxyList(proxyService))
 
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/proxies?page=2&pageSize=20&sortField=ping&sortOrder=ascend&status=1&type=trojan&country_code=US&risk_level=low&app_unlock=Netflix,OpenAI", nil)
@@ -70,7 +65,7 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 	items := body["items"].([]interface{})
 	require.Len(t, items, 1)
 	item := items[0].(map[string]interface{})
-	assert.Equal(t, "https://sub.example/list", item["subscription_url"])
+	assert.NotContains(t, item, "subscription_url")
 	assert.Equal(t, "example.com:443", item["address"])
 	assert.NotContains(t, item, "success_rate")
 	assert.NotContains(t, item, "download_total")
@@ -81,7 +76,7 @@ func TestGetProxyListReturnsBaseFieldsOnly(t *testing.T) {
 func TestGetProxyListRejectsInvalidStatusFilter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/proxies", GetProxyList(&fakeListProxyService{}, &fakeListSubscriptionManager{}))
+	router.GET("/proxies", GetProxyList(&fakeListProxyService{}))
 
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/proxies?status=bad", nil)
@@ -168,7 +163,7 @@ func TestGetProxyMetadataValidatesRequest(t *testing.T) {
 
 func TestGetProxyDetailsReturnsTrafficAndIPInfo(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	statisticsService := traffic.NewTrafficStatisticsService(nil, nil, &fakeDetailsTrafficRepo{
+	statisticsService := traffic.NewTrafficStatisticsService(&fakeDetailsTrafficRepo{
 		traffic: &model.TrafficStatistics{ProxyID: 7, DownloadTotal: 1234, UploadTotal: 5678},
 	})
 	ipService := &fakeMetadataIPDetector{
@@ -216,15 +211,6 @@ func (f *fakeListProxyService) GetProxiesByFilters(filters *repository.NodeFilte
 	return f.proxies, f.total, nil
 }
 
-type fakeListSubscriptionManager struct {
-	proxy.SubscriptionManager
-	subscriptions map[uint]*model.Subscription
-}
-
-func (f *fakeListSubscriptionManager) GetSubscriptionByID(id uint) (*model.Subscription, error) {
-	return f.subscriptions[id], nil
-}
-
 type fakeMetadataSpeedService struct {
 	service.SpeedTestHistoryService
 	rates    map[uint]float64
@@ -270,7 +256,6 @@ func uintPtr(value uint) *uint {
 }
 
 var _ proxy.ProxyService = (*fakeListProxyService)(nil)
-var _ proxy.SubscriptionManager = (*fakeListSubscriptionManager)(nil)
 var _ service.SpeedTestHistoryService = (*fakeMetadataSpeedService)(nil)
 var _ service.IPDetectorService = (*fakeMetadataIPDetector)(nil)
 var _ repository.TrafficRepository = (*fakeDetailsTrafficRepo)(nil)

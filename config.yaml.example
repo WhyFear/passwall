@@ -44,6 +44,7 @@ cron_jobs:
       concurrent: 30
     auto_ban:
       enable: true
+      unit_version: 2 # 成功率使用 0-100，速度使用 B/s
       success_rate_threshold: 0
       download_speed_threshold: 0
       upload_speed_threshold: 0

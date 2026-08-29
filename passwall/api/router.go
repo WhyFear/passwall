@@ -5,6 +5,7 @@ import (
 	"passwall/api/handler"
 	"passwall/api/middleware"
 	"passwall/config"
+	"passwall/internal/repository"
 	"passwall/internal/scheduler"
 	"passwall/internal/service"
 
@@ -17,23 +18,25 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	ctx = context.WithValue(ctx, "concurrent", cfg.Concurrent)
 
 	// 创建Gin路由
-	router := gin.Default()
+	router := gin.New()
 	// 添加中间件
+	router.Use(middleware.AccessLogger())
 	router.Use(middleware.Cors())
 	router.Use(middleware.Recovery())
 	// no token required
+	router.GET("/healthz", handler.Health(repository.DB))
 	router.GET("/s/:slug", handler.GetSharedSubscribe(services.ShareConfigService, services.ProxyService, services.GeneratorFactory))
 
 	openApiGroup := router.Group("/api")
-	openAuthMiddleware := middleware.AuthReq(cfg.Token)
-	openApiGroup.Use(openAuthMiddleware)
+	openAuthMiddleware := middleware.Auth(cfg.Token)
+	openApiGroup.Use(openAuthMiddleware, middleware.RequestBodyLimit())
 	{
 		openApiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
 	}
 
 	apiGroup := router.Group("/api/v1")
 	authMiddleware := middleware.Auth(cfg.Token)
-	apiGroup.Use(authMiddleware)
+	apiGroup.Use(authMiddleware, middleware.RequestBodyLimit())
 	{
 		// 公开API
 		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))
@@ -56,7 +59,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 
 	webGroup := router.Group("/web/api")
 	webAuthMiddleware := middleware.Auth(cfg.Token)
-	webGroup.Use(webAuthMiddleware)
+	webGroup.Use(webAuthMiddleware, middleware.RequestBodyLimit())
 	{
 		// 新增订阅
 		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))
@@ -69,10 +72,10 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		// 获取订阅配置
 		webGroup.GET("/subscription/:id/config", handler.GetSubscriptionConfig(services.SubscriptionManager))
 		// 保存订阅配置
-		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager, scheduler))
+		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager))
 
 		// 获取代理信息
-		webGroup.GET("/proxies", handler.GetProxyList(services.ProxyService, services.SubscriptionManager))
+		webGroup.GET("/proxies", handler.GetProxyList(services.ProxyService))
 		webGroup.GET("/proxies/metadata", handler.GetProxyMetadata(services.SpeedTestHistoryService, services.IPDetectorService))
 		webGroup.GET("/proxies/:id/details", handler.GetProxyDetails(services.StatisticsService, services.IPDetectorService))
 		// 获取代理历史测速记录

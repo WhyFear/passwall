@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"passwall/internal/adapter/parser"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 
+	"github.com/metacubex/mihomo/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,14 +97,39 @@ func TestProxySyncerCreatesUpdatesSkipsAndDeduplicates(t *testing.T) {
 	assert.Equal(t, model.ProxyStatusPending, repo.updated[0].Status)
 }
 
+func TestDedupeProxiesDoesNotLogPassword(t *testing.T) {
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
+	proxy := &model.Proxy{Domain: "example.test", Port: 443, Password: "password-secret"}
+
+	result := dedupeProxies([]*model.Proxy{proxy, proxy})
+
+	require.Len(t, result, 1)
+	select {
+	case event := <-events:
+		assert.NotContains(t, strings.ToLower(event.Payload), "password-secret")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for dedupe log")
+	}
+}
+
 func TestProxySyncerReturnsParserErrors(t *testing.T) {
-	syncer := newProxySyncer(&fakeParserFactory{err: errors.New("missing parser")}, &fakeProxySyncRepository{})
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
+	syncer := newProxySyncer(&fakeParserFactory{err: errors.New("GET https://example.test?token=parser-secret")}, &fakeProxySyncRepository{})
 
 	result, err := syncer.Sync(context.Background(), &model.Subscription{Type: model.SubscriptionTypeClash}, []byte("content"))
 
 	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "获取解析器失败")
+	assert.NotContains(t, err.Error(), "parser-secret")
+	select {
+	case event := <-events:
+		assert.NotContains(t, event.Payload, "parser-secret")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for parser error log")
+	}
 }
 
 func TestProxySyncerRejectsEmptyParseResult(t *testing.T) {
@@ -111,6 +140,50 @@ func TestProxySyncerRejectsEmptyParseResult(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "未从订阅中解析出任何代理")
+}
+
+func TestProxySyncerReturnsLookupErrorsWithoutWriting(t *testing.T) {
+	repo := &fakeProxySyncRepository{findErr: errors.New("database unavailable")}
+	syncer := newProxySyncer(&fakeParserFactory{parser: freshProxyParser{}}, repo)
+
+	result, err := syncer.Sync(context.Background(), &model.Subscription{ID: 7, Type: model.SubscriptionTypeClash}, []byte("content"))
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Empty(t, repo.created)
+	assert.Empty(t, repo.updated)
+}
+
+func TestProxySyncerSerializesConcurrentSyncs(t *testing.T) {
+	repo := &blockingProxySyncRepository{
+		entered: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
+	syncer := newProxySyncer(&fakeParserFactory{parser: freshProxyParser{}}, repo)
+	errs := make(chan error, 2)
+
+	go func() {
+		_, err := syncer.Sync(context.Background(), &model.Subscription{ID: 1, Type: model.SubscriptionTypeClash}, []byte("one"))
+		errs <- err
+	}()
+	<-repo.entered
+
+	go func() {
+		_, err := syncer.Sync(context.Background(), &model.Subscription{ID: 2, Type: model.SubscriptionTypeClash}, []byte("two"))
+		errs <- err
+	}()
+
+	overlapped := false
+	select {
+	case <-repo.entered:
+		overlapped = true
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(repo.release)
+	require.NoError(t, <-errs)
+	require.NoError(t, <-errs)
+	assert.False(t, overlapped)
+	assert.Equal(t, int32(1), repo.maxActive.Load())
 }
 
 type fakeParserFactory struct {
@@ -131,6 +204,18 @@ type fakeParser struct {
 	err     error
 }
 
+type freshProxyParser struct{}
+
+func (freshProxyParser) Parse([]byte) ([]*model.Proxy, error) {
+	return []*model.Proxy{{
+		Name: "proxy", Domain: "example.test", Port: 443, Password: "secret", Type: model.ProxyTypeTrojan,
+	}}, nil
+}
+
+func (freshProxyParser) CanParse([]byte) bool { return true }
+
+func (freshProxyParser) GetType() model.SubscriptionType { return model.SubscriptionTypeClash }
+
 func (f *fakeParser) Parse(content []byte) ([]*model.Proxy, error) {
 	return f.proxies, f.err
 }
@@ -146,11 +231,37 @@ func (f *fakeParser) GetType() model.SubscriptionType {
 type fakeProxySyncRepository struct {
 	repository.ProxyRepository
 	existing map[string]*model.Proxy
+	findErr  error
 	created  []*model.Proxy
 	updated  []*model.Proxy
 }
 
+type blockingProxySyncRepository struct {
+	repository.ProxyRepository
+	entered   chan struct{}
+	release   chan struct{}
+	active    atomic.Int32
+	maxActive atomic.Int32
+}
+
+func (r *blockingProxySyncRepository) FindByDomainPortPassword(string, int, string) (*model.Proxy, error) {
+	return nil, nil
+}
+
+func (r *blockingProxySyncRepository) BatchCreate([]*model.Proxy) error {
+	active := r.active.Add(1)
+	for current := r.maxActive.Load(); active > current && !r.maxActive.CompareAndSwap(current, active); current = r.maxActive.Load() {
+	}
+	r.entered <- struct{}{}
+	<-r.release
+	r.active.Add(-1)
+	return nil
+}
+
 func (r *fakeProxySyncRepository) FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error) {
+	if r.findErr != nil {
+		return nil, r.findErr
+	}
 	if r.existing == nil {
 		return nil, nil
 	}
@@ -158,7 +269,13 @@ func (r *fakeProxySyncRepository) FindByDomainPortPassword(domain string, port i
 }
 
 func (r *fakeProxySyncRepository) BatchCreate(proxies []*model.Proxy) error {
-	r.created = append(r.created, proxies...)
+	for _, proxy := range proxies {
+		if proxy.ID == 0 {
+			r.created = append(r.created, proxy)
+		} else {
+			r.updated = append(r.updated, proxy)
+		}
+	}
 	return nil
 }
 

@@ -56,6 +56,16 @@ func GetProxyHistory(speedTestHistoryService service.SpeedTestHistoryService) gi
 			})
 			return
 		}
+		var valid bool
+		req.Page, req.PageSize, valid = normalizePagination(req.Page, req.PageSize)
+		if !valid {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusBadRequest,
+				"status_msg":  "Invalid pagination parameters",
+			})
+			return
+		}
 
 		// 创建分页参数
 		page := repository.PageQuery{

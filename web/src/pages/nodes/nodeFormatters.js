@@ -1,6 +1,5 @@
 export const DEFAULT_VISIBLE_COLUMNS = [
   'index',
-  'subscription_url',
   'name',
   'address',
   'type',

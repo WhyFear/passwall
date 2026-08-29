@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"passwall/internal/model"
 	"passwall/internal/repository"
 
@@ -10,8 +11,8 @@ import (
 func markSubscriptionInvalid(repo repository.SubscriptionRepository, subscription *model.Subscription) error {
 	subscription.Status = model.SubscriptionStatusInvalid
 	if err := repo.UpdateStatus(subscription); err != nil {
-		log.Errorln("更新订阅状态失败: %v", err)
-		return err
+		log.Errorln("更新订阅[ID:%d]状态失败，error type: %T", subscription.ID, err)
+		return fmt.Errorf("更新订阅状态失败")
 	}
 	return nil
 }
@@ -20,8 +21,8 @@ func markSubscriptionOK(repo repository.SubscriptionRepository, subscription *mo
 	subscription.Status = model.SubscriptionStatusOK
 	subscription.Content = string(content)
 	if err := repo.UpdateStatusAndContent(subscription); err != nil {
-		log.Errorln("更新订阅状态失败: %v", err)
-		return err
+		log.Errorln("更新订阅[ID:%d]状态失败，error type: %T", subscription.ID, err)
+		return fmt.Errorf("更新订阅状态失败")
 	}
 	return nil
 }
@@ -31,8 +32,8 @@ func logProxySyncResult(subscription *model.Subscription, result *proxySyncResul
 		return
 	}
 	log.Infoln(
-		"订阅[%s]刷新成功，解析出%d个代理，去重后%d个，新增%d个，更新%d个，跳过%d个",
-		subscription.URL,
+		"订阅[ID:%d]刷新成功，解析出%d个代理，去重后%d个，新增%d个，更新%d个，跳过%d个",
+		subscription.ID,
 		result.Parsed,
 		result.Unique,
 		result.Created,

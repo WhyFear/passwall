@@ -13,7 +13,6 @@ import {AppUnlockStatusTag, StatusTag} from './nodeTags';
 
 export const ALL_NODE_COLUMNS = [
   {key: 'index', title: '序号', fixed: false, hideable: false},
-  {key: 'subscription_url', title: '订阅链接', fixed: false, hideable: true},
   {key: 'name', title: '名称', fixed: false, hideable: true},
   {key: 'address', title: '节点', fixed: false, hideable: true},
   {key: 'type', title: '节点类型', fixed: false, hideable: true},
@@ -141,13 +140,6 @@ export const createNodeColumns = ({
   width: 60,
   render: (_, __, index) => index + 1,
   hidden: !visibleColumns['index']
-}, {
-  title: '订阅链接',
-  dataIndex: 'subscription_url',
-  key: 'subscription_url',
-  width: 300,
-  ellipsis: true,
-  hidden: !visibleColumns['subscription_url']
 }, {
   title: '名称',
   dataIndex: 'name',

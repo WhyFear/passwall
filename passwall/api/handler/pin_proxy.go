@@ -28,6 +28,7 @@ func PinProxy(service proxy.ProxyService) gin.HandlerFunc {
 				"status_code": http.StatusInternalServerError,
 				"status_msg":  "Failed to pin proxy",
 			})
+			return
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"result":      "success",

@@ -70,7 +70,7 @@ func NewServices(db *gorm.DB, cfg *config.Config) *Services {
 	// 创建代理测试服务
 	proxyTester := NewProxyTester(repos.Proxy, repos.Subscription, repos.SpeedTestHistory, speedTesterFactory, parserFactory, taskManager, configService, subscriptionManager)
 
-	statisticsService := traffic.NewTrafficStatisticsService(configService, proxyService, repos.Traffic)
+	statisticsService := traffic.NewTrafficStatisticsService(repos.Traffic)
 
 	ipDetectorService := NewIPDetector(configService, repos.Proxy, repos.ProxyIPAddress, repos.IPAddress, repos.IPBaseInfo, repos.IPInfo, repos.IPUnlockInfo, taskManager)
 

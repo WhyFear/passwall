@@ -58,7 +58,9 @@ func (r *GormSpeedTestHistoryRepository) FindByProxyID(proxyID uint, page PageQu
 	var total int64
 
 	query := r.db.Model(&model.SpeedTestHistory{}).Where("proxy_id = ?", proxyID).Order("created_at DESC")
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return SpeedTestHistoryPageResult{}, err
+	}
 
 	// 设置默认值
 	if page.Page <= 0 {

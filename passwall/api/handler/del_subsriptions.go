@@ -36,7 +36,7 @@ func DeleteSubscription(ctx context.Context, service proxy.SubscriptionManager, 
 
 		if err := service.DeleteSubscription(req.ID); err != nil {
 			c.JSON(http.StatusOK, gin.H{
-				"result":      err.Error(),
+				"result":      "fail",
 				"status_code": http.StatusInternalServerError,
 				"status_msg":  "Failed to delete subscription",
 			})
