@@ -16,6 +16,7 @@ import StatusTag from '../components/StatusTag';
 import IntervalSelector from '../components/IntervalSelector';
 import {parseCronToSimple} from '../utils/cronUtils';
 import {formatDate} from "../utils/timeUtils";
+import {createRequestGeneration} from './nodes/requestGeneration';
 
 const SubscriptionPage = () => {
   const [subscriptions, setSubscriptions] = useState([]);
@@ -39,6 +40,7 @@ const SubscriptionPage = () => {
   const [intervalMode, setIntervalMode] = useState('simple'); // 'simple' or 'advanced'
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [viewingId, setViewingId] = useState(null);
+  const detailRequests = useRef(createRequestGeneration());
 
   // 获取订阅列表
   const fetchSubscriptions = useCallback(async (page, pageSize) => {
@@ -86,6 +88,8 @@ const SubscriptionPage = () => {
       }
     };
   }, [fetchSubscriptions, fetchTaskStatusHandler]);
+
+  useEffect(() => () => detailRequests.current.invalidate(), []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -217,19 +221,28 @@ const SubscriptionPage = () => {
   };
 
   const handleViewSubscription = async (record) => {
+    const generation = detailRequests.current.begin();
     setViewingId(record.id);
     try {
       const data = await subscriptionApi.getSubscriptionDetail(record.id);
+      if (!detailRequests.current.isCurrent(generation)) return;
       if (!data?.items?.length) {
         throw new Error('未找到订阅');
       }
       setCurrentSubscription(data.items[0]);
       setDetailModalVisible(true);
     } catch (error) {
+      if (!detailRequests.current.isCurrent(generation)) return;
       message.error(`获取订阅详情失败: ${error.message || '未知错误'}`);
     } finally {
-      setViewingId(null);
+      if (detailRequests.current.isCurrent(generation)) setViewingId(null);
     }
+  };
+
+  const closeSubscriptionDetail = () => {
+    detailRequests.current.invalidate();
+    setViewingId(null);
+    setDetailModalVisible(false);
   };
 
   // 提交表单
@@ -506,8 +519,8 @@ const SubscriptionPage = () => {
     <Modal
       title={`订阅详情 #${currentSubscription?.id || ''}`}
       open={detailModalVisible}
-      onCancel={() => setDetailModalVisible(false)}
-      footer={<Button type="primary" onClick={() => setDetailModalVisible(false)}>关闭</Button>}
+      onCancel={closeSubscriptionDetail}
+      footer={<Button type="primary" onClick={closeSubscriptionDetail}>关闭</Button>}
       width={720}
     >
       <Descriptions bordered column={1} size="small">

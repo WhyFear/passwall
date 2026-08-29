@@ -23,21 +23,20 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 	router.Use(middleware.AccessLogger())
 	router.Use(middleware.Cors())
 	router.Use(middleware.Recovery())
-	router.Use(middleware.RequestBodyLimit())
 	// no token required
 	router.GET("/healthz", handler.Health(repository.DB))
 	router.GET("/s/:slug", handler.GetSharedSubscribe(services.ShareConfigService, services.ProxyService, services.GeneratorFactory))
 
 	openApiGroup := router.Group("/api")
 	openAuthMiddleware := middleware.Auth(cfg.Token)
-	openApiGroup.Use(openAuthMiddleware)
+	openApiGroup.Use(openAuthMiddleware, middleware.RequestBodyLimit())
 	{
 		openApiGroup.GET("/subscribe", handler.GetSubscribe(services.ProxyService, services.GeneratorFactory))
 	}
 
 	apiGroup := router.Group("/api/v1")
 	authMiddleware := middleware.Auth(cfg.Token)
-	apiGroup.Use(authMiddleware)
+	apiGroup.Use(authMiddleware, middleware.RequestBodyLimit())
 	{
 		// 公开API
 		apiGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))
@@ -60,7 +59,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 
 	webGroup := router.Group("/web/api")
 	webAuthMiddleware := middleware.Auth(cfg.Token)
-	webGroup.Use(webAuthMiddleware)
+	webGroup.Use(webAuthMiddleware, middleware.RequestBodyLimit())
 	{
 		// 新增订阅
 		webGroup.POST("/create_proxy", handler.CreateProxy(services.ProxyService, services.SubscriptionManager, services.ParserFactory, services.ProxyTester, services.IPDetectorService, services.ConfigService))

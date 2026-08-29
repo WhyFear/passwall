@@ -18,9 +18,12 @@ func TestRequestBodyLimitRejectsChunkedBodyOverOneMiBAndPreservesValidBody(t *te
 	router := gin.New()
 	router.Use(RequestBodyLimit())
 	router.POST("/", func(c *gin.Context) {
-		called = true
 		body, err := io.ReadAll(c.Request.Body)
-		require.NoError(t, err)
+		if err != nil {
+			c.Status(http.StatusRequestEntityTooLarge)
+			return
+		}
+		called = true
 		c.Data(http.StatusOK, "application/json", body)
 	})
 
@@ -39,4 +42,18 @@ func TestRequestBodyLimitRejectsChunkedBodyOverOneMiBAndPreservesValidBody(t *te
 	router.ServeHTTP(tooLargeResponse, tooLarge)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, tooLargeResponse.Code)
 	assert.False(t, called)
+}
+
+func TestRequestBodyLimitDoesNotTrustMultipartContentType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(RequestBodyLimit())
+	router.POST("/config", func(c *gin.Context) { _, _ = io.Copy(io.Discard, c.Request.Body) })
+
+	request := httptest.NewRequest(http.MethodPost, "/config", bytes.NewReader(make([]byte, maxJSONBodySize+1)))
+	request.Header.Set("Content-Type", "multipart/form-data; boundary=fake")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
 }

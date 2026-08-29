@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"bytes"
-	"io"
 	"mime"
 	"net/http"
 
@@ -10,29 +8,24 @@ import (
 )
 
 const maxJSONBodySize = 1 << 20
+const maxCreateProxyBodySize = 12 << 20
 
 func RequestBodyLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
-		if c.Request.Body == nil || c.Request.Body == http.NoBody || mediaType == "multipart/form-data" {
+		if c.Request.Body == nil || c.Request.Body == http.NoBody {
 			c.Next()
 			return
 		}
-		if c.Request.ContentLength > maxJSONBodySize {
+		limit := int64(maxJSONBodySize)
+		mediaType, _, _ := mime.ParseMediaType(c.GetHeader("Content-Type"))
+		if mediaType == "multipart/form-data" && (c.FullPath() == "/api/v1/create_proxy" || c.FullPath() == "/web/api/create_proxy") {
+			limit = maxCreateProxyBodySize
+		}
+		if c.Request.ContentLength > limit {
 			c.AbortWithStatus(http.StatusRequestEntityTooLarge)
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxJSONBodySize+1))
-		_ = c.Request.Body.Close()
-		if err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-		if len(body) > maxJSONBodySize {
-			c.AbortWithStatus(http.StatusRequestEntityTooLarge)
-			return
-		}
-		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	}
 }

@@ -21,6 +21,12 @@ type restrictedRoundTripper struct {
 	resolveTarget bool
 }
 
+func (t *restrictedRoundTripper) CloseIdleConnections() {
+	if transport, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		transport.CloseIdleConnections()
+	}
+}
+
 func (t *restrictedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req == nil {
 		return nil, errors.New("outbound request is nil")

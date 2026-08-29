@@ -78,6 +78,7 @@ func DownloadFromURLWithContext(ctx context.Context, targetURL string, options *
 	if err != nil {
 		return nil, err
 	}
+	defer client.CloseIdleConnections()
 
 	// 发送请求
 	resp, err := client.Do(req)
