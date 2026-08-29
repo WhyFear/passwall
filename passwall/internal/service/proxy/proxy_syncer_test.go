@@ -142,6 +142,18 @@ func TestProxySyncerRejectsEmptyParseResult(t *testing.T) {
 	assert.Contains(t, err.Error(), "未从订阅中解析出任何代理")
 }
 
+func TestProxySyncerReturnsLookupErrorsWithoutWriting(t *testing.T) {
+	repo := &fakeProxySyncRepository{findErr: errors.New("database unavailable")}
+	syncer := newProxySyncer(&fakeParserFactory{parser: freshProxyParser{}}, repo)
+
+	result, err := syncer.Sync(context.Background(), &model.Subscription{ID: 7, Type: model.SubscriptionTypeClash}, []byte("content"))
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Empty(t, repo.created)
+	assert.Empty(t, repo.updated)
+}
+
 func TestProxySyncerSerializesConcurrentSyncs(t *testing.T) {
 	repo := &blockingProxySyncRepository{
 		entered: make(chan struct{}, 2),
@@ -219,6 +231,7 @@ func (f *fakeParser) GetType() model.SubscriptionType {
 type fakeProxySyncRepository struct {
 	repository.ProxyRepository
 	existing map[string]*model.Proxy
+	findErr  error
 	created  []*model.Proxy
 	updated  []*model.Proxy
 }
@@ -246,6 +259,9 @@ func (r *blockingProxySyncRepository) BatchCreate([]*model.Proxy) error {
 }
 
 func (r *fakeProxySyncRepository) FindByDomainPortPassword(domain string, port int, password string) (*model.Proxy, error) {
+	if r.findErr != nil {
+		return nil, r.findErr
+	}
 	if r.existing == nil {
 		return nil, nil
 	}
@@ -253,7 +269,13 @@ func (r *fakeProxySyncRepository) FindByDomainPortPassword(domain string, port i
 }
 
 func (r *fakeProxySyncRepository) BatchCreate(proxies []*model.Proxy) error {
-	r.created = append(r.created, proxies...)
+	for _, proxy := range proxies {
+		if proxy.ID == 0 {
+			r.created = append(r.created, proxy)
+		} else {
+			r.updated = append(r.updated, proxy)
+		}
+	}
 	return nil
 }
 

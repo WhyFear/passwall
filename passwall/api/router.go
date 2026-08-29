@@ -72,7 +72,7 @@ func SetupRouter(cfg *config.Config, services *service.Services, scheduler *sche
 		// 获取订阅配置
 		webGroup.GET("/subscription/:id/config", handler.GetSubscriptionConfig(services.SubscriptionManager))
 		// 保存订阅配置
-		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager, scheduler))
+		webGroup.POST("/subscription/:id/config", handler.SaveSubscriptionConfig(services.SubscriptionManager))
 
 		// 获取代理信息
 		webGroup.GET("/proxies", handler.GetProxyList(services.ProxyService))

@@ -2,7 +2,10 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"sync"
 
 	"passwall/config"
 	"passwall/internal/adapter/parser"
@@ -12,6 +15,7 @@ import (
 	"passwall/internal/util"
 
 	"github.com/metacubex/mihomo/log"
+	"github.com/robfig/cron/v3"
 )
 
 type SubsPage struct {
@@ -23,6 +27,16 @@ type SubsPage struct {
 type SystemConfigProvider interface {
 	GetConfig() (*config.Config, error)
 }
+
+type SubscriptionScheduler interface {
+	UpdateSubscriptionJob(subID uint) error
+}
+
+var (
+	ErrSubscriptionNotFound      = errors.New("subscription not found")
+	ErrInvalidSubscriptionConfig = errors.New("invalid subscription config")
+	subscriptionCronParser       = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+)
 
 // SubscriptionManager 订阅管理服务
 type SubscriptionManager interface {
@@ -39,6 +53,7 @@ type SubscriptionManager interface {
 	GetSubscriptionConfig(id uint) (*model.SubscriptionConfig, error)
 	GetAllSubscriptionConfigs() ([]*model.SubscriptionConfig, error)
 	SaveSubscriptionConfig(config *model.SubscriptionConfig) error
+	SetScheduler(scheduler SubscriptionScheduler)
 
 	// 刷新操作
 	RefreshSubscriptionAsync(ctx context.Context, subID uint, options *util.DownloadOptions) error
@@ -55,6 +70,12 @@ type subscriptionManagerImpl struct {
 	configProvider         SystemConfigProvider
 	refresher              *subscriptionRefresher
 	proxySyncer            *proxySyncer
+	scheduler              SubscriptionScheduler
+	updateMu               sync.Mutex
+}
+
+func (s *subscriptionManagerImpl) SetScheduler(scheduler SubscriptionScheduler) {
+	s.scheduler = scheduler
 }
 
 // NewSubscriptionManager 创建订阅管理服务
@@ -96,10 +117,37 @@ func (s *subscriptionManagerImpl) GetAllSubscriptionConfigs() ([]*model.Subscrip
 
 // SaveSubscriptionConfig 保存订阅自定义配置
 func (s *subscriptionManagerImpl) SaveSubscriptionConfig(subConfig *model.SubscriptionConfig) error {
+	if subConfig == nil || subConfig.SubscriptionID == 0 {
+		return ErrInvalidSubscriptionConfig
+	}
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+
+	subscription, err := s.subscriptionRepo.FindByID(subConfig.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("获取订阅失败: %w", err)
+	}
+	if subscription == nil || subscription.Status == model.SubscriptionStatusDeleted {
+		return ErrSubscriptionNotFound
+	}
+	if subConfig.AutoUpdate {
+		subConfig.UpdateInterval = strings.TrimSpace(subConfig.UpdateInterval)
+		if subConfig.UpdateInterval == "" {
+			return fmt.Errorf("%w: update interval is empty", ErrInvalidSubscriptionConfig)
+		}
+		if _, err := subscriptionCronParser.Parse(subConfig.UpdateInterval); err != nil {
+			return fmt.Errorf("%w: invalid update interval", ErrInvalidSubscriptionConfig)
+		}
+	}
+
 	// 获取系统默认配置
 	sysCfg, err := s.configProvider.GetConfig()
 	if err != nil {
 		return fmt.Errorf("获取系统配置失败: %w", err)
+	}
+	oldConfig, err := s.subscriptionConfigRepo.FindByID(subConfig.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("获取旧订阅配置失败: %w", err)
 	}
 
 	// 比较是否与默认配置一致
@@ -108,12 +156,29 @@ func (s *subscriptionManagerImpl) SaveSubscriptionConfig(subConfig *model.Subscr
 		subConfig.UseProxy == sysCfg.DefaultSub.UseProxy
 
 	if isSameAsDefault {
-		// 如果一致，删除自定义配置
-		return s.subscriptionConfigRepo.Delete(subConfig.SubscriptionID)
+		err = s.subscriptionConfigRepo.Delete(subConfig.SubscriptionID)
+	} else {
+		err = s.subscriptionConfigRepo.Save(subConfig)
 	}
-
-	// 如果不一致，保存自定义配置
-	return s.subscriptionConfigRepo.Save(subConfig)
+	if err != nil {
+		return err
+	}
+	if s.scheduler == nil {
+		return nil
+	}
+	if err := s.scheduler.UpdateSubscriptionJob(subConfig.SubscriptionID); err != nil {
+		var rollbackErr error
+		if oldConfig == nil {
+			rollbackErr = s.subscriptionConfigRepo.Delete(subConfig.SubscriptionID)
+		} else {
+			rollbackErr = s.subscriptionConfigRepo.Save(oldConfig)
+		}
+		if rollbackErr != nil {
+			return fmt.Errorf("subscription_config_apply_degraded: update scheduler: %v; rollback: %w", err, rollbackErr)
+		}
+		return fmt.Errorf("更新订阅任务失败: %w", err)
+	}
+	return nil
 }
 
 // GetSubscriptionByID 根据ID获取订阅

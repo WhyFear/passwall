@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 
 	"passwall/internal/model"
@@ -31,6 +32,51 @@ func TestProxyRepositoryBatchUpdateStopsAtFirstError(t *testing.T) {
 
 	require.ErrorContains(t, err, "write failed")
 	assert.Equal(t, 1, updates)
+}
+
+func TestProxyRepositoryBatchCreateRollsBackFailedBatch(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	proxies := make([]*model.Proxy, 501)
+	for i := range proxies {
+		proxies[i] = &model.Proxy{
+			Name: "proxy", Domain: "proxy-" + strconv.Itoa(i) + ".example", Port: 443,
+			Password: "secret", Type: model.ProxyTypeTrojan,
+		}
+	}
+	creates := 0
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test:fail-second-proxy-batch", func(tx *gorm.DB) {
+		creates++
+		if creates == 2 {
+			tx.AddError(errors.New("second batch failed"))
+		}
+	}))
+
+	err := repo.BatchCreate(proxies)
+
+	require.ErrorContains(t, err, "second batch failed")
+	var count int64
+	require.NoError(t, db.Model(&model.Proxy{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestProxyRepositoryCountsSubscriptionsInOneQuery(t *testing.T) {
+	db := newProxyRepositoryTestDB(t)
+	repo := NewProxyRepository(db)
+	subscriptionOne, subscriptionTwo := uint(1), uint(2)
+	require.NoError(t, repo.BatchCreate([]*model.Proxy{
+		{Name: "ok", Domain: "ok.example", Port: 1, Password: "1", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionOne, Status: model.ProxyStatusOK},
+		{Name: "failed", Domain: "failed.example", Port: 2, Password: "2", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionOne, Status: model.ProxyStatusFailed},
+		{Name: "banned", Domain: "banned.example", Port: 3, Password: "3", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionOne, Status: model.ProxyStatusBanned},
+		{Name: "other", Domain: "other.example", Port: 4, Password: "4", Type: model.ProxyTypeSS, SubscriptionID: &subscriptionTwo, Status: model.ProxyStatusOK},
+	}))
+
+	counts, err := repo.CountBySubscriptionIDs([]uint{subscriptionOne, subscriptionTwo, 3})
+
+	require.NoError(t, err)
+	assert.Equal(t, SubscriptionProxyCounts{SubscriptionID: 1, AllCount: 3, ValidCount: 2, OKCount: 1}, counts[1])
+	assert.Equal(t, SubscriptionProxyCounts{SubscriptionID: 2, AllCount: 1, ValidCount: 1, OKCount: 1}, counts[2])
+	assert.Zero(t, counts[3].AllCount)
 }
 
 func TestProxyRepositoryFindPageFiltersSortsAndPaginates(t *testing.T) {

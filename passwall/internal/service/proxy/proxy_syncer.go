@@ -63,20 +63,13 @@ func (s *proxySyncer) Sync(ctx context.Context, subscription *model.Subscription
 		return nil, err
 	}
 
-	if len(toCreate) > 0 {
-		if err := s.proxyRepo.BatchCreate(toCreate); err != nil {
-			log.Errorln("订阅[ID:%d]批量创建代理失败，error type: %T", subscription.ID, err)
-			return nil, fmt.Errorf("批量创建代理失败")
+	changes := append(toCreate, toUpdate...)
+	if len(changes) > 0 {
+		if err := s.proxyRepo.BatchCreate(changes); err != nil {
+			log.Errorln("订阅[ID:%d]批量同步代理失败，error type: %T", subscription.ID, err)
+			return nil, fmt.Errorf("批量同步代理失败")
 		}
-		log.Infoln("批量创建了 %d 个新代理", len(toCreate))
-	}
-
-	if len(toUpdate) > 0 {
-		if err := s.proxyRepo.BatchUpdateProxyConfig(toUpdate); err != nil {
-			log.Errorln("订阅[ID:%d]批量更新代理失败，error type: %T", subscription.ID, err)
-			return nil, fmt.Errorf("批量更新代理失败")
-		}
-		log.Infoln("批量更新了 %d 个代理", len(toUpdate))
+		log.Infoln("批量创建了 %d 个新代理，更新了 %d 个代理", len(toCreate), len(toUpdate))
 	}
 
 	return &proxySyncResult{
@@ -103,7 +96,7 @@ func (s *proxySyncer) planProxyChanges(ctx context.Context, subscriptionID uint,
 		oldProxy, err := s.proxyRepo.FindByDomainPortPassword(newProxy.Domain, newProxy.Port, newProxy.Password)
 		if err != nil {
 			log.Errorln("订阅[ID:%d]查找代理失败，error type: %T", subscriptionID, err)
-			continue
+			return nil, nil, skipped, fmt.Errorf("查找代理失败")
 		}
 
 		if oldProxy == nil {

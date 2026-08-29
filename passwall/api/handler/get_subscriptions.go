@@ -7,8 +7,6 @@ import (
 	"passwall/internal/service/proxy"
 	"time"
 
-	"github.com/metacubex/mihomo/log"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -90,23 +88,21 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 			total = subsTotal
 			subscriptions = allSubscriptions
 		}
+		subscriptionIDs := make([]uint, 0, len(subscriptions))
 		for _, subscription := range subscriptions {
-			OKProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false, true)
-			if err != nil {
-				log.Infoln("Failed to get proxy num, error type: %T", err)
-				OKProxyNum = 0
-			}
-			// 获取代理数量
-			validProxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, true, false)
-			if err != nil {
-				log.Infoln("Failed to get proxy num, error type: %T", err)
-				validProxyNum = 0
-			}
-			proxyNum, err := proxyService.GetProxyNumBySubscriptionID(subscription.ID, false, false)
-			if err != nil {
-				log.Infoln("Failed to get proxy num, error type: %T", err)
-				proxyNum = 0
-			}
+			subscriptionIDs = append(subscriptionIDs, subscription.ID)
+		}
+		proxyCounts, err := proxyService.GetProxyCountsBySubscriptionIDs(subscriptionIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"result":      "fail",
+				"status_code": http.StatusInternalServerError,
+				"status_msg":  "Failed to count subscription proxies",
+			})
+			return
+		}
+		for _, subscription := range subscriptions {
+			counts := proxyCounts[subscription.ID]
 			refreshable, source := subscriptionSource(subscription.URL)
 			tempSubscription := SubscriptionResp{
 				ID:          int(subscription.ID),
@@ -116,9 +112,9 @@ func GetSubscriptions(subscriptionManager proxy.SubscriptionManager, proxyServic
 				Status:      int(subscription.Status),
 				CreatedAt:   subscription.CreatedAt,
 				UpdatedAt:   subscription.UpdatedAt,
-				OKProxyNum:  OKProxyNum,
-				ProxyNum:    validProxyNum,
-				AllProxyNum: proxyNum,
+				OKProxyNum:  counts.OKCount,
+				ProxyNum:    counts.ValidCount,
+				AllProxyNum: counts.AllCount,
 			}
 			if req.ID > 0 && refreshable {
 				tempSubscription.URL = subscription.URL

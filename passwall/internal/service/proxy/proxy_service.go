@@ -22,7 +22,7 @@ type BanProxyReq struct {
 
 type ProxyService interface {
 	GetProxyByID(id uint) (*model.Proxy, error)
-	GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool, statusOK bool) (int64, error)
+	GetProxyCountsBySubscriptionIDs(subscriptionIDs []uint) (map[uint]repository.SubscriptionProxyCounts, error)
 	GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error)
 	GetProxyIDsAfter(afterID uint, limit int) ([]uint, error)
 	GetProxyByName(name string) (*model.Proxy, error)
@@ -53,14 +53,8 @@ func (s *DefaultProxyService) GetProxyByID(id uint) (*model.Proxy, error) {
 	return s.proxyRepo.FindByID(id)
 }
 
-func (s *DefaultProxyService) GetProxyNumBySubscriptionID(subsId uint, ignoreBanned bool, statusOK bool) (int64, error) {
-	if ignoreBanned {
-		return s.proxyRepo.CountValidBySubscriptionID(subsId)
-	}
-	if statusOK {
-		return s.proxyRepo.CountOKBySubscriptionID(subsId)
-	}
-	return s.proxyRepo.CountBySubscriptionID(subsId)
+func (s *DefaultProxyService) GetProxyCountsBySubscriptionIDs(subscriptionIDs []uint) (map[uint]repository.SubscriptionProxyCounts, error) {
+	return s.proxyRepo.CountBySubscriptionIDs(subscriptionIDs)
 }
 
 func (s *DefaultProxyService) GetProxiesByFilters(filters *repository.NodeFilter, sort string, sortOrder string, page int, pageSize int) ([]*model.Proxy, int64, error) {

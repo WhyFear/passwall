@@ -1,4 +1,4 @@
-# AGENT.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code)/Codex when working with code in this repository.
 
@@ -241,3 +241,4 @@ API 封装集中在 `web/src/api/index.js`，导出 `subscriptionApi`、`nodeApi
 - 前端 `useNodesQuery` 使用 `AbortController`：新请求自动取消旧请求，组件卸载时取消 in-flight 请求。向 `api.getProxies` 传递 `signal` 参数。
 - 新增节点筛选维度时，应同步更新 `repository.NodeFilter`、`parseNodeFilter`、repository 查询、订阅生成、筛选测速、分享配置保存/回放和相关测试。
 - 更新配置示例时以 `passwall/config/config.go` 为准；当前代码字段名是 `clash_api.enable`，不是旧示例中的 `enabled`。
+- PostgreSQL 结构或数据约束变更必须提交可追踪、可重复执行的迁移文件，并明确执行顺序；不要假设 GORM AutoMigrate 会处理既有业务表。

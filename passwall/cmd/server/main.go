@@ -55,6 +55,7 @@ func main() {
 	// 4. 初始化调度器
 	newScheduler := scheduler.NewScheduler()
 	newScheduler.SetServices(services.TaskManager, services.NewTester, services.SubscriptionManager, services.ProxyService, services.IPDetectorService)
+	services.SubscriptionManager.SetScheduler(newScheduler)
 	err = newScheduler.Init(*mergedConfig)
 	if err != nil {
 		log.Fatalf("Failed to start scheduler: %v", err)

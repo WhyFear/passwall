@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"passwall/internal/model"
+	"passwall/internal/repository"
 	"passwall/internal/service/proxy"
 
 	"github.com/gin-gonic/gin"
@@ -65,9 +66,27 @@ func TestGetSubscriptionDetailShowsURLWithoutRawContent(t *testing.T) {
 	assert.NotContains(t, body, `"content"`)
 }
 
+func TestGetSubscriptionsLoadsProxyCountsOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := &fakeSafeSubscriptionManager{subscriptions: []*model.Subscription{
+		{ID: 7, Status: model.SubscriptionStatusOK},
+		{ID: 8, Status: model.SubscriptionStatusOK},
+	}}
+	proxyService := &fakeSafeSubscriptionProxyService{}
+	router := gin.New()
+	router.GET("/subscriptions", GetSubscriptions(manager, proxyService))
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/subscriptions?page=1&pageSize=10", nil))
+
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, 1, proxyService.countCalls)
+}
+
 type fakeSafeSubscriptionManager struct {
 	proxy.SubscriptionManager
-	subscription *model.Subscription
+	subscription  *model.Subscription
+	subscriptions []*model.Subscription
 }
 
 func (f *fakeSafeSubscriptionManager) GetSubscriptionByID(uint) (*model.Subscription, error) {
@@ -75,13 +94,22 @@ func (f *fakeSafeSubscriptionManager) GetSubscriptionByID(uint) (*model.Subscrip
 }
 
 func (f *fakeSafeSubscriptionManager) GetSubscriptionsPage(proxy.SubsPage) ([]*model.Subscription, int64, error) {
+	if f.subscriptions != nil {
+		return f.subscriptions, int64(len(f.subscriptions)), nil
+	}
 	return []*model.Subscription{f.subscription}, 1, nil
 }
 
 type fakeSafeSubscriptionProxyService struct {
 	proxy.ProxyService
+	countCalls int
 }
 
-func (*fakeSafeSubscriptionProxyService) GetProxyNumBySubscriptionID(uint, bool, bool) (int64, error) {
-	return 1, nil
+func (f *fakeSafeSubscriptionProxyService) GetProxyCountsBySubscriptionIDs(ids []uint) (map[uint]repository.SubscriptionProxyCounts, error) {
+	f.countCalls++
+	counts := make(map[uint]repository.SubscriptionProxyCounts, len(ids))
+	for _, id := range ids {
+		counts[id] = repository.SubscriptionProxyCounts{SubscriptionID: id, AllCount: 1, ValidCount: 1, OKCount: 1}
+	}
+	return counts, nil
 }

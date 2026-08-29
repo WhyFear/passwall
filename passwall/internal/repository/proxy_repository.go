@@ -28,6 +28,13 @@ type PageResult struct {
 	Items []*model.Proxy
 }
 
+type SubscriptionProxyCounts struct {
+	SubscriptionID uint
+	AllCount       int64
+	ValidCount     int64
+	OKCount        int64
+}
+
 // NodeFilter 代理节点过滤条件
 type NodeFilter struct {
 	Status      []model.ProxyStatus
@@ -61,9 +68,7 @@ type ProxyRepository interface {
 	PinProxy(id uint, pin bool) error
 	Delete(id uint) error
 	GetTypes(types *[]string) error
-	CountValidBySubscriptionID(subscriptionID uint) (int64, error)
-	CountBySubscriptionID(subscriptionID uint) (int64, error)
-	CountOKBySubscriptionID(subscriptionID uint) (int64, error)
+	CountBySubscriptionIDs(subscriptionIDs []uint) (map[uint]SubscriptionProxyCounts, error)
 }
 
 // GormProxyRepository 基于GORM的代理服务器仓库实现
@@ -306,25 +311,21 @@ func (r *GormProxyRepository) BatchCreate(proxies []*model.Proxy) error {
 		}
 	}
 
-	// 分批处理，避免PostgreSQL 65535参数限制
-	// 每个代理大约需要8-10个参数，安全批次大小设为500
-	batchSize := 500
-	for i := 0; i < len(uniqueProxies); i += batchSize {
-		end := i + batchSize
-		if end > len(uniqueProxies) {
-			end = len(uniqueProxies)
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 分批处理，避免PostgreSQL 65535参数限制
+		const batchSize = 500
+		for i := 0; i < len(uniqueProxies); i += batchSize {
+			end := min(i+batchSize, len(uniqueProxies))
+			batch := uniqueProxies[i:end]
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}, {Name: "password"}},
+				DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}),
+			}).Create(batch).Error; err != nil {
+				return fmt.Errorf("批量创建代理批次 %d-%d 失败: %w", i, end, err)
+			}
 		}
-
-		batch := uniqueProxies[i:end]
-		if err := r.db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "domain"}, {Name: "port"}, {Name: "password"}},
-			DoUpdates: clause.AssignmentColumns([]string{"name", "type", "config", "subscription_id", "status", "updated_at"}),
-		}).Create(batch).Error; err != nil {
-			return fmt.Errorf("批量创建代理批次 %d-%d 失败: %w", i, end, err)
-		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // Update 更新代理服务器
@@ -442,30 +443,27 @@ func (r *GormProxyRepository) PinProxy(id uint, pin bool) error {
 	return r.db.Model(&model.Proxy{}).Where("id = ?", id).Update("pinned", pin).Error
 }
 
-func (r *GormProxyRepository) CountValidBySubscriptionID(subscriptionID uint) (int64, error) {
-	var count int64
-	err := r.db.Model(&model.Proxy{}).
-		Where("subscription_id = ? AND status != ?", subscriptionID, model.ProxyStatusBanned).
-		Count(&count).Error
-	return count, err
-}
-
-func (r *GormProxyRepository) CountBySubscriptionID(subscriptionID uint) (int64, error) {
-	var count int64
-	err := r.db.Model(&model.Proxy{}).
-		Where("subscription_id = ?", subscriptionID).
-		Count(&count).Error
-	return count, err
-}
-
-// CountOKBySubscriptionID 根据订阅ID统计可用代理数量
-func (r *GormProxyRepository) CountOKBySubscriptionID(subscriptionID uint) (int64, error) {
-	var count int64
-	result := r.db.Model(&model.Proxy{}).Where("subscription_id = ?", subscriptionID).Where("status = ?", model.ProxyStatusOK).Count(&count)
-	if result.Error != nil {
-		return 0, result.Error
+func (r *GormProxyRepository) CountBySubscriptionIDs(subscriptionIDs []uint) (map[uint]SubscriptionProxyCounts, error) {
+	counts := make(map[uint]SubscriptionProxyCounts, len(subscriptionIDs))
+	if len(subscriptionIDs) == 0 {
+		return counts, nil
 	}
-	return count, nil
+	var rows []SubscriptionProxyCounts
+	err := r.db.Model(&model.Proxy{}).
+		Select(`subscription_id,
+			COUNT(*) AS all_count,
+			SUM(CASE WHEN status != ? THEN 1 ELSE 0 END) AS valid_count,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS ok_count`, model.ProxyStatusBanned, model.ProxyStatusOK).
+		Where("subscription_id IN ?", subscriptionIDs).
+		Group("subscription_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.SubscriptionID] = row
+	}
+	return counts, nil
 }
 
 // BatchUpdateProxyConfig 在事务中批量更新代理服务器配置
