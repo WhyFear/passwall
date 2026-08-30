@@ -3,9 +3,9 @@ package repository
 import (
 	"errors"
 	"passwall/internal/model"
-	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // IPUnlockInfoRepository IP解锁信息仓库接口
@@ -82,22 +82,7 @@ func (r *GormIPUnlockInfoRepository) CreateOrUpdate(ipUnlockInfo *model.IPUnlock
 	if ipUnlockInfo == nil {
 		return errors.New("ip unlock info cannot be nil")
 	}
-
-	// 先尝试查找是否已存在
-	existing, err := r.FindByIPAddressIDAndAppName(ipUnlockInfo.IPAddressesID, ipUnlockInfo.AppName)
-	if err != nil {
-		return err
-	}
-
-	if existing != nil {
-		// 更新现有记录
-		return r.updateExisting(existing, ipUnlockInfo)
-	}
-
-	// 创建新记录
-	ipUnlockInfo.CreatedAt = time.Now()
-	ipUnlockInfo.UpdatedAt = time.Now()
-	return r.db.Create(ipUnlockInfo).Error
+	return r.upsert([]*model.IPUnlockInfo{ipUnlockInfo})
 }
 
 // BatchCreateOrUpdate 批量创建或更新IP解锁信息
@@ -106,56 +91,21 @@ func (r *GormIPUnlockInfoRepository) BatchCreateOrUpdate(ipUnlockInfos []*model.
 		return nil
 	}
 
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, ipUnlockInfo := range ipUnlockInfos {
-			if ipUnlockInfo == nil {
-				continue
-			}
-
-			// 先尝试查找是否已存在
-			existing, err := r.findByIPAddressIDAndAppName(tx, ipUnlockInfo.IPAddressesID, ipUnlockInfo.AppName)
-			if err != nil {
-				return err
-			}
-
-			if existing != nil {
-				// 更新现有记录
-				if err := r.updateExistingWithDB(tx, existing, ipUnlockInfo); err != nil {
-					return err
-				}
-			} else {
-				// 创建新记录
-				ipUnlockInfo.CreatedAt = time.Now()
-				ipUnlockInfo.UpdatedAt = time.Now()
-				if err := tx.Create(ipUnlockInfo).Error; err != nil {
-					return err
-				}
-			}
+	filtered := make([]*model.IPUnlockInfo, 0, len(ipUnlockInfos))
+	for _, ipUnlockInfo := range ipUnlockInfos {
+		if ipUnlockInfo != nil {
+			filtered = append(filtered, ipUnlockInfo)
 		}
+	}
+	return r.upsert(filtered)
+}
+
+func (r *GormIPUnlockInfoRepository) upsert(ipUnlockInfos []*model.IPUnlockInfo) error {
+	if len(ipUnlockInfos) == 0 {
 		return nil
-	})
-}
-
-func (r *GormIPUnlockInfoRepository) findByIPAddressIDAndAppName(db *gorm.DB, ipAddressID uint, appName string) (*model.IPUnlockInfo, error) {
-	var ipUnlockInfo model.IPUnlockInfo
-	result := db.Where("ip_addresses_id = ? AND app_name = ?", ipAddressID, appName).First(&ipUnlockInfo)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, nil
 	}
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &ipUnlockInfo, nil
-}
-
-func (r *GormIPUnlockInfoRepository) updateExisting(existing *model.IPUnlockInfo, ipUnlockInfo *model.IPUnlockInfo) error {
-	return r.updateExistingWithDB(r.db, existing, ipUnlockInfo)
-}
-
-func (r *GormIPUnlockInfoRepository) updateExistingWithDB(db *gorm.DB, existing *model.IPUnlockInfo, ipUnlockInfo *model.IPUnlockInfo) error {
-	return db.Model(existing).Updates(map[string]interface{}{
-		"status":     ipUnlockInfo.Status,
-		"region":     ipUnlockInfo.Region,
-		"updated_at": time.Now(),
-	}).Error
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "ip_addresses_id"}, {Name: "app_name"}},
+		DoUpdates: clause.AssignmentColumns([]string{"status", "region", "updated_at"}),
+	}).Create(&ipUnlockInfos).Error
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"passwall/internal/repository"
 	"passwall/internal/service/task"
 
+	"github.com/metacubex/mihomo/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -147,13 +149,16 @@ func TestIPDetectorBatchDetectUsesDefaultConcurrency(t *testing.T) {
 }
 
 func TestIPDetectorBatchDetectContinuesAfterNodeFailure(t *testing.T) {
+	const failure = "log-storm-sentinel"
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
 	taskManager := task.NewTaskManager()
 	var calls atomic.Int32
 	detectorService := ipDetectorImpl{
 		TaskManager: taskManager,
 		detectOne: func(ctx context.Context, req *IPDetectorReq) error {
 			calls.Add(1)
-			return errors.New("detect failed")
+			return errors.New(failure)
 		},
 	}
 
@@ -166,6 +171,26 @@ func TestIPDetectorBatchDetectContinuesAfterNodeFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(3), calls.Load())
 	assert.Nil(t, taskManager.GetStatus(task.TaskTypeCheckIp))
+
+	var related []log.Event
+	for {
+		select {
+		case event := <-events:
+			if strings.Contains(event.Payload, failure) {
+				related = append(related, event)
+			}
+			if strings.Contains(event.Payload, failure) && strings.Contains(event.Payload, "failure(s)") {
+				goto collected
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for batch failure summary")
+		}
+	}
+
+collected:
+	require.Len(t, related, 1)
+	assert.Contains(t, related[0].Payload, "3 failure(s)")
+	assert.Equal(t, log.WARNING, related[0].LogLevel)
 }
 
 func TestIPDetectorBatchDetectSkipsWhenProxyWriteTaskIsActive(t *testing.T) {

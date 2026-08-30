@@ -2,13 +2,16 @@ package ipbaseinfo
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetProxyIP(t *testing.T) {
@@ -63,6 +66,32 @@ func TestGetProxyIPRejectsNilClient(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, ipInfo)
+}
+
+func TestGetProxyIPServiceFailuresAreDebugOnly(t *testing.T) {
+	events := log.Subscribe()
+	defer log.UnSubscribe(events)
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("unreachable")
+	})}
+	originalServices := ipServices
+	ipServices = []IPService{
+		{Name: "One", URL: "https://one.example.test"},
+		{Name: "Two", URL: "https://two.example.test"},
+	}
+	t.Cleanup(func() { ipServices = originalServices })
+
+	result, err := GetProxyIPWithContext(context.Background(), client)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	for range ipServices {
+		select {
+		case event := <-events:
+			assert.Equal(t, log.DEBUG, event.LogLevel)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for IP service failure log")
+		}
+	}
 }
 
 func TestGetProxyIPWithContextCancelsRequests(t *testing.T) {
