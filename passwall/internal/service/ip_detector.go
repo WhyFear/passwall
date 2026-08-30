@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"passwall/internal/detector"
@@ -241,6 +242,8 @@ func (i ipDetectorImpl) runBatchDetect(taskRun *task.TaskRun, targets []ipDetect
 	eg, ctx := errgroup.WithContext(taskRun.Context())
 	eg.SetLimit(concurrent)
 	var failureCount atomic.Int32
+	var firstFailure string
+	var firstFailureOnce sync.Once
 
 detectLoop:
 	for _, target := range targets {
@@ -275,8 +278,13 @@ detectLoop:
 				},
 			})
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				failureCount.Add(1)
-				log.Errorln("batch detect proxy ip failed, proxy id: %v, err: %v", target.ProxyID, err)
+				firstFailureOnce.Do(func() {
+					firstFailure = fmt.Sprintf("proxy id: %v, err: %v", target.ProxyID, err)
+				})
 			}
 			return nil
 		})
@@ -284,10 +292,15 @@ detectLoop:
 	_ = eg.Wait()
 	if n := failureCount.Load(); n > 0 {
 		finishMessage = fmt.Sprintf("batch detect proxy ip finished, %d failure(s)", n)
+		if firstFailure != "" {
+			log.Warnln("%s, first failure: %s", finishMessage, firstFailure)
+		} else {
+			log.Warnln("%s", finishMessage)
+		}
 	} else {
 		finishMessage = "batch detect proxy ip finished"
+		log.Infoln("%s", finishMessage)
 	}
-	log.Infoln("batch detect proxy ip finished")
 }
 
 func (i ipDetectorImpl) detect(ctx context.Context, req *IPDetectorReq) error {
@@ -339,7 +352,6 @@ func (i ipDetectorImpl) Detect(ctx context.Context, req *IPDetectorReq) error {
 		// 先获取ip地址，然后如果没有记录再做其他检测
 		resp, err := i.detectAllProxy(ctx, req.IPProxy, false, false)
 		if err != nil {
-			log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 			return err
 		}
 		if resp.BaseInfo != nil {
@@ -389,7 +401,6 @@ func (i ipDetectorImpl) Detect(ctx context.Context, req *IPDetectorReq) error {
 	// below is refresh logic
 	resp, err := i.detectAllProxy(ctx, req.IPProxy, req.IPInfoEnable, req.APPUnlockEnable)
 	if err != nil {
-		log.Errorln("detect proxy ip failed, proxy id: %v, err: %v", req.ProxyID, err)
 		return err
 	}
 	if req.OnlyMissing {

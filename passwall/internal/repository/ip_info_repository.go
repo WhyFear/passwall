@@ -3,9 +3,9 @@ package repository
 import (
 	"errors"
 	"passwall/internal/model"
-	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // IPInfoRepository IP信息仓库接口
@@ -68,22 +68,7 @@ func (r *GormIPInfoRepository) CreateOrUpdate(ipInfo *model.IPInfo) error {
 	if ipInfo == nil {
 		return errors.New("ip info cannot be nil")
 	}
-
-	// 先尝试查找是否已存在
-	existing, err := r.FindByIPAddressIDAndDetector(ipInfo.IPAddressesID, ipInfo.Detector)
-	if err != nil {
-		return err
-	}
-
-	if existing != nil {
-		// 更新现有记录
-		return r.updateExisting(existing, ipInfo)
-	}
-
-	// 创建新记录
-	ipInfo.CreatedAt = time.Now()
-	ipInfo.UpdatedAt = time.Now()
-	return r.db.Create(ipInfo).Error
+	return r.upsert([]*model.IPInfo{ipInfo})
 }
 
 // BatchCreateOrUpdate 批量创建或更新IP信息
@@ -92,57 +77,21 @@ func (r *GormIPInfoRepository) BatchCreateOrUpdate(ipInfos []*model.IPInfo) erro
 		return nil
 	}
 
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, ipInfo := range ipInfos {
-			if ipInfo == nil {
-				continue
-			}
-
-			// 先尝试查找是否已存在
-			existing, err := r.findByIPAddressIDAndDetector(tx, ipInfo.IPAddressesID, ipInfo.Detector)
-			if err != nil {
-				return err
-			}
-
-			if existing != nil {
-				// 更新现有记录
-				if err := r.updateExistingWithDB(tx, existing, ipInfo); err != nil {
-					return err
-				}
-			} else {
-				// 创建新记录
-				ipInfo.CreatedAt = time.Now()
-				ipInfo.UpdatedAt = time.Now()
-				if err := tx.Create(ipInfo).Error; err != nil {
-					return err
-				}
-			}
+	filtered := make([]*model.IPInfo, 0, len(ipInfos))
+	for _, ipInfo := range ipInfos {
+		if ipInfo != nil {
+			filtered = append(filtered, ipInfo)
 		}
+	}
+	return r.upsert(filtered)
+}
+
+func (r *GormIPInfoRepository) upsert(ipInfos []*model.IPInfo) error {
+	if len(ipInfos) == 0 {
 		return nil
-	})
-}
-
-func (r *GormIPInfoRepository) findByIPAddressIDAndDetector(db *gorm.DB, ipAddressID uint, detector string) (*model.IPInfo, error) {
-	var ipInfo model.IPInfo
-	result := db.Where("ip_addresses_id = ? AND detector = ?", ipAddressID, detector).First(&ipInfo)
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, nil
 	}
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &ipInfo, nil
-}
-
-func (r *GormIPInfoRepository) updateExisting(existing *model.IPInfo, ipInfo *model.IPInfo) error {
-	return r.updateExistingWithDB(r.db, existing, ipInfo)
-}
-
-func (r *GormIPInfoRepository) updateExistingWithDB(db *gorm.DB, existing *model.IPInfo, ipInfo *model.IPInfo) error {
-	return db.Model(existing).Updates(map[string]interface{}{
-		"risk":       ipInfo.Risk,
-		"geo":        ipInfo.Geo,
-		"raw":        ipInfo.Raw,
-		"updated_at": time.Now(),
-	}).Error
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "ip_addresses_id"}, {Name: "detector"}},
+		DoUpdates: clause.AssignmentColumns([]string{"risk", "geo", "raw", "updated_at"}),
+	}).Create(&ipInfos).Error
 }

@@ -36,8 +36,8 @@ type ProxyIPAddress struct {
 // 对应SQL schema中的ip_infos表
 type IPInfo struct {
 	ID            uint           `json:"id" gorm:"primaryKey;autoIncrement"`
-	IPAddressesID uint           `json:"ip_addresses_id" gorm:"not null;index"`
-	Detector      string         `json:"detector" gorm:"not null;type:varchar(255);index"`
+	IPAddressesID uint           `json:"ip_addresses_id" gorm:"not null;uniqueIndex:uidx_ip_infos_ip_addresses_id_detector"`
+	Detector      string         `json:"detector" gorm:"not null;type:varchar(255);index;uniqueIndex:uidx_ip_infos_ip_addresses_id_detector"`
 	Risk          datatypes.JSON `json:"risk" gorm:"type:json"`
 	Geo           datatypes.JSON `json:"geo" gorm:"type:json"`
 	Raw           string         `json:"raw" gorm:"type:text"`
@@ -49,7 +49,7 @@ type IPInfo struct {
 // 对应SQL schema中的ip_base_infos表
 type IPBaseInfo struct {
 	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	IPAddressesID uint      `json:"ip_addresses_id" gorm:"not null;index"`
+	IPAddressesID uint      `json:"ip_addresses_id" gorm:"not null;uniqueIndex:uidx_ip_base_infos_ip_addresses_id"`
 	RiskLevel     string    `json:"risk_level" gorm:"type:varchar(10)"`
 	CountryCode   string    `json:"country_code" gorm:"type:varchar(5)"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -60,8 +60,8 @@ type IPBaseInfo struct {
 // 对应SQL schema中的ip_unlock_infos表
 type IPUnlockInfo struct {
 	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	IPAddressesID uint      `json:"ip_addresses_id" gorm:"not null;index"`
-	AppName       string    `json:"app_name" gorm:"type:varchar(50)"`
+	IPAddressesID uint      `json:"ip_addresses_id" gorm:"not null;uniqueIndex:uidx_ip_unlock_infos_ip_addresses_id_app_name"`
+	AppName       string    `json:"app_name" gorm:"not null;type:varchar(50);uniqueIndex:uidx_ip_unlock_infos_ip_addresses_id_app_name"`
 	Status        string    `json:"status" gorm:"type:varchar(10)"`
 	Region        string    `json:"region" gorm:"type:varchar(10)"`
 	CreatedAt     time.Time `json:"created_at"`

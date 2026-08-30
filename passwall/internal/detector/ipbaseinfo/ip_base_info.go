@@ -66,11 +66,11 @@ func GetProxyIPWithContext(ctx context.Context, proxyClient *http.Client) (*IPBa
 			defer wg.Done()
 			resp, err := util.GetUrlWithContext(ctx, proxyClient, svc.URL)
 			if err != nil {
-				log.Infoln("IP服务 %s 获取IP失败: %v", svc.Name, err)
+				log.Debugln("IP服务 %s 获取IP失败: %v", svc.Name, err)
 				return
 			}
 			ipStr := getIPAddress(resp, svc.Format)
-			log.Infoln("IP服务 %s 获取IP成功: %s", svc.Name, ipStr)
+			log.Debugln("IP服务 %s 获取IP成功: %s", svc.Name, ipStr)
 			results <- ipStr
 		}(service)
 	}

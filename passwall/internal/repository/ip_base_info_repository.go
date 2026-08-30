@@ -3,9 +3,9 @@ package repository
 import (
 	"errors"
 	"passwall/internal/model"
-	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // IPBaseInfoRepository IP基础信息仓库接口
@@ -78,23 +78,8 @@ func (r *GormIPBaseInfoRepository) CreateOrUpdate(ipBaseInfo *model.IPBaseInfo) 
 		return errors.New("ip base info cannot be nil")
 	}
 
-	// 先尝试查找是否已存在
-	existing, err := r.FindByIPAddressID(ipBaseInfo.IPAddressesID)
-	if err != nil {
-		return err
-	}
-
-	if existing != nil {
-		// 更新现有记录
-		return r.db.Model(existing).Updates(map[string]interface{}{
-			"risk_level":   ipBaseInfo.RiskLevel,
-			"country_code": ipBaseInfo.CountryCode,
-			"updated_at":   time.Now(),
-		}).Error
-	}
-
-	// 创建新记录
-	ipBaseInfo.CreatedAt = time.Now()
-	ipBaseInfo.UpdatedAt = time.Now()
-	return r.db.Create(ipBaseInfo).Error
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "ip_addresses_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"risk_level", "country_code", "updated_at"}),
+	}).Create(ipBaseInfo).Error
 }
